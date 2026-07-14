@@ -436,12 +436,6 @@ Se temRemessa=false, o destino é a própria empresa da venda.
 */
 
 function uid(prefix){ return prefix + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
-function gerarSenhaSugerida(placaValue){
-  const digitos = String(placaValue||'').replace(/\D/g,'');
-  let base = digitos.slice(-4);
-  while(base.length<4){ base += String(Math.floor(Math.random()*10)); }
-  return base;
-}
 function gerarSenhaAleatoria(){ return String(Math.floor(100000 + Math.random()*900000)); }
 
 function num(v){
@@ -1935,10 +1929,7 @@ function openCadastroModal(kind, id){
       <div class="field"><label>Placa</label><input id="fMotoristaPlaca" value="${m?.placa||''}" placeholder="Ex: RAN9G24" style="text-transform:uppercase;"></div>
       <div class="field">
         <label>Senha de acesso ao sistema</label>
-        <div class="actions-row" style="gap:6px;">
-          <input id="fMotoristaSenha" value="${acesso?.senha||''}" placeholder="defina uma senha" style="flex:1;">
-          <button type="button" class="btn ghost sm" style="white-space:nowrap;" onclick="document.getElementById('fMotoristaSenha').value = gerarSenhaSugerida(document.getElementById('fMotoristaPlaca').value)">🎲 Gerar senha</button>
-        </div>
+        <input id="fMotoristaSenha" value="${acesso?.senha||''}" placeholder="defina uma senha">
         <p class="small-note" style="margin-top:6px;">O motorista faz login com a placa do caminhão como usuário e a senha definida aqui. Depois de salvar, use "📤 Compartilhar dados de acesso" na listagem pra enviar isso pra ele.</p>
       </div>
       <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
@@ -2366,6 +2357,7 @@ function pasteHandler(e){
 }
 
 async function handleRomaneioFile(file){
+  if(document.getElementById('motoristaEnviarWrap')){ return handleRomaneioFileMotorista(file); }
   const statusWrap = document.getElementById('ocrStatusWrap');
   const reader = new FileReader();
   reader.onload = () => {
@@ -2391,6 +2383,41 @@ async function handleRomaneioFile(file){
   const placaTopo = document.getElementById('fMotoristaPlacaAtual');
   const fPlaca = document.getElementById('fEntregaPlaca');
   if(placaTopo && fPlaca && !fPlaca.value) fPlaca.value = placaTopo.value;
+}
+
+async function handleRomaneioFileMotorista(file){
+  const statusWrap = document.getElementById('ocrStatusWrap');
+  const enviarWrap = document.getElementById('motoristaEnviarWrap');
+  const decisaoWrap = document.getElementById('motoristaDecisaoWrap');
+  const resumoWrap = document.getElementById('motoristaResumoWrap');
+  enviarWrap.style.display = 'none';
+  decisaoWrap.style.display = 'none'; decisaoWrap.innerHTML = '';
+  resumoWrap.innerHTML = '';
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    statusWrap.innerHTML = `<img class="thumb-preview" src="${reader.result}">` + statusWrap.innerHTML;
+  };
+  reader.readAsDataURL(file);
+
+  statusWrap.innerHTML = `<div class="ocr-status"><div class="spinner"></div> Lendo romaneio com IA...</div>`;
+
+  let parsed = null, erro = null;
+  try{ parsed = await ocrRomaneio(file); }
+  catch(err){ erro = err.message; }
+
+  const completo = !!(parsed && parsed.pesoBruto && parsed.pesoLiquidoComDesc && parsed.nrRomaneio);
+
+  if(completo){
+    motoristaOcrData = parsed;
+    statusWrap.innerHTML = `<div class="ocr-status" style="color:var(--lime)">✓ Romaneio lido com sucesso.</div>` + statusWrap.innerHTML;
+    resumoWrap.innerHTML = resumoOcrHtml(parsed);
+    enviarWrap.style.display = '';
+  }else{
+    motoristaOcrData = parsed || {};
+    statusWrap.innerHTML = `<div class="ocr-status" style="color:var(--gold)">⚠ ${erro || 'Não consegui confirmar todos os dados do romaneio nessa foto.'}</div>` + statusWrap.innerHTML;
+    mostrarDecisaoOcrMotorista();
+  }
 }
 
 function mostrarCamposManual(){
@@ -2556,7 +2583,7 @@ function salvarEntrega(){
    MODO MOTORISTA — página simplificada para abrir no celular
    ============================================================ */
 
-let motoristaLink = { tipo:null, entregaId:null, vendaId:null };
+let motoristaOcrData = null;
 
 function renderModoMotorista(placaConhecida){
   document.body.innerHTML = `
@@ -2648,7 +2675,7 @@ async function cancelarCargaMotorista(entregaId){
 }
 
 function renderMotoristaForm(){
-  motoristaLink = { tipo:null, entregaId:null, vendaId:null };
+  motoristaOcrData = null;
   document.getElementById('motoristaSuccessWrap').style.display = 'none';
   const wrap = document.getElementById('motoristaFormWrap');
   wrap.style.display = '';
@@ -2660,129 +2687,102 @@ function renderMotoristaForm(){
       <small>A IA lê os dados automaticamente</small>
     </div>
     <div id="ocrStatusWrap"></div>
-
-    <div id="motoristaManualToggleWrap" style="text-align:center;margin:14px 0;">
-      <button class="btn ghost sm" onclick="mostrarCamposManual()">📝 Adicionar romaneio manual</button>
-    </div>
-
-    <div id="motoristaCamposWrap" style="display:none;">
-      <div class="field">
-        <label>Nº da NF (venda ou remessa) — se souber</label>
-        <div style="display:flex;gap:8px;">
-          <input id="mBuscaNF" placeholder="Ex: 2181">
-          <button class="btn ghost sm" style="white-space:nowrap;" onclick="buscarNFMotorista()">Buscar</button>
-        </div>
-      </div>
-      <div id="motoristaVendaInfo"></div>
-
-      <div id="motoristaFallbackSelects" style="display:none;">
-        <div class="field"><label>Empresa</label><select id="fNovaVendaEmpresa" onchange="onNovaVendaEmpresaChange()">${optionsEmpresas()}</select></div>
-        <div class="field"><label>Produtor</label><select id="fNovaVendaProdutor">${optionsProdutores()}</select></div>
-      </div>
-
-      <div class="section-title">Dados do romaneio</div>
-      <div class="field"><label>Motorista cadastrado</label><select id="fCargaMotoristaSelect" onchange="onMotoristaSelectChange()">${optionsMotoristas()}</select></div>
-      <div class="field"><label>Motorista</label><input id="fEntregaMotorista"></div>
-      <div class="field"><label>Placa</label><input id="fEntregaPlaca"></div>
-      <div class="field"><label>Nº Romaneio</label><input id="fEntregaRomaneio"></div>
-      <div class="field"><label>Data de saída</label><input type="date" id="fEntregaDataSaida" value="${todayISO()}"></div>
-      <div class="field" style="display:none"><input id="fEntregaPesoFiscal" value="${PESO_FISCAL_PADRAO}"></div>
-      <div class="field"><label>Peso bruto (kg)</label><input type="number" id="fEntregaPesoBruto" oninput="updateComputedPreview()"></div>
-      <div class="field"><label>Umidade — desconto (kg)</label><input type="number" id="fEntregaUmidade" value="0" oninput="updateComputedPreview()"></div>
-      <div class="field"><label>Impureza — desconto (kg)</label><input type="number" id="fEntregaImpureza" value="0" oninput="updateComputedPreview()"></div>
-      <div class="field"><label>Ardido/avariado — desconto (kg)</label><input type="number" id="fEntregaArdido" value="0" oninput="updateComputedPreview()"></div>
-      <div class="field" style="display:none"><input type="number" id="fEntregaTx" value="0"></div>
-      <div class="field"><label>Peso líquido do romaneio (kg)</label><input type="number" id="fEntregaPesoLiquido" oninput="updateComputedPreview()"></div>
-      <div class="field" style="display:none"><input type="number" id="fEntregaPrecoFrete" value="0"></div>
-
-      <div class="grid cols-2">
-        <div class="field"><label>Scs bruto</label><input class="computed" disabled id="calcScsBruto" value="0"></div>
-        <div class="field"><label>Scs líquido</label><input class="computed" disabled id="calcScsLiquido" value="0"></div>
-      </div>
-      <div class="field" style="display:none"><input disabled id="calcPesoLiqSemDesc"><input disabled id="calcValorFrete"></div>
-
-      <button class="btn" style="width:100%;padding:14px;font-size:15px;margin-top:8px;" onclick="submitMotorista()">Enviar para conferência</button>
+    <div id="motoristaResumoWrap"></div>
+    <div id="motoristaDecisaoWrap" style="display:none;"></div>
+    <div id="motoristaEnviarWrap" style="display:none;margin-top:14px;">
+      <button class="btn" style="width:100%;padding:14px;font-size:15px;" onclick="submitMotorista(false)">📦 Enviar romaneio de produto</button>
     </div>
   `;
   bindDropzone();
-  updateComputedPreview();
 }
 
-function buscarNFMotorista(){
-  const valor = document.getElementById('mBuscaNF').value.trim();
-  const info = document.getElementById('motoristaVendaInfo');
-  const fallback = document.getElementById('motoristaFallbackSelects');
-  if(!valor){ info.innerHTML=''; fallback.style.display='none'; motoristaLink={tipo:null}; return; }
-
-  const entregaExistente = state.entregas.find(e=>e.nrNFRemessa && String(e.nrNFRemessa)===valor && e.status!=='completo');
-  if(entregaExistente){
-    const v = vendaById(entregaExistente.vendaId);
-    motoristaLink = { tipo:'entrega', entregaId: entregaExistente.id, vendaId: entregaExistente.vendaId };
-    info.innerHTML = `<div class="ocr-status" style="color:var(--lime)">✓ Remessa encontrada: NF ${v?.nrNF} · ${v?produtorNome(v.produtorId):''} · destino ${empresaNome(entregaExistente.empresaDestinoId)}</div>`;
-    fallback.style.display = 'none';
-    return;
-  }
-  const venda = state.vendas.find(v=>String(v.nrNF)===valor);
-  if(venda){
-    motoristaLink = { tipo:'venda', vendaId: venda.id };
-    info.innerHTML = `<div class="ocr-status" style="color:var(--lime)">✓ Venda encontrada: ${produtorNome(venda.produtorId)} · ${empresaNome(venda.empresaId)}</div>`;
-    fallback.style.display = 'none';
-    return;
-  }
-  motoristaLink = { tipo:'novo' };
-  info.innerHTML = `<div class="ocr-status" style="color:var(--gold)">NF não encontrada — selecione a empresa e o produtor abaixo</div>`;
-  fallback.style.display = '';
+function resumoOcrHtml(p){
+  const linhas = [
+    ['Motorista', p.motorista||'—'],
+    ['Placa', p.placa||'—'],
+    ['Nº romaneio', p.nrRomaneio||'—'],
+    ['Peso bruto', p.pesoBruto?fmt(p.pesoBruto,0)+' kg':'—'],
+    ['Peso líquido', p.pesoLiquidoComDesc?fmt(p.pesoLiquidoComDesc,0)+' kg':'—'],
+  ];
+  return `<div class="card" style="margin-top:10px;padding:12px 14px;">
+    ${linhas.map(([l,v])=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;"><span style="color:var(--ink-dim);">${l}</span><b>${v}</b></div>`).join('')}
+  </div>`;
 }
 
-function submitMotorista(){
-  if(!motoristaLink.tipo){ toast('Informe e busque o número da NF antes de enviar.', true); return; }
-  const pesoBruto = document.getElementById('fEntregaPesoBruto').value;
-  const pesoLiquido = document.getElementById('fEntregaPesoLiquido').value;
-  if(!pesoBruto || !pesoLiquido){ toast('Preencha o peso bruto e o peso líquido (ou tire a foto novamente).', true); return; }
+function mostrarDecisaoOcrMotorista(){
+  const wrap = document.getElementById('motoristaDecisaoWrap');
+  wrap.style.display = '';
+  wrap.innerHTML = `
+    <div class="card" style="text-align:center;padding:16px;margin-top:10px;">
+      <p style="margin:0 0 12px 0;">Não consegui confirmar todos os dados do romaneio nessa foto. O que você quer fazer?</p>
+      <div class="actions-row" style="justify-content:center;gap:10px;flex-wrap:wrap;">
+        <button class="btn ghost" onclick="renderMotoristaForm()">🔁 Tentar novamente</button>
+        <button class="btn" onclick="submitMotorista(true)">📨 Enviar para conferência manual</button>
+      </div>
+    </div>
+  `;
+}
 
+async function submitMotorista(forcarManual){
+  const p = motoristaOcrData || {};
+  const placaLogin = normalizarPlaca(document.getElementById('fMotoristaPlacaAtual')?.value || localStorage.getItem('brc_motorista_placa') || '');
+  const placaFinal = normalizarPlaca(p.placa || placaLogin) || placaLogin;
+  const motoristaCadastro = state.motoristas.find(m=>normalizarPlaca(m.placa)===placaFinal);
+
+  let link = { tipo:'novo' };
+  if(p.nrNFRemessa){
+    const entregaExistente = state.entregas.find(e=>e.nrNFRemessa && String(e.nrNFRemessa)===String(p.nrNFRemessa) && e.status!=='completo');
+    if(entregaExistente){ link = { tipo:'entrega', entregaId: entregaExistente.id }; }
+    else{
+      const vendaExistente = state.vendas.find(v=>String(v.nrNF)===String(p.nrNFRemessa));
+      if(vendaExistente){ link = { tipo:'venda', vendaId: vendaExistente.id }; }
+    }
+  }
+
+  const dataSaida = toISODate(p.dataSaida) || todayISO();
   const camposComuns = {
-    motorista: document.getElementById('fEntregaMotorista').value.trim(),
-    placa: document.getElementById('fEntregaPlaca').value.trim(),
-    nrRomaneio: document.getElementById('fEntregaRomaneio').value.trim(),
-    dataSaida: document.getElementById('fEntregaDataSaida').value || todayISO(),
-    pesoFiscal: document.getElementById('fEntregaPesoFiscal').value,
-    pesoBruto, umidade: document.getElementById('fEntregaUmidade').value,
-    impureza: document.getElementById('fEntregaImpureza').value,
-    ardido: document.getElementById('fEntregaArdido').value,
-    txRecebimento: document.getElementById('fEntregaTx').value,
-    pesoLiquidoComDesc: pesoLiquido,
-    precoFrete: document.getElementById('fEntregaPrecoFrete').value,
+    motorista: p.motorista || motoristaCadastro?.nome || '',
+    placa: placaFinal || p.placa || '',
+    nrRomaneio: p.nrRomaneio || '',
+    dataSaida,
+    pesoFiscal: PESO_FISCAL_PADRAO,
+    pesoBruto: p.pesoBruto || 0,
+    umidade: p.umidade || 0,
+    impureza: p.impureza || 0,
+    ardido: p.ardido || 0,
+    txRecebimento: p.txRecebimento || 0,
+    pesoLiquidoComDesc: p.pesoLiquidoComDesc || 0,
+    precoFrete: p.precoFrete || 0,
     updatedAt: new Date().toISOString(),
   };
 
-  if(motoristaLink.tipo==='entrega'){
-    const e = state.entregas.find(x=>x.id===motoristaLink.entregaId);
+  if(link.tipo==='entrega'){
+    const e = state.entregas.find(x=>x.id===link.entregaId);
     Object.assign(e, camposComuns);
     recalcEntrega(e);
     e.status = 'aguardando_conferencia';
-  } else {
-    let vendaId = motoristaLink.vendaId;
-    if(motoristaLink.tipo==='novo'){
-      const empresaId = document.getElementById('fNovaVendaEmpresa').value;
-      const produtorId = document.getElementById('fNovaVendaProdutor').value;
-      if(!empresaId || !produtorId){ toast('Selecione empresa e produtor.', true); return; }
+  }else{
+    let vendaId = link.vendaId;
+    if(link.tipo==='novo'){
       const venda = {
-        id: uid('venda'), empresaId, produtorId, contratoId:null,
-        nrNF: document.getElementById('mBuscaNF').value.trim() || ('S/N-'+Date.now()),
-        dataNF: todayISO(), pesoFiscal: PESO_FISCAL_PADRAO, valorFiscal:0, chaveNFe:'',
-        createdAt: new Date().toISOString()
+        id: uid('venda'), empresaId: null, produtorId: null, contratoId: null,
+        nrNF: p.nrNFRemessa || ('S/N-'+Date.now()),
+        dataNF: dataSaida, pesoFiscal: camposComuns.pesoBruto || 0, valorFiscal: 0, chaveNFe:'',
+        precisaCompletar: true,
+        createdAt: new Date().toISOString(),
       };
       state.vendas.push(venda);
       vendaId = venda.id;
     }
     const entrega = Object.assign({
-      id: uid('ent'), vendaId, temRemessa:false, nrNFRemessa:'', empresaDestinoId:null,
-      status:'aguardando_conferencia', createdAt: new Date().toISOString(),
+      id: uid('ent'), vendaId, temRemessa: !!p.nrNFRemessa, nrNFRemessa: p.nrNFRemessa || '', empresaDestinoId: null,
+      status: 'aguardando_conferencia', createdAt: new Date().toISOString(),
     }, camposComuns);
     recalcEntrega(entrega);
     state.entregas.push(entrega);
   }
-  saveCadastros(); saveVendas(); saveEntregas();
+
+  await saveCadastros(); await saveVendas(); await saveEntregas();
 
   document.getElementById('motoristaFormWrap').style.display = 'none';
   const successWrap = document.getElementById('motoristaSuccessWrap');
@@ -2791,7 +2791,7 @@ function submitMotorista(){
     <div class="card" style="text-align:center;">
       <div style="font-size:34px;">✅</div>
       <h2 style="justify-content:center;margin-top:10px;">Romaneio enviado</h2>
-      <p class="small-note">A equipe vai conferir e lançar oficialmente. Obrigado!</p>
+      <p class="small-note">${forcarManual ? 'Alguns dados não puderam ser confirmados automaticamente — foi para conferência manual da equipe.' : 'A equipe vai conferir e lançar oficialmente. Obrigado!'}</p>
       <button class="btn ghost" style="margin-top:10px;" onclick="renderMotoristaForm()">Enviar outro romaneio</button>
     </div>
   `;
@@ -3781,15 +3781,36 @@ function getSessao(){
   try{ return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); }catch(e){ return null; }
 }
 function setSessao(s){ localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }
-function logout(){ localStorage.removeItem(SESSION_KEY); location.hash=''; location.reload(); }
+function logout(){ localStorage.removeItem(SESSION_KEY); location.reload(); }
 
+function isModoMotoristaHash(){ return String(location.hash||'').toLowerCase()==='#motorista'; }
+function loginStorageKey(){ return isModoMotoristaHash() ? 'brc_login_placa_salva' : 'brc_login_usuario_salvo'; }
 function renderLoginScreen(erro){
-  document.body.innerHTML = `
+  const modoMotorista = isModoMotoristaHash();
+  const usuarioSalvo = localStorage.getItem(loginStorageKey()) || '';
+  document.body.innerHTML = modoMotorista ? `
+    <div style="max-width:380px;margin:0 auto;padding:60px 18px;">
+      <h1 class="disp" style="font-size:24px;margin:0 0 4px 0;color:var(--gold);letter-spacing:-.3px;">BRC - Envio de romaneios</h1>
+      <p style="color:var(--ink-dim);font-size:13px;margin:0 0 22px 0;">Informe a placa do caminhão e a senha cadastrada pelo administrador.</p>
+      <div class="field"><label>Placa</label><input id="fLoginUsuario" style="text-transform:uppercase;" autocomplete="username" placeholder="Ex: QWE1010" value="${usuarioSalvo}"></div>
+      <div class="field"><label>Senha</label><input id="fLoginSenha" type="password" autocomplete="current-password"></div>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:400;font-size:12.5px;color:var(--ink-dim);margin:-6px 0 16px 0;">
+        <input type="checkbox" id="fLoginSalvar" style="width:auto;" checked>
+        Salvar minha placa neste aparelho (a senha nunca fica salva)
+      </label>
+      ${erro ? `<div style="color:var(--red);font-size:13px;margin:6px 0 4px 0;">${erro}</div>` : ''}
+      <button class="btn" style="width:100%;padding:12px;font-size:15px;margin-top:10px;" onclick="tentarLogin()">Entrar</button>
+    </div>
+  ` : `
     <div style="max-width:380px;margin:0 auto;padding:60px 18px;">
       <h1 class="disp" style="font-size:24px;margin:0 0 4px 0;color:var(--gold);letter-spacing:-.3px;">BRC</h1>
       <p style="color:var(--ink-dim);font-size:13px;margin:0 0 22px 0;">Entre com seu usuário e senha para acessar o painel.</p>
-      <div class="field"><label>Usuário</label><input id="fLoginUsuario" autocomplete="username"></div>
+      <div class="field"><label>Usuário</label><input id="fLoginUsuario" autocomplete="username" value="${usuarioSalvo}"></div>
       <div class="field"><label>Senha</label><input id="fLoginSenha" type="password" autocomplete="current-password"></div>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:400;font-size:12.5px;color:var(--ink-dim);margin:-6px 0 16px 0;">
+        <input type="checkbox" id="fLoginSalvar" style="width:auto;" checked>
+        Salvar meu usuário neste aparelho (a senha nunca fica salva)
+      </label>
       ${erro ? `<div style="color:var(--red);font-size:13px;margin:6px 0 4px 0;">${erro}</div>` : ''}
       <button class="btn" style="width:100%;padding:12px;font-size:15px;margin-top:10px;" onclick="tentarLogin()">Entrar</button>
     </div>
@@ -3797,13 +3818,16 @@ function renderLoginScreen(erro){
   document.getElementById('fLoginSenha').addEventListener('keydown', e=>{ if(e.key==='Enter') tentarLogin(); });
 }
 function tentarLogin(){
-  const usuario = document.getElementById('fLoginUsuario').value.trim();
+  const digitado = document.getElementById('fLoginUsuario').value.trim();
+  const usuario = isModoMotoristaHash() ? normalizarPlaca(digitado) : digitado;
   const senha = document.getElementById('fLoginSenha').value;
   const u = state.usuarios.find(x=>x.usuario.toLowerCase()===usuario.toLowerCase());
   if(!u){ renderLoginScreen('Usuário ou senha incorretos.'); return; }
   const senhaOk = senha === u.senha;
   if(!senhaOk){ renderLoginScreen('Usuário ou senha incorretos.'); return; }
   if(usuarioExpirado(u)){ renderLoginScreen('Este acesso expirou. Fale com o administrador.'); return; }
+  const salvarLogin = document.getElementById('fLoginSalvar')?.checked;
+  if(salvarLogin){ localStorage.setItem(loginStorageKey(), digitado); } else { localStorage.removeItem(loginStorageKey()); }
   setSessao({ usuarioId: u.id, usuario: u.usuario, papel: u.papel, motoristaId: u.motoristaId||null,
     podeGerenciarUsuarios: u.podeGerenciarUsuarios, podeLiberarAcessoMotorista: u.podeLiberarAcessoMotorista, podeDefinirSenhaMotorista: u.podeDefinirSenhaMotorista });
   bootAfterLogin();
