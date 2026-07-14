@@ -176,6 +176,11 @@ input:focus, select:focus, textarea:focus{ outline:none; border-color:var(--gold
 .section-title:first-child{ margin-top:0; }
 
 .actions-row{ display:flex; gap:8px; }
+#cardAcoesRapidas .actions-row{ flex-wrap:wrap; justify-content:center; }
+@media(max-width:600px){
+  #cardAcoesRapidas .actions-row{ justify-content:center; }
+  #cardAcoesRapidas .actions-row .btn{ flex:1 1 150px; text-align:center; }
+}
 .small-note{ font-size:11.5px; color:var(--ink-dim); }
 
 .th-flex{ display:flex; align-items:center; gap:6px; justify-content:space-between; }
@@ -1497,6 +1502,17 @@ function openCadastroModal(kind, id){
       </div>`;
   }
 
+  if(kind==='selecionarColheitaImportacao'){
+    title.textContent = 'De qual colheita vieram essas NFs?';
+    body.innerHTML = `
+      <p class="small-note" style="margin-top:-4px;">As NFs novas desta planilha já entram vinculadas à colheita escolhida (talhão e variedade). Se a planilha misturar NFs de mais de uma colheita, deixe em branco e vincule cada uma depois em "Cargas & Romaneios".</p>
+      <div class="field full"><label>Colheita</label><select id="fSelecionarColheitaImportacao">${optionsColheitas(null)}</select></div>
+      <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
+        <button class="btn ghost" onclick="arquivoImportacaoPendente=null; closeCadastroModal();">Cancelar</button>
+        <button class="btn" onclick="confirmarImportacaoComColheita()">Continuar importação</button>
+      </div>`;
+  }
+
   if(kind==='selecionarColheita'){
     const v = state.vendas.find(x=>x.id===id);
     title.textContent = `De onde veio a NF ${v?v.nrNF:''}?`;
@@ -2020,6 +2036,23 @@ async function handleRomaneioFile(file){
   }catch(err){
     statusWrap.innerHTML = `<div class="ocr-status" style="color:var(--red)">⚠ ${err.message}. Preencha manualmente.</div>` + statusWrap.innerHTML;
   }
+  const camposWrap = document.getElementById('motoristaCamposWrap');
+  if(camposWrap){
+    camposWrap.style.display = '';
+    camposWrap.scrollIntoView({behavior:'smooth', block:'start'});
+  }
+  const toggleWrap = document.getElementById('motoristaManualToggleWrap');
+  if(toggleWrap) toggleWrap.style.display = 'none';
+}
+
+function mostrarCamposManual(){
+  const camposWrap = document.getElementById('motoristaCamposWrap');
+  if(camposWrap){
+    camposWrap.style.display = '';
+    camposWrap.scrollIntoView({behavior:'smooth', block:'start'});
+  }
+  const toggleWrap = document.getElementById('motoristaManualToggleWrap');
+  if(toggleWrap) toggleWrap.style.display = 'none';
 }
 
 function applyOcrToForm(p){
@@ -2178,8 +2211,7 @@ let motoristaLink = { tipo:null, entregaId:null, vendaId:null };
 function renderModoMotorista(){
   document.body.innerHTML = `
     <div style="max-width:480px;margin:0 auto;padding:32px 18px 60px 18px;">
-      <div class="hero-eyebrow">BRC - Colheita e Comercialização</div>
-      <h1 class="disp" style="font-size:22px;margin:6px 0 4px 0;">Enviar romaneio</h1>
+      <h1 class="disp" style="font-size:26px;margin:0 0 4px 0;color:var(--gold);letter-spacing:-.3px;">BRC - Envio de romaneios</h1>
       <p style="color:var(--ink-dim);font-size:13px;margin:0 0 22px 0;">Tire uma foto do romaneio. A equipe confere antes de lançar oficialmente — pode enviar quantos precisar.</p>
       <div id="motoristaFormWrap"></div>
       <div id="motoristaSuccessWrap" style="display:none;"></div>
@@ -2194,15 +2226,6 @@ function renderMotoristaForm(){
   const wrap = document.getElementById('motoristaFormWrap');
   wrap.style.display = '';
   wrap.innerHTML = `
-    <div class="field">
-      <label>Nº da NF (venda ou remessa) — se souber</label>
-      <div style="display:flex;gap:8px;">
-        <input id="mBuscaNF" placeholder="Ex: 2181">
-        <button class="btn ghost sm" style="white-space:nowrap;" onclick="buscarNFMotorista()">Buscar</button>
-      </div>
-    </div>
-    <div id="motoristaVendaInfo"></div>
-
     <div class="dropzone" id="dropzoneRomaneio">
       <input type="file" id="fotoRomaneioInput" accept="image/*" capture="environment">
       <div class="icon">📷</div>
@@ -2211,33 +2234,48 @@ function renderMotoristaForm(){
     </div>
     <div id="ocrStatusWrap"></div>
 
-    <div id="motoristaFallbackSelects" style="display:none;">
-      <div class="field"><label>Empresa</label><select id="fNovaVendaEmpresa" onchange="onNovaVendaEmpresaChange()">${optionsEmpresas()}</select></div>
-      <div class="field"><label>Produtor</label><select id="fNovaVendaProdutor">${optionsProdutores()}</select></div>
+    <div id="motoristaManualToggleWrap" style="text-align:center;margin:14px 0;">
+      <button class="btn ghost sm" onclick="mostrarCamposManual()">📝 Adicionar romaneio manual</button>
     </div>
 
-    <div class="section-title">Dados do romaneio</div>
-    <div class="field"><label>Motorista cadastrado</label><select id="fCargaMotoristaSelect" onchange="onMotoristaSelectChange()">${optionsMotoristas()}</select></div>
-    <div class="field"><label>Motorista</label><input id="fEntregaMotorista"></div>
-    <div class="field"><label>Placa</label><input id="fEntregaPlaca"></div>
-    <div class="field"><label>Nº Romaneio</label><input id="fEntregaRomaneio"></div>
-    <div class="field"><label>Data de saída</label><input type="date" id="fEntregaDataSaida" value="${todayISO()}"></div>
-    <div class="field" style="display:none"><input id="fEntregaPesoFiscal" value="${PESO_FISCAL_PADRAO}"></div>
-    <div class="field"><label>Peso bruto (kg)</label><input type="number" id="fEntregaPesoBruto" oninput="updateComputedPreview()"></div>
-    <div class="field"><label>Umidade — desconto (kg)</label><input type="number" id="fEntregaUmidade" value="0" oninput="updateComputedPreview()"></div>
-    <div class="field"><label>Impureza — desconto (kg)</label><input type="number" id="fEntregaImpureza" value="0" oninput="updateComputedPreview()"></div>
-    <div class="field"><label>Ardido/avariado — desconto (kg)</label><input type="number" id="fEntregaArdido" value="0" oninput="updateComputedPreview()"></div>
-    <div class="field" style="display:none"><input type="number" id="fEntregaTx" value="0"></div>
-    <div class="field"><label>Peso líquido do romaneio (kg)</label><input type="number" id="fEntregaPesoLiquido" oninput="updateComputedPreview()"></div>
-    <div class="field" style="display:none"><input type="number" id="fEntregaPrecoFrete" value="0"></div>
+    <div id="motoristaCamposWrap" style="display:none;">
+      <div class="field">
+        <label>Nº da NF (venda ou remessa) — se souber</label>
+        <div style="display:flex;gap:8px;">
+          <input id="mBuscaNF" placeholder="Ex: 2181">
+          <button class="btn ghost sm" style="white-space:nowrap;" onclick="buscarNFMotorista()">Buscar</button>
+        </div>
+      </div>
+      <div id="motoristaVendaInfo"></div>
 
-    <div class="grid cols-2">
-      <div class="field"><label>Scs bruto</label><input class="computed" disabled id="calcScsBruto" value="0"></div>
-      <div class="field"><label>Scs líquido</label><input class="computed" disabled id="calcScsLiquido" value="0"></div>
+      <div id="motoristaFallbackSelects" style="display:none;">
+        <div class="field"><label>Empresa</label><select id="fNovaVendaEmpresa" onchange="onNovaVendaEmpresaChange()">${optionsEmpresas()}</select></div>
+        <div class="field"><label>Produtor</label><select id="fNovaVendaProdutor">${optionsProdutores()}</select></div>
+      </div>
+
+      <div class="section-title">Dados do romaneio</div>
+      <div class="field"><label>Motorista cadastrado</label><select id="fCargaMotoristaSelect" onchange="onMotoristaSelectChange()">${optionsMotoristas()}</select></div>
+      <div class="field"><label>Motorista</label><input id="fEntregaMotorista"></div>
+      <div class="field"><label>Placa</label><input id="fEntregaPlaca"></div>
+      <div class="field"><label>Nº Romaneio</label><input id="fEntregaRomaneio"></div>
+      <div class="field"><label>Data de saída</label><input type="date" id="fEntregaDataSaida" value="${todayISO()}"></div>
+      <div class="field" style="display:none"><input id="fEntregaPesoFiscal" value="${PESO_FISCAL_PADRAO}"></div>
+      <div class="field"><label>Peso bruto (kg)</label><input type="number" id="fEntregaPesoBruto" oninput="updateComputedPreview()"></div>
+      <div class="field"><label>Umidade — desconto (kg)</label><input type="number" id="fEntregaUmidade" value="0" oninput="updateComputedPreview()"></div>
+      <div class="field"><label>Impureza — desconto (kg)</label><input type="number" id="fEntregaImpureza" value="0" oninput="updateComputedPreview()"></div>
+      <div class="field"><label>Ardido/avariado — desconto (kg)</label><input type="number" id="fEntregaArdido" value="0" oninput="updateComputedPreview()"></div>
+      <div class="field" style="display:none"><input type="number" id="fEntregaTx" value="0"></div>
+      <div class="field"><label>Peso líquido do romaneio (kg)</label><input type="number" id="fEntregaPesoLiquido" oninput="updateComputedPreview()"></div>
+      <div class="field" style="display:none"><input type="number" id="fEntregaPrecoFrete" value="0"></div>
+
+      <div class="grid cols-2">
+        <div class="field"><label>Scs bruto</label><input class="computed" disabled id="calcScsBruto" value="0"></div>
+        <div class="field"><label>Scs líquido</label><input class="computed" disabled id="calcScsLiquido" value="0"></div>
+      </div>
+      <div class="field" style="display:none"><input disabled id="calcPesoLiqSemDesc"><input disabled id="calcValorFrete"></div>
+
+      <button class="btn" style="width:100%;padding:14px;font-size:15px;margin-top:8px;" onclick="submitMotorista()">Enviar para conferência</button>
     </div>
-    <div class="field" style="display:none"><input disabled id="calcPesoLiqSemDesc"><input disabled id="calcValorFrete"></div>
-
-    <button class="btn" style="width:100%;padding:14px;font-size:15px;margin-top:8px;" onclick="submitMotorista()">Enviar para conferência</button>
   `;
   bindDropzone();
   updateComputedPreview();
@@ -2917,7 +2955,7 @@ function isFormatoRemessa(headerRow){
 /* ---- Import 0: relatório PADRÃO de NFs emitidas (formato oficial a partir de agora) ----
    Uma linha por NF, já com produtor, empresa destinatária, natureza da operação, motorista e placa.
    Cada linha vira uma venda + uma entrega (peso ainda pendente, chega depois pelo romaneio). */
-function handleImportPadraoNF(rows){
+function handleImportPadraoNF(rows, colheitaId){
   let novos = 0, atualizados = 0, duplicados = 0, ignoradosCancelados = 0, ignoradosSemDados = 0;
   const gruposTocados = new Set();
   const keys = {
@@ -2962,7 +3000,7 @@ function handleImportPadraoNF(rows){
       venda = {
         id: uid('venda'), empresaId, produtorId, contratoId: contratoExistente ? contratoExistente.id : null,
         contratoNrRaw: contratoNr || '', nrNF: String(nrNF), dataNF: dataEmissao || todayISO(),
-        pesoFiscal: null, valorFiscal: valorTotal, natureza: operacao, role, usarParaConfronto: true, colheitaId: null, chaveNFe: '',
+        pesoFiscal: null, valorFiscal: valorTotal, natureza: operacao, role, usarParaConfronto: true, colheitaId: colheitaId || null, chaveNFe: '',
         createdAt: new Date().toISOString(),
       };
       state.vendas.push(venda);
@@ -2999,11 +3037,12 @@ function handleImportPadraoNF(rows){
   const avisoCancel = ignoradosCancelados>0 ? ` ${ignoradosCancelados} NF(s) não autorizada(s) ignorada(s).` : '';
   const qtdSecundarias = state.vendas.filter(v=>gruposTocados.has(contratoGroupKey(v)) && v.usarParaConfronto===false).length;
   const avisoSecundarias = qtdSecundarias>0 ? ` ${qtdSecundarias} NF de remessa/complemento ficou como comprovante (contrato já tem NF de venda).` : '';
-  toast(`Importação: ${novos} NF(s) nova(s), ${atualizados} atualizada(s), ${duplicados} já tinham carga lançada.${avisoCancel}${avisoPesoFiscal}${avisoSecundarias}`);
+  const avisoColheita = colheitaId ? ` NF(s) nova(s) vinculada(s) à colheita selecionada.` : '';
+  toast(`Importação: ${novos} NF(s) nova(s), ${atualizados} atualizada(s), ${duplicados} já tinham carga lançada.${avisoCancel}${avisoPesoFiscal}${avisoSecundarias}${avisoColheita}`);
 }
 
 /* ---- Import 1: relatório de NOTAS DE VENDA do software de gestão ---- */
-function handleImportSoftwareGestaoVenda(rows){
+function handleImportSoftwareGestaoVenda(rows, colheitaId){
   const headers = Object.keys(rows[0]);
   const keys = {
     tipoRegistro: findKey(headers,['tipo','registro']),
@@ -3046,6 +3085,7 @@ function handleImportSoftwareGestaoVenda(rows){
       pesoFiscal: num(keys.quantidade ? row[keys.quantidade] : 0),
       valorFiscal: num(keys.valorTotal ? row[keys.valorTotal] : 0),
       chaveNFe: keys.chaveNFe ? String(row[keys.chaveNFe]||'') : '',
+      colheitaId: colheitaId || null,
       createdAt: new Date().toISOString(),
     };
     state.vendas.push(venda);
@@ -3057,7 +3097,7 @@ function handleImportSoftwareGestaoVenda(rows){
 }
 
 /* ---- Import 2: relatório de NOTAS DE REMESSA (repasse) — vincula à venda original ---- */
-function handleImportRemessa(rawRows){
+function handleImportRemessa(rawRows, colheitaId){
   let novos = 0, semVendaEncontrada = 0, duplicadas = 0;
   let current = null;
 
@@ -3090,7 +3130,7 @@ function handleImportRemessa(rawRows){
           id: uid('venda'), empresaId: null, produtorId: null, contratoId: null,
           nrNF: String(nrNFVenda), dataNF: current.dataSaida || todayISO(),
           pesoFiscal: quantidade, valorFiscal: valorTotalItem, chaveNFe: '',
-          precisaCompletar: true,
+          precisaCompletar: true, colheitaId: colheitaId || null,
           createdAt: new Date().toISOString(),
         };
         state.vendas.push(venda);
@@ -3124,7 +3164,7 @@ function handleImportRemessa(rawRows){
 }
 
 /* ---- Import 3: planilha legada interna (NF + romaneio na mesma linha) ---- */
-function handleImportLegacy(rows){
+function handleImportLegacy(rows, colheitaId){
   const headers = Object.keys(rows[0]);
   const keys = {
     empresa: findKey(headers,['empresa']),
@@ -3168,7 +3208,7 @@ function handleImportLegacy(rows){
         id: uid('venda'), empresaId, produtorId, contratoId,
         nrNF: nrNF!=null ? String(nrNF) : ('S/N-'+uid('')), dataNF: todayISO(),
         pesoFiscal: num(keys.pesoFiscal ? row[keys.pesoFiscal] : PESO_FISCAL_PADRAO) || PESO_FISCAL_PADRAO,
-        valorFiscal: 0, chaveNFe:'', createdAt: new Date().toISOString(),
+        valorFiscal: 0, chaveNFe:'', colheitaId: colheitaId || null, createdAt: new Date().toISOString(),
       };
       state.vendas.push(venda);
       novasVendas++;
@@ -3203,7 +3243,20 @@ function handleImportLegacy(rows){
 }
 
 /* ---- Dispatcher de importação ---- */
-function handleImportFile(file){
+let arquivoImportacaoPendente = null;
+function abrirSelecaoColheitaImportacao(file){
+  arquivoImportacaoPendente = file;
+  openCadastroModal('selecionarColheitaImportacao', null);
+}
+function confirmarImportacaoComColheita(){
+  const sel = document.getElementById('fSelecionarColheitaImportacao');
+  const colheitaId = sel && sel.value ? sel.value : null;
+  const file = arquivoImportacaoPendente;
+  arquivoImportacaoPendente = null;
+  closeCadastroModal();
+  if(file) handleImportFile(file, colheitaId);
+}
+function handleImportFile(file, colheitaId){
   const reader = new FileReader();
   reader.onload = (e)=>{
     try{
@@ -3216,16 +3269,16 @@ function handleImportFile(file){
       const headerRow = rawRows[0].map(h=>String(h==null?'':h));
 
       if(isFormatoRemessa(headerRow)){
-        handleImportRemessa(rawRows);
+        handleImportRemessa(rawRows, colheitaId);
         return;
       }
 
       const objRows = XLSX.utils.sheet_to_json(sheet, {defval:null});
       if(!objRows.length){ toast('Não encontrei linhas de dados nessa planilha.', true); return; }
       const headers = Object.keys(objRows[0]);
-      if(isFormatoPadraoNF(headers)) handleImportPadraoNF(objRows);
-      else if(isFormatoSoftwareGestaoVenda(headers)) handleImportSoftwareGestaoVenda(objRows);
-      else handleImportLegacy(objRows);
+      if(isFormatoPadraoNF(headers)) handleImportPadraoNF(objRows, colheitaId);
+      else if(isFormatoSoftwareGestaoVenda(headers)) handleImportSoftwareGestaoVenda(objRows, colheitaId);
+      else handleImportLegacy(objRows, colheitaId);
     }catch(err){
       console.error(err);
       toast('Não foi possível ler essa planilha. Confira o formato.', true);
@@ -3290,7 +3343,7 @@ function exportToXlsx(){
   toast('Planilha exportada.');
 }
 
-document.getElementById('importInput').addEventListener('change', (e)=>{ if(e.target.files.length) handleImportFile(e.target.files[0]); e.target.value=''; });
+document.getElementById('importInput').addEventListener('change', (e)=>{ if(e.target.files.length) abrirSelecaoColheitaImportacao(e.target.files[0]); e.target.value=''; });
 
 /* ============================================================
    INICIALIZAÇÃO
