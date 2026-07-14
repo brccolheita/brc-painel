@@ -77,7 +77,6 @@ body.read-only #cardAcoesRapidas{ display:none; }
 body.read-only [data-tab="usuarios"], body.sem-acesso-usuarios [data-tab="usuarios"]{ display:none; }
 body.read-only #tab-usuarios, body.sem-acesso-usuarios #tab-usuarios{ display:none !important; }
 body.sem-liberar-acesso-motorista .cred-btn-acesso{ display:none; }
-body.sem-senha-motorista .cred-btn-senha{ display:none; }
 body.read-only .actions-row button,
 body.read-only h2 button,
 body.read-only #btnNovaCarga,
@@ -140,6 +139,10 @@ input, select, textarea{
   padding:9px 11px; font-size:13.5px; font-family:'Inter',sans-serif;
 }
 input:focus, select:focus, textarea:focus{ outline:none; border-color:var(--gold-dim); }
+input[type="date"]{ color-scheme: dark; }
+body.tema-claro input[type="date"]{ color-scheme: light; }
+input[type="date"]::-webkit-calendar-picker-indicator{ cursor:pointer; opacity:.85; }
+input[type="date"]::-webkit-calendar-picker-indicator:hover{ opacity:1; }
 .field{ margin-bottom:14px; }
 .form-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
 @media(max-width:700px){ .form-grid{ grid-template-columns:repeat(2,1fr); } }
@@ -403,7 +406,7 @@ const state = {
   empresas: [],    // {id, nome, cnpj}
   produtores: [],  // {id, nome, cpf}
   contratos: [],   // {id, tipo, empresaId, produtorId, culturaId, doc, volumeKg, valorKg, volumeSacas, valorSaca, alertaPercentual, localEntrega, obs}
-  motoristas: [],  // {id, nome, placa}
+  motoristas: [],  // {id, nome, placa, cpf}
   colheitas: [],   // {id, culturaId, variedadeId, area, talhao, produtorId} — cada lançamento é numerado na tela (1,2,3...)
   culturas: [],    // {id, nome:'Soja'|'Milho'|'Algodão', variedades:[{id,nome}]}
   vendas: [],      // ver schema abaixo
@@ -433,6 +436,13 @@ Se temRemessa=false, o destino é a própria empresa da venda.
 */
 
 function uid(prefix){ return prefix + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function gerarSenhaSugerida(placaValue){
+  const digitos = String(placaValue||'').replace(/\D/g,'');
+  let base = digitos.slice(-4);
+  while(base.length<4){ base += String(Math.floor(Math.random()*10)); }
+  return base;
+}
+function gerarSenhaAleatoria(){ return String(Math.floor(100000 + Math.random()*900000)); }
 
 function num(v){
   if(v===null||v===undefined||v==='') return 0;
@@ -827,10 +837,27 @@ function computeDashboard(){
 async function copiarTexto(texto){
   try{
     await navigator.clipboard.writeText(texto);
-    toast('Copiado! Já pode colar e enviar ao motorista.');
+    toast('Copiado! Já pode colar e enviar.');
   }catch(e){
     prompt('Não consegui copiar automaticamente. Copie manualmente:', texto);
   }
+}
+function linkAcessoSistema(tipo){
+  const base = location.origin + location.pathname;
+  return tipo==='motorista' ? base + '#motorista' : base;
+}
+function compartilharAcessoMotorista(motoristaId){
+  const m = state.motoristas.find(x=>x.id===motoristaId);
+  if(!m?.placa){ toast('Cadastre a placa deste motorista antes de compartilhar o acesso.', true); return; }
+  const acesso = state.usuarios.find(u=>u.papel==='motorista' && u.motoristaId===motoristaId);
+  if(!acesso?.senha){ toast('Defina uma senha pra este motorista em "Editar" antes de compartilhar o acesso.', true); return; }
+  copiarTexto(`Acesso ao sistema BRC\nLink: ${linkAcessoSistema('motorista')}\nUsuário (placa): ${normalizarPlaca(m.placa)}\nSenha: ${acesso.senha}`);
+}
+function compartilharAcessoUsuario(usuarioId){
+  const u = state.usuarios.find(x=>x.id===usuarioId);
+  if(!u){ return; }
+  if(!u.senha){ toast('Defina uma senha pra este usuário antes de compartilhar o acesso.', true); return; }
+  copiarTexto(`Acesso ao sistema BRC\nLink: ${linkAcessoSistema('usuario')}\nUsuário: ${u.usuario}\nSenha: ${u.senha}`);
 }
 function toast(msg, isErr){
   const el = document.createElement('div');
@@ -927,7 +954,7 @@ function renderUsuarios(){
         <h3 style="margin:0;">Usuários e acessos</h3>
         <button class="btn" onclick="openCadastroModal('usuario')">+ Novo usuário</button>
       </div>
-      <p class="small-note" style="margin-top:0;">Contas de Admin e Produtor são criadas aqui. Acessos de Motorista são liberados na aba Cadastros, ao lado de cada motorista cadastrado — o login dele é sempre a placa do caminhão + o nome da fazenda.</p>
+      <p class="small-note" style="margin-top:0;">Contas de Admin e Produtor são criadas aqui. Acessos de Motorista são criados na aba Cadastros, junto com o cadastro de cada motorista — o login dele é sempre a placa do caminhão, com a senha definida no cadastro dele.</p>
       <table>
         <thead><tr><th>Usuário</th><th>Papel</th><th>Vínculo</th><th>Expira em</th><th>Status</th><th></th></tr></thead>
         <tbody>
@@ -942,7 +969,11 @@ function renderUsuarios(){
               <td>${u.expiraEm || 'sem expiração'}</td>
               <td>${expirado ? '<span style="color:var(--red)">expirado</span>' : '<span style="color:var(--lime)">ativo</span>'}</td>
               <td><div class="actions-row">
-                ${u.papel==='motorista' ? `<button class="btn ghost sm" onclick="openCadastroModal('acessoMotorista','${u.motoristaId}')">Gerenciar</button>` : `<button class="btn ghost sm" onclick="openCadastroModal('usuario','${u.id}')">Editar</button>`}
+                ${u.papel==='motorista'
+                  ? `<button class="btn ghost sm" onclick="openCadastroModal('acessoMotorista','${u.motoristaId}')">Gerenciar</button>
+                     <button class="btn ghost sm" onclick="compartilharAcessoMotorista('${u.motoristaId}')">📤 Compartilhar</button>`
+                  : `<button class="btn ghost sm" onclick="openCadastroModal('usuario','${u.id}')">Editar</button>
+                     <button class="btn ghost sm" onclick="compartilharAcessoUsuario('${u.id}')">📤 Compartilhar</button>`}
                 <button class="btn ghost sm" onclick="excluirUsuario('${u.id}')">Excluir</button>
               </div></td>
             </tr>`;
@@ -975,44 +1006,16 @@ async function salvarUsuario(id){
   renderUsuarios();
   toast('Usuário salvo.');
 }
-async function salvarSenhaMotorista(motoristaId){
-  const m = state.motoristas.find(x=>x.id===motoristaId);
-  if(!m?.placa){ toast('Cadastre a placa deste motorista antes de definir uma senha.', true); return; }
-  const senha = document.getElementById('fSenhaMotoristaValor').value.trim();
-  if(!senha){ toast('Digite uma senha (ou use "Voltar pra senha padrão" para remover).', true); return; }
-  const usuarioPlaca = normalizarPlaca(m.placa);
-  let acesso = state.usuarios.find(u=>u.papel==='motorista' && u.motoristaId===motoristaId);
-  if(acesso){ acesso.senha = senha; acesso.usuario = usuarioPlaca; }
-  else{ state.usuarios.push({ id: uid('user'), usuario: usuarioPlaca, papel:'motorista', motoristaId, expiraEm:null, senha }); }
-  await saveUsuarios();
-  closeCadastroModal();
-  renderCadastros();
-  renderUsuarios();
-  toast('Senha individual definida para este motorista.');
-}
-async function voltarSenhaPadraoMotorista(motoristaId){
-  const acesso = state.usuarios.find(u=>u.papel==='motorista' && u.motoristaId===motoristaId);
-  if(acesso) delete acesso.senha;
-  await saveUsuarios();
-  closeCadastroModal();
-  renderCadastros();
-  renderUsuarios();
-  toast('Este motorista voltou a usar a senha padrão da fazenda.');
-}
 async function liberarAcessoMotorista(motoristaId){
   const m = state.motoristas.find(x=>x.id===motoristaId);
   if(!m?.placa){ toast('Cadastre a placa deste motorista antes de liberar o acesso.', true); return; }
-  if(!state.config.fazenda){ toast('Preencha o nome da fazenda em "Dados de Colheita" antes de liberar acessos de motorista.', true); return; }
+  const acessoAtual = state.usuarios.find(u=>u.papel==='motorista' && u.motoristaId===motoristaId);
+  if(!acessoAtual?.senha){ toast('Edite o motorista e defina uma senha de acesso antes de liberar o acesso.', true); return; }
   const expiraEm = document.getElementById('fAcessoMotoristaExpira').value || null;
   const usuarioPlaca = normalizarPlaca(m.placa);
-  let acesso = state.usuarios.find(u=>u.papel==='motorista' && u.motoristaId===motoristaId);
   const duplicado = state.usuarios.find(u=>u.usuario===usuarioPlaca && u.motoristaId!==motoristaId);
   if(duplicado){ toast('Já existe outro acesso liberado com essa placa.', true); return; }
-  if(acesso){
-    Object.assign(acesso, { usuario: usuarioPlaca, expiraEm });
-  }else{
-    state.usuarios.push({ id: uid('user'), usuario: usuarioPlaca, papel:'motorista', motoristaId, expiraEm });
-  }
+  Object.assign(acessoAtual, { usuario: usuarioPlaca, expiraEm });
   await saveUsuarios();
   closeCadastroModal();
   renderCadastros();
@@ -1145,7 +1148,7 @@ function renderCadastros(){
     <div class="card">
       <h2>Motoristas cadastrados <button class="btn sm" onclick="openCadastroModal('motorista')">➕ Novo motorista</button></h2>
       <div class="table-wrap"><table>
-        <thead>${filterHeaderCells('motoristas',[{key:'nome',label:'Nome'},{key:'placa',label:'Placa'},{key:null,label:'Acesso'},{key:null,label:''}])}</thead>
+        <thead>${filterHeaderCells('motoristas',[{key:'nome',label:'Nome'},{key:'cpf',label:'CPF'},{key:'placa',label:'Placa'},{key:null,label:'Acesso'},{key:null,label:''}])}</thead>
         <tbody id="tbody-motoristas"></tbody>
       </table></div>
     </div>
@@ -1235,18 +1238,18 @@ function updateTbodyMotoristas(){
     let acessoLabel;
     if(!acesso) acessoLabel = '<span class="tag muted">não liberado</span>';
     else if(usuarioExpirado(acesso)) acessoLabel = '<span class="tag pending">expirado</span>';
-    else acessoLabel = `<span class="tag ok">ativo${acesso.expiraEm?' até '+dataBR(acesso.expiraEm):''}</span>` + (acesso.senha ? ' <span class="tag muted" style="margin-left:4px;">senha própria</span>' : '');
+    else acessoLabel = `<span class="tag ok">ativo${acesso.expiraEm?' até '+dataBR(acesso.expiraEm):''}</span>`;
     return {
-      extract:{nome:m.nome, placa:m.placa||''},
-      html: `<tr><td>${m.nome}</td><td class="mono" style="font-size:11.5px">${m.placa||'—'}</td><td>${acessoLabel}</td>
+      extract:{nome:m.nome, cpf:m.cpf||'', placa:m.placa||''},
+      html: `<tr><td>${m.nome}</td><td class="mono" style="font-size:11.5px">${m.cpf||'—'}</td><td class="mono" style="font-size:11.5px">${m.placa||'—'}</td><td>${acessoLabel}</td>
         <td><div class="actions-row">
         <button class="btn ghost sm cred-btn-acesso" onclick="openCadastroModal('acessoMotorista','${m.id}')">${acesso?'Gerenciar acesso':'Liberar acesso'}</button>
-        <button class="btn ghost sm cred-btn-senha" onclick="openCadastroModal('senhaMotorista','${m.id}')">🔑 Senha</button>
+        <button class="btn ghost sm" onclick="compartilharAcessoMotorista('${m.id}')">📤 Compartilhar dados de acesso</button>
         <button class="btn ghost sm" onclick="openCadastroModal('motorista','${m.id}')">Editar</button>
         <button class="btn danger sm" onclick="deleteMotorista('${m.id}')">Excluir</button></div></td></tr>`
     };
   }).filter(r=>rowMatches(r.extract, filters));
-  document.getElementById('tbody-motoristas').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(4,'Nenhum motorista encontrado.');
+  document.getElementById('tbody-motoristas').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(5,'Nenhum motorista encontrado.');
 }
 function updateTbodyColheitas(){
   const rows = state.colheitas.map((t,i)=>{
@@ -1756,7 +1759,13 @@ function openCadastroModal(kind, id){
     body.innerHTML = `
       <div class="form-grid">
         <div class="field"><label>Usuário</label><input id="fUsuarioLogin" value="${u?u.usuario:''}" placeholder="Ex: joao.produtor"></div>
-        <div class="field"><label>Senha</label><input id="fUsuarioSenha" value="${u?u.senha:''}" placeholder="defina uma senha"></div>
+        <div class="field full">
+          <label>Senha</label>
+          <div class="actions-row" style="gap:6px;">
+            <input id="fUsuarioSenha" value="${u?u.senha:''}" placeholder="defina uma senha" style="flex:1;">
+            <button type="button" class="btn ghost sm" style="white-space:nowrap;" onclick="document.getElementById('fUsuarioSenha').value = gerarSenhaAleatoria()">🎲 Gerar senha</button>
+          </div>
+        </div>
         <div class="field"><label>Papel</label>
           <select id="fUsuarioPapel" onchange="document.getElementById('fUsuarioAdminPermsWrap').style.display = this.value==='admin' ? '' : 'none';">
             <option value="admin" ${u?.papel==='admin'?'selected':''}>Admin</option>
@@ -1787,24 +1796,6 @@ function openCadastroModal(kind, id){
       </div>`;
   }
 
-  if(kind==='senhaMotorista'){
-    const m = state.motoristas.find(x=>x.id===id);
-    const acesso = state.usuarios.find(u=>u.papel==='motorista' && u.motoristaId===id);
-    title.textContent = `Senha individual — ${m?.nome||''}`;
-    body.innerHTML = `
-      <p class="small-note" style="margin-top:-4px;">
-        Por padrão, todo motorista entra com o nome da fazenda como senha — o que significa que qualquer um que souber isso pode logar como outro motorista, bastando saber a placa dele. Defina aqui uma senha própria pra esse motorista específico e essa brecha se fecha.
-      </p>
-      <div class="field"><label>Senha própria deste motorista</label><input id="fSenhaMotoristaValor" value="${acesso?.senha||''}" placeholder="Ex: uma palavra fácil de lembrar"></div>
-      <button class="btn ghost sm" style="width:100%;margin-bottom:4px;" onclick="copiarTexto('Acesso ao sistema BRC\\nLink: ${location.origin+location.pathname}\\nUsuário (placa): ${m?normalizarPlaca(m.placa):''}\\nSenha: '+document.getElementById('fSenhaMotoristaValor').value)">📋 Copiar dados de acesso pra enviar</button>
-      <p class="small-note">${acesso?.senha ? 'Este motorista já usa uma senha própria (não a senha padrão da fazenda).' : 'Hoje este motorista ainda usa a senha padrão da fazenda.'}</p>
-      <div class="actions-row" style="justify-content:flex-end;margin-top:14px;">
-        ${acesso?.senha ? `<button class="btn ghost" onclick="voltarSenhaPadraoMotorista('${id}')">Voltar pra senha padrão</button>` : ''}
-        <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
-        <button class="btn" onclick="salvarSenhaMotorista('${id}')">Salvar senha</button>
-      </div>`;
-  }
-
   if(kind==='acessoMotorista'){
     const m = state.motoristas.find(x=>x.id===id);
     const acesso = state.usuarios.find(u=>u.papel==='motorista' && u.motoristaId===id);
@@ -1817,10 +1808,10 @@ function openCadastroModal(kind, id){
         <p class="small-note" style="margin-top:-4px;">
           O motorista faz login com:<br>
           <b>Usuário:</b> a placa do caminhão (<span class="mono">${normalizarPlaca(m.placa)}</span>)<br>
-          <b>Senha:</b> ${acesso?.senha ? `senha própria definida (veja/altere em "🔑 Senha")` : `o nome da fazenda cadastrado em Dados de Colheita (<span class="mono">${state.config.fazenda || '⚠️ não preenchido ainda'}</span>) — <i>defina uma senha própria em "🔑 Senha" pra evitar que motoristas usem a senha uns dos outros</i>`}
+          <b>Senha:</b> ${acesso?.senha ? 'a senha definida no cadastro do motorista (veja/altere em "Editar")' : '<span style="color:var(--red)">ainda não definida — edite o motorista e defina uma senha antes de liberar o acesso</span>'}
         </p>
-        <div class="field"><label>Prazo de validade deste acesso</label><input type="date" id="fAcessoMotoristaExpira" value="${acesso?.expiraEm||''}"></div>
-        <button class="btn ghost sm" style="width:100%;margin-bottom:4px;" onclick="copiarTexto('Acesso ao sistema BRC\\nLink: ${location.origin+location.pathname}\\nUsuário (placa): ${normalizarPlaca(m.placa)}\\nSenha: ${(acesso?.senha ? acesso.senha : (state.config.fazenda||''))}')">📋 Copiar dados de acesso pra enviar</button>
+        <div class="field"><label>Prazo de validade deste acesso <span class="small-note">(opcional)</span></label><input type="date" id="fAcessoMotoristaExpira" value="${acesso?.expiraEm||''}"></div>
+        <button class="btn ghost sm" style="width:100%;margin-bottom:4px;" onclick="compartilharAcessoMotorista('${id}')">📤 Compartilhar dados de acesso</button>
         <div class="actions-row" style="justify-content:flex-end;margin-top:14px;">
           ${acesso ? `<button class="btn danger" onclick="revogarAcessoMotorista('${id}')">Revogar acesso</button>` : ''}
           <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
@@ -1936,10 +1927,20 @@ function openCadastroModal(kind, id){
 
   if(kind==='motorista'){
     const m = id ? state.motoristas.find(x=>x.id===id) : null;
+    const acesso = id ? state.usuarios.find(u=>u.papel==='motorista' && u.motoristaId===id) : null;
     title.textContent = m ? 'Editar motorista' : 'Novo motorista';
     body.innerHTML = `
       <div class="field"><label>Nome do motorista</label><input id="fMotoristaNome" value="${m?m.nome:''}" placeholder="Ex: Tiago"></div>
-      <div class="field"><label>Placa</label><input id="fMotoristaPlaca" value="${m?.placa||''}" placeholder="Ex: RAN9G24"></div>
+      <div class="field"><label>CPF</label><input id="fMotoristaCpf" value="${m?.cpf||''}" placeholder="000.000.000-00"></div>
+      <div class="field"><label>Placa</label><input id="fMotoristaPlaca" value="${m?.placa||''}" placeholder="Ex: RAN9G24" style="text-transform:uppercase;"></div>
+      <div class="field">
+        <label>Senha de acesso ao sistema</label>
+        <div class="actions-row" style="gap:6px;">
+          <input id="fMotoristaSenha" value="${acesso?.senha||''}" placeholder="defina uma senha" style="flex:1;">
+          <button type="button" class="btn ghost sm" style="white-space:nowrap;" onclick="document.getElementById('fMotoristaSenha').value = gerarSenhaSugerida(document.getElementById('fMotoristaPlaca').value)">🎲 Gerar senha</button>
+        </div>
+        <p class="small-note" style="margin-top:6px;">O motorista faz login com a placa do caminhão como usuário e a senha definida aqui. Depois de salvar, use "📤 Compartilhar dados de acesso" na listagem pra enviar isso pra ele.</p>
+      </div>
       <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
         <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
         <button class="btn" onclick="salvarMotorista()">Salvar</button>
@@ -2111,15 +2112,33 @@ function salvarContrato(){
   }
   saveCadastros(); renderAll(); closeCadastroModal(); toast('Contrato salvo.');
 }
-function salvarMotorista(){
+async function salvarMotorista(){
   const nome = document.getElementById('fMotoristaNome').value.trim();
+  const cpf = document.getElementById('fMotoristaCpf').value.trim();
   const placa = document.getElementById('fMotoristaPlaca').value.trim().toUpperCase();
+  const senha = document.getElementById('fMotoristaSenha').value.trim();
   if(!nome){ toast('Informe o nome do motorista.', true); return; }
   const overlay = document.getElementById('modalCadastro');
   const id = overlay.dataset.id;
-  if(id){ const m = state.motoristas.find(x=>x.id===id); Object.assign(m, {nome, placa}); }
-  else{ state.motoristas.push({id: uid('mot'), nome, placa}); }
-  saveCadastros(); renderAll(); closeCadastroModal(); toast('Motorista salvo.');
+  let motoristaId = id;
+  if(id){ const m = state.motoristas.find(x=>x.id===id); Object.assign(m, {nome, cpf, placa}); }
+  else{ motoristaId = uid('mot'); state.motoristas.push({id: motoristaId, nome, cpf, placa}); }
+  saveCadastros();
+
+  if(placa && senha){
+    const usuarioPlaca = normalizarPlaca(placa);
+    const duplicado = state.usuarios.find(u=>u.papel==='motorista' && u.usuario===usuarioPlaca && u.motoristaId!==motoristaId);
+    if(duplicado){
+      toast('Motorista salvo, mas já existe outro acesso liberado com essa placa — ajuste antes de definir a senha.', true);
+    }else{
+      let acesso = state.usuarios.find(u=>u.papel==='motorista' && u.motoristaId===motoristaId);
+      if(acesso){ Object.assign(acesso, { usuario: usuarioPlaca, senha }); }
+      else{ state.usuarios.push({ id: uid('user'), usuario: usuarioPlaca, papel:'motorista', motoristaId, expiraEm:null, senha }); }
+      await saveUsuarios();
+    }
+  }
+
+  renderAll(); closeCadastroModal(); toast('Motorista salvo.');
 }
 function optionsVariedades(cultura, selectedId){
   if(!cultura || !cultura.variedades.length) return `<option value="">Nenhuma variedade cadastrada para ${cultura?cultura.nome:'a cultura ativa'}</option>`;
@@ -3782,9 +3801,7 @@ function tentarLogin(){
   const senha = document.getElementById('fLoginSenha').value;
   const u = state.usuarios.find(x=>x.usuario.toLowerCase()===usuario.toLowerCase());
   if(!u){ renderLoginScreen('Usuário ou senha incorretos.'); return; }
-  const senhaOk = u.papel==='motorista'
-    ? (u.senha ? senha===u.senha : stripAccents(senha)===stripAccents(state.config.fazenda||''))
-    : senha===u.senha;
+  const senhaOk = senha === u.senha;
   if(!senhaOk){ renderLoginScreen('Usuário ou senha incorretos.'); return; }
   if(usuarioExpirado(u)){ renderLoginScreen('Este acesso expirou. Fale com o administrador.'); return; }
   setSessao({ usuarioId: u.id, usuario: u.usuario, papel: u.papel, motoristaId: u.motoristaId||null,
