@@ -1157,16 +1157,6 @@ function renderCadastros(){
       </table></div>
     </div>
 
-    <div class="section-title">Venda / Armazenagem</div>
-    <div class="card" style="margin-bottom:24px;">
-      <h2>Empresas / armazéns de destino <button class="btn sm" onclick="openCadastroModal('empresa')">➕ Nova empresa</button></h2>
-      <p class="small-note" style="margin-top:-6px;margin-bottom:12px;">Também são criadas automaticamente ao importar o relatório de NFs.</p>
-      <div class="table-wrap"><table>
-        <thead>${filterHeaderCells('empresas',[{key:'nome',label:'Nome'},{key:'cnpj',label:'CNPJ'},{key:'cpf',label:'CPF'},{key:null,label:''}])}</thead>
-        <tbody id="tbody-empresas"></tbody>
-      </table></div>
-    </div>
-
     <div class="section-title">Contratos</div>
     <div class="card" style="margin-bottom:24px;">
       <h2>Contratos <button class="btn sm" onclick="openCadastroModal('contrato')">➕ Novo contrato</button></h2>
@@ -1179,13 +1169,24 @@ function renderCadastros(){
           <p class="small-note" style="margin:0 0 10px 0;">
             <b>Importar contrato fechado (PDF):</b> envie o PDF do contrato assinado — uma IA especializada em contratos de
             grãos lê o texto e identifica produtor, comprador, cultura, quantidade, valor por saca/kg, número do contrato,
-            data do contrato, prazo de entrega e data de pagamento. Você confere e corrige antes de gravar; isso já cadastra
-            ou atualiza produtor, empresa e contrato de uma vez.
+            data do contrato, valor total, prazo de entrega e data de pagamento. Você confere e corrige antes de gravar; isso já
+            cadastra ou atualiza produtor, empresa e contrato de uma vez.
           </p>
           <button class="btn sm" id="btnImportContratoPDF">📄 Importar contrato em PDF</button>
+          <button class="btn ghost sm" onclick="gerarRelacaoContratos()">📊 Gerar relação de contratos</button>
           <input type="file" id="importContratoPDFInput" accept=".pdf" style="display:none">
         </div>
       </div>
+    </div>
+
+    <div class="section-title">Venda / Armazenagem</div>
+    <div class="card" style="margin-bottom:24px;">
+      <h2>Empresas / armazéns de destino <button class="btn sm" onclick="openCadastroModal('empresa')">➕ Nova empresa</button></h2>
+      <p class="small-note" style="margin-top:-6px;margin-bottom:12px;">Também são criadas automaticamente ao importar o relatório de NFs.</p>
+      <div class="table-wrap"><table>
+        <thead>${filterHeaderCells('empresas',[{key:'nome',label:'Nome'},{key:'cnpj',label:'CNPJ'},{key:'cpf',label:'CPF'},{key:null,label:''}])}</thead>
+        <tbody id="tbody-empresas"></tbody>
+      </table></div>
     </div>
 
     <div class="section-title">Motoristas</div>
@@ -1271,6 +1272,7 @@ function updateTbodyContratosCad(){
         <td>${volumeTxt}</td><td>${consumoTag}</td><td>${tagPrazo(prazos.entrega)}</td><td>${tagPrazo(prazos.pagamento)}</td>
         <td><div class="actions-row">
         ${c.temPdf ? `<button class="btn ghost sm" onclick="visualizarPdfContrato('${c.id}')">👁️ Visualizar</button>` : ''}
+        <button class="btn ghost sm" onclick="exportarContrato('${c.id}')">📤 Exportar</button>
         <button class="btn ghost sm" onclick="openCadastroModal('contrato','${c.id}')">Editar</button>
         <button class="btn danger sm" onclick="deleteContrato('${c.id}')">Excluir</button></div></td></tr>`
     };
@@ -2040,6 +2042,7 @@ function openCadastroModal(kind, id){
         <div class="field"><label>Data do contrato</label><input id="fContratoDataAssinatura" type="date" value="${c?.dataAssinatura||''}"></div>
         <div class="field"><label>Início da entrega</label><input id="fContratoDataInicio" type="date" value="${c?.dataInicioEntrega||''}"></div>
         <div class="field"><label>Final da entrega</label><input id="fContratoDataFinal" type="date" value="${c?.dataFinalEntrega||''}"></div>
+        <div class="field"><label>Valor total da venda <span class="small-note">opcional</span></label><input id="fContratoValorTotal" type="text" inputmode="decimal" value="${c?.valorTotal?fmtMoedaContrato(c.valorTotal, c.moeda):''}" placeholder="Ex: 970.000,00"></div>
         <div class="field"><label>Data do pagamento</label><input id="fContratoDataPagamento" type="date" value="${c?.dataPagamento||''}"></div>
         <div class="field full"><label>Observação</label><input id="fContratoObs" value="${c?c.obs||'':''}" placeholder="opcional"></div>
       </div>
@@ -2082,6 +2085,7 @@ function openCadastroModal(kind, id){
         <div class="field"><label>Data do contrato</label><input type="date" id="fPdfDataContrato" value="${p.dataContrato||''}"></div>
         <div class="field"><label>Início da entrega</label><input type="date" id="fPdfPrazoInicio" value="${p.prazoEntregaInicio||''}"></div>
         <div class="field"><label>Final da entrega</label><input type="date" id="fPdfPrazoFim" value="${p.prazoEntregaFim||''}"></div>
+        <div class="field"><label>Valor total da venda</label><input id="fPdfValorTotal" type="text" inputmode="decimal" value="${p.valorTotalContrato?fmtMoney(p.valorTotalContrato).replace(/[^\d,.-]/g,''):''}" placeholder="Ex: 970.000,00"></div>
         <div class="field"><label>Data do pagamento</label><input type="date" id="fPdfDataPagamento" value="${p.dataPagamento||''}"></div>
       </div>
       <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
@@ -2271,6 +2275,7 @@ function salvarContrato(){
   const dataAssinatura = document.getElementById('fContratoDataAssinatura').value || '';
   const dataInicioEntrega = document.getElementById('fContratoDataInicio').value || '';
   const dataFinalEntrega = document.getElementById('fContratoDataFinal').value || '';
+  const valorTotal = num(document.getElementById('fContratoValorTotal').value);
   const dataPagamento = document.getElementById('fContratoDataPagamento').value || '';
   const obs = document.getElementById('fContratoObs').value.trim();
   if(!empresaId || !produtorId){ toast('Selecione empresa e produtor.', true); return; }
@@ -2280,7 +2285,7 @@ function salvarContrato(){
   }
   const overlay = document.getElementById('modalCadastro');
   const id = overlay.dataset.id;
-  const dados = {tipo, culturaId, empresaId, produtorId, doc, moeda, volumeKg, valorKg, volumeSacas, valorSaca, alertaPercentual, dataAssinatura, dataInicioEntrega, dataFinalEntrega, dataPagamento, obs};
+  const dados = {tipo, culturaId, empresaId, produtorId, doc, moeda, volumeKg, valorKg, volumeSacas, valorSaca, alertaPercentual, valorTotal, dataAssinatura, dataInicioEntrega, dataFinalEntrega, dataPagamento, obs};
   if(id){
     const c = state.contratos.find(x=>x.id===id);
     Object.assign(c, dados);
@@ -3669,7 +3674,8 @@ Leia o texto abaixo, extraído de um contrato de compra e venda de grãos, e res
  "quantidadeKg": number ou null (quantidade total contratada, em quilos),
  "moeda": string ou null ("BRL" ou "USD"),
  "valorPorSaca": number ou null (valor por saca de 60kg, valor numérico, ex: 48.5),
- "valorPorKg": number ou null (valor por quilo; se o contrato só trouxer valor por saca, calcule dividindo por 60)
+ "valorPorKg": number ou null (valor por quilo; se o contrato só trouxer valor por saca, calcule dividindo por 60),
+ "valorTotalContrato": number ou null (valor total da venda/contrato em reais ou dólares, geralmente indicado como "VALOR TOTAL DO CONTRATO" ou similar)
 }
 Se um campo não estiver no texto ou não puder ser determinado com segurança, use null. Não invente valores. Responda somente o JSON.
 
@@ -3715,6 +3721,7 @@ function confirmarImportContratoPDF(){
   const dataAssinatura = document.getElementById('fPdfDataContrato').value || '';
   const dataInicioEntrega = document.getElementById('fPdfPrazoInicio').value || '';
   const dataFinalEntrega = document.getElementById('fPdfPrazoFim').value || '';
+  const valorTotal = num(document.getElementById('fPdfValorTotal').value);
   const dataPagamento = document.getElementById('fPdfDataPagamento').value || '';
 
   if(!vendedorNome || !compradorNome){ toast('Informe ao menos o nome do produtor e do comprador.', true); return; }
@@ -3727,7 +3734,7 @@ function confirmarImportContratoPDF(){
   const dados = {
     tipo, culturaId, empresaId, produtorId, doc: contratoNr, moeda,
     volumeKg, valorKg, volumeSacas: volumeKg ? +(volumeKg/60).toFixed(2) : 0, valorSaca: valorKg ? +(valorKg*60).toFixed(2) : 0,
-    dataAssinatura, dataInicioEntrega, dataFinalEntrega, dataPagamento,
+    valorTotal, dataAssinatura, dataInicioEntrega, dataFinalEntrega, dataPagamento,
     alertaPercentual: 75, obs: 'Criado a partir de importação de PDF de contrato (lido por IA).',
   };
   if(contratoPdfArquivo) dados.temPdf = true;
@@ -4132,6 +4139,53 @@ function handleImportFile(file, colheitaId){
 }
 
 /* ---- Exportação ---- */
+function exportarContrato(id){
+  const c = state.contratos.find(x=>x.id===id);
+  if(!c){ toast('Contrato não encontrado.', true); return; }
+  const s = calcSaldos().find(x=>x.contrato.id===id);
+  const headers = ['Campo','Valor'];
+  const rows = [
+    ['Tipo', c.tipo||''],
+    ['Nº Contrato', c.doc||''],
+    ['Empresa', empresaNome(c.empresaId)],
+    ['Produtor', produtorNome(c.produtorId)],
+    ['Cultura', culturaNome(c.culturaId)],
+    ['Moeda', c.moeda||'BRL'],
+    ['Volume (kg)', c.volumeKg||''],
+    ['Volume (sacas)', c.volumeSacas||''],
+    ['Valor do kg', c.valorKg||''],
+    ['Valor da saca', c.valorSaca||''],
+    ['Valor total da venda', c.valorTotal||''],
+    ['Data do contrato', c.dataAssinatura||''],
+    ['Início da entrega', c.dataInicioEntrega||''],
+    ['Final da entrega', c.dataFinalEntrega||''],
+    ['Data do pagamento', c.dataPagamento||''],
+    ['Entregue (kg)', s?fmt(s.entregueKg,0):''],
+    ['Saldo a entregar (kg)', s?fmt(s.saldoAEntregarKg,0):''],
+    ['Observação', c.obs||''],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'CONTRATO');
+  XLSX.writeFile(wb, `Contrato_${(c.doc||id).replace(/[\\/:*?"<>|]/g,'-')}.xlsx`);
+  toast('Contrato exportado.');
+}
+function gerarRelacaoContratos(){
+  const saldos = calcSaldos();
+  const headers = ['Tipo','Nº Contrato','Empresa','Produtor','Cultura','Moeda','Volume (kg)','Valor do kg','Valor total da venda',
+    'Data do contrato','Início entrega','Final entrega','Data pagamento','Entregue (kg)','Saldo a entregar (kg)'];
+  const rows = saldos.map(s=>{
+    const c = s.contrato;
+    return [c.tipo||'', c.doc||'', empresaNome(c.empresaId), produtorNome(c.produtorId), culturaNome(c.culturaId), c.moeda||'BRL',
+      c.volumeKg||'', c.valorKg||'', c.valorTotal||'', c.dataAssinatura||'', c.dataInicioEntrega||'', c.dataFinalEntrega||'',
+      c.dataPagamento||'', fmt(s.entregueKg,0), fmt(s.saldoAEntregarKg,0)];
+  });
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'RELAÇÃO DE CONTRATOS');
+  XLSX.writeFile(wb, `Relacao_de_contratos_${todayISO()}.xlsx`);
+  toast('Relação de contratos gerada.');
+}
 function exportToXlsx(){
   const headers = ['Nº NF Venda','Nº NF Remessa','Empresa Venda','Empresa Destino Final','Produtor','Natureza','Contrato',
     'Data Saída','Motorista','Placa','Nº Romaneio','Peso Fiscal','Valor Fiscal','Peso Bruto (Kg)','Umidade (kg)','Impureza',
@@ -4161,8 +4215,8 @@ function exportToXlsx(){
   XLSX.utils.book_append_sheet(wb, wsProdutores, 'PRODUTORES');
 
   const wsContratos = XLSX.utils.aoa_to_sheet([
-    ['Tipo','Nº Contrato','Empresa','Produtor','Cultura','Volume (kg)','Valor do kg','Volume (sacas)','Valor da saca','Início entrega','Final entrega','Data pagamento'],
-    ...state.contratos.map(c=>[c.tipo, c.doc, empresaNome(c.empresaId), produtorNome(c.produtorId), culturaNome(c.culturaId), c.volumeKg||'', c.valorKg||'', c.volumeSacas||'', c.valorSaca||'', c.dataInicioEntrega||'', c.dataFinalEntrega||'', c.dataPagamento||''])
+    ['Tipo','Nº Contrato','Empresa','Produtor','Cultura','Volume (kg)','Valor do kg','Volume (sacas)','Valor da saca','Valor total da venda','Início entrega','Final entrega','Data pagamento'],
+    ...state.contratos.map(c=>[c.tipo, c.doc, empresaNome(c.empresaId), produtorNome(c.produtorId), culturaNome(c.culturaId), c.volumeKg||'', c.valorKg||'', c.volumeSacas||'', c.valorSaca||'', c.valorTotal||'', c.dataInicioEntrega||'', c.dataFinalEntrega||'', c.dataPagamento||''])
   ]);
   XLSX.utils.book_append_sheet(wb, wsContratos, 'CONTRATOS');
 
@@ -4210,10 +4264,10 @@ function renderLoginScreen(erro){
       <h1 class="disp" style="font-size:24px;margin:0 0 4px 0;color:var(--gold);letter-spacing:-.3px;">BRC - Envio de romaneios</h1>
       <p style="color:var(--ink-dim);font-size:13px;margin:0 0 22px 0;">Informe a placa do caminhão e a senha cadastrada pelo administrador.</p>
       <div class="field"><label>Placa</label><input id="fLoginUsuario" style="text-transform:uppercase;" autocomplete="username" placeholder="Ex: QWE1010" value="${usuarioSalvo}"></div>
-      <div class="field"><label>Senha</label><input id="fLoginSenha" type="password" autocomplete="current-password"></div>
+      <div class="field"><label>Senha</label><input id="fLoginSenha" type="password" autocomplete="off"></div>
       <label style="display:flex;align-items:center;gap:8px;font-weight:400;font-size:12.5px;color:var(--ink-dim);margin:-6px 0 16px 0;">
         <input type="checkbox" id="fLoginSalvar" style="width:auto;" checked>
-        Salvar minha placa neste aparelho (a senha nunca fica salva)
+        Salvar meu usuário neste aparelho
       </label>
       ${erro ? `<div style="color:var(--red);font-size:13px;margin:6px 0 4px 0;">${erro}</div>` : ''}
       <button class="btn" style="width:100%;padding:12px;font-size:15px;margin-top:10px;" onclick="tentarLogin()">Entrar</button>
@@ -4223,10 +4277,10 @@ function renderLoginScreen(erro){
       <h1 class="disp" style="font-size:24px;margin:0 0 4px 0;color:var(--gold);letter-spacing:-.3px;">BRC</h1>
       <p style="color:var(--ink-dim);font-size:13px;margin:0 0 22px 0;">Entre com seu usuário e senha para acessar o painel.</p>
       <div class="field"><label>Usuário</label><input id="fLoginUsuario" autocomplete="username" value="${usuarioSalvo}"></div>
-      <div class="field"><label>Senha</label><input id="fLoginSenha" type="password" autocomplete="current-password"></div>
+      <div class="field"><label>Senha</label><input id="fLoginSenha" type="password" autocomplete="off"></div>
       <label style="display:flex;align-items:center;gap:8px;font-weight:400;font-size:12.5px;color:var(--ink-dim);margin:-6px 0 16px 0;">
         <input type="checkbox" id="fLoginSalvar" style="width:auto;" checked>
-        Salvar meu usuário neste aparelho (a senha nunca fica salva)
+        Salvar meu usuário neste aparelho
       </label>
       ${erro ? `<div style="color:var(--red);font-size:13px;margin:6px 0 4px 0;">${erro}</div>` : ''}
       <button class="btn" style="width:100%;padding:12px;font-size:15px;margin-top:10px;" onclick="tentarLogin()">Entrar</button>
