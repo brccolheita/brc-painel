@@ -2775,11 +2775,53 @@ async function visualizarFotoRomaneio(entregaId){
   }
 }
 function abrirLightboxFoto(dataUrl){
-  const overlay = document.createElement('div');
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;cursor:zoom-out;';
-  overlay.innerHTML = `<img src="${dataUrl}" style="max-width:100%;max-height:100%;border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,.5);">`;
-  overlay.onclick = ()=>overlay.remove();
-  document.body.appendChild(overlay);
+  const existente = document.getElementById('fotoRomaneioFlutuante');
+  if(existente) existente.remove();
+
+  const painel = document.createElement('div');
+  painel.id = 'fotoRomaneioFlutuante';
+  painel.style.cssText = `
+    position:fixed; top:80px; right:20px; z-index:9999;
+    width:300px; max-width:88vw; max-height:78vh;
+    background:var(--bg-2); border:1px solid var(--line); border-radius:12px;
+    box-shadow:0 12px 40px rgba(0,0,0,.55); overflow:hidden;
+    display:flex; flex-direction:column; resize:both;
+  `;
+  painel.innerHTML = `
+    <div id="fotoRomaneioHeader" style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid var(--line);cursor:move;user-select:none;flex:0 0 auto;">
+      <b style="font-size:12.5px;color:var(--gold);">📷 Foto do romaneio <span style="color:var(--ink-dim);font-weight:400;">(arraste pra mover)</span></b>
+      <button onclick="document.getElementById('fotoRomaneioFlutuante').remove()" style="background:none;border:none;color:var(--ink-dim);font-size:18px;cursor:pointer;line-height:1;padding:0 4px;">✕</button>
+    </div>
+    <div style="overflow:auto;flex:1;">
+      <img src="${dataUrl}" style="width:100%;display:block;">
+    </div>
+  `;
+  document.body.appendChild(painel);
+  tornarPainelArrastavel(painel, document.getElementById('fotoRomaneioHeader'));
+}
+
+function tornarPainelArrastavel(painel, alca){
+  let ativo = false, offX = 0, offY = 0;
+  function iniciar(x, y){
+    ativo = true;
+    const rect = painel.getBoundingClientRect();
+    offX = x - rect.left; offY = y - rect.top;
+    painel.style.right = 'auto';
+    painel.style.left = rect.left + 'px';
+    painel.style.top = rect.top + 'px';
+  }
+  function mover(x, y){
+    if(!ativo) return;
+    painel.style.left = (x - offX) + 'px';
+    painel.style.top = (y - offY) + 'px';
+  }
+  function soltar(){ ativo = false; }
+  alca.addEventListener('mousedown', e=>iniciar(e.clientX, e.clientY));
+  document.addEventListener('mousemove', e=>mover(e.clientX, e.clientY));
+  document.addEventListener('mouseup', soltar);
+  alca.addEventListener('touchstart', e=>{ const t=e.touches[0]; iniciar(t.clientX, t.clientY); }, {passive:true});
+  document.addEventListener('touchmove', e=>{ const t=e.touches[0]; mover(t.clientX, t.clientY); }, {passive:true});
+  document.addEventListener('touchend', soltar);
 }
 
 function renderModoMotorista(placaConhecida){
