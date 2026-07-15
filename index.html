@@ -702,6 +702,7 @@ function recalcUsarParaConfronto(groupKey){
 function recalcEntrega(e){
   e.pesoFiscal = num(e.pesoFiscal);
   e.pesoBruto = num(e.pesoBruto);
+  e.tara = num(e.tara);
   e.umidade = num(e.umidade);
   e.impureza = num(e.impureza);
   e.ardido = num(e.ardido);
@@ -713,7 +714,9 @@ function recalcEntrega(e){
     e.valorFiscal = +(e.pesoFiscal * 0.6).toFixed(2);
     e.valorFiscalAuto = true;
   }
-  e.pesoLiquidoSemDesc = +(e.pesoLiquidoComDesc - e.umidade - e.impureza - e.ardido).toFixed(2);
+  e.pesoLiquidoSemDesc = e.tara
+    ? +(e.pesoBruto - e.tara).toFixed(2)
+    : +(e.pesoLiquidoComDesc - e.umidade - e.impureza - e.ardido).toFixed(2);
   e.scsBruto = +(e.pesoBruto/60).toFixed(4);
   e.scsLiquidoComDesc = +(e.pesoLiquidoComDesc/60).toFixed(4);
   e.scsLiquidoSemDesc = +(e.pesoLiquidoSemDesc/60).toFixed(4);
@@ -874,24 +877,33 @@ async function fileToBase64(file){
 async function ocrRomaneio(file){
   const base64 = await fileToBase64(file);
   const mediaType = file.type || 'image/jpeg';
-  const prompt = `Você é um sistema de digitação de romaneios de recebimento de milho em armazém de cereais no Brasil.
+  const prompt = `Você é um sistema especializado em digitação de romaneios de recebimento de grãos (milho, soja, algodão) em armazém de cereais no Brasil.
 Extraia os dados visíveis na imagem do romaneio/ticket de balança e responda APENAS com um JSON válido (sem markdown, sem texto antes ou depois), usando exatamente estas chaves:
 {
  "empresaNome": string ou null (nome do armazém/empresa que recebeu a carga),
- "nrNFRemessa": string ou null (número da NF de remessa, se aparecer),
+ "produtorNome": string ou null (nome do produtor/vendedor dono da carga, se aparecer no romaneio),
+ "nrNF": string ou null (número da Nota Fiscal a que esse romaneio se refere — pode aparecer como "NF", "Nota Fiscal" ou "NF Produtor". Esse é o número que vincula o romaneio ao lançamento da NF já cadastrada, então precisa ser extraído com cuidado — veja a observação abaixo sobre o formato "NF Produtor: 216 - 920"),
+ "nrNFRemessa": string ou null (número da NF de remessa, se for diferente e aparecer separadamente),
  "motorista": string ou null,
  "placa": string ou null,
  "nrRomaneio": string ou null,
- "dataSaida": string ou null (formato AAAA-MM-DD),
- "pesoBruto": number ou null (kg),
+ "dataEntrada": string ou null (data de entrada/chegada do caminhão na balança, formato AAAA-MM-DD),
+ "horaEntrada": string ou null (horário de entrada, formato HH:MM em 24h),
+ "dataSaida": string ou null (data de saída/liberação do caminhão, formato AAAA-MM-DD),
+ "horaSaida": string ou null (horário de saída, formato HH:MM em 24h),
+ "pesoBruto": number ou null (peso bruto em kg — caminhão carregado. Em alguns romaneios aparece como "Peso Bruto Tara", que significa peso bruto ANTES de descontar a tara, ou seja, é o peso bruto mesmo — não confundir com a tara),
+ "tara": number ou null (peso da tara em kg — peso do caminhão vazio),
+ "pesoLiquidoSemDesc": number ou null (peso líquido em kg ANTES de aplicar os descontos de umidade/impureza/avariado — normalmente peso bruto menos a tara),
  "umidade": number ou null (desconto de umidade em kg),
  "impureza": number ou null (desconto de impureza em kg),
  "ardido": number ou null (desconto de ardido/avariado em kg),
  "txRecebimento": number ou null (kg),
- "pesoLiquidoComDesc": number ou null (peso líquido final em kg, valor final destacado no romaneio),
+ "pesoLiquidoComDesc": number ou null (peso líquido FINAL em kg, já com todos os descontos aplicados — valor final destacado no romaneio),
  "precoFrete": number ou null (R$ por saca, se aparecer)
 }
 Atenção: em alguns romaneios (ex: C.Vale) o nome do motorista aparece colado depois da placa na mesma linha "Placa: XXX0000 - - NOME". Nesse caso, extraia a placa (só letras/números) em "placa" e o nome que vem depois em "motorista", mesmo que não haja um campo separado escrito "Motorista".
+Atenção: em alguns romaneios (ex: C.Vale) o campo de NF aparece como "NF Produtor: 216 - 920" (dois números separados por traço). Nesse formato, o PRIMEIRO número é a NF que foi apresentada/lançada (a que importa para vincular o romaneio ao lançamento já cadastrado) — use "216" nesse exemplo, e ignore o segundo número.
+Se o romaneio trouxer peso bruto e tara mas não trouxer o peso líquido sem desconto de forma explícita, calcule pesoLiquidoSemDesc = pesoBruto - tara.
 Se um campo não estiver legível ou não existir na imagem, use null. Não invente valores. Responda somente o JSON.`;
 
   const response = await fetch(`${API_BASE}/ocr-romaneio`, {
@@ -1128,9 +1140,10 @@ function renderCadastros(){
       <div class="actions-row" style="margin-top:16px;padding-top:16px;border-top:1px solid var(--line);">
         <div style="flex:1 1 100%;">
           <p class="small-note" style="margin:0 0 10px 0;">
-            <b>Importar contrato fechado (PDF):</b> envie o PDF do contrato assinado — o sistema lê o texto e tenta identificar
-            comprador, vendedor, volume e preço. Você confere e corrige antes de gravar; isso já cadastra ou atualiza produtor,
-            empresa e contrato de uma vez.
+            <b>Importar contrato fechado (PDF):</b> envie o PDF do contrato assinado — uma IA especializada em contratos de
+            grãos lê o texto e identifica produtor, comprador, cultura, quantidade, valor por saca/kg, número do contrato,
+            data do contrato, prazo de entrega e data de pagamento. Você confere e corrige antes de gravar; isso já cadastra
+            ou atualiza produtor, empresa e contrato de uma vez.
           </p>
           <button class="btn sm" id="btnImportContratoPDF">📄 Importar contrato em PDF</button>
           <input type="file" id="importContratoPDFInput" accept=".pdf" style="display:none">
@@ -1373,6 +1386,7 @@ function updateTbodyCargas(){
       <td>${e.status==='pendente' ? '—' : extract.scs}</td><td>${statusTag(e.status)}</td>
       <td><div class="actions-row">
         ${incompleta ? `<button class="btn ghost sm" onclick="openCadastroModal('completarVenda','${v.id}')">Completar produtor</button>` : ''}
+        ${e.temFoto ? `<button class="btn ghost sm" onclick="visualizarFotoRomaneio('${e.id}')">👁️ Visualizar</button>` : ''}
         <button class="btn ghost sm" onclick="openEntregaModal('${e.id}'${e.status==='pendente'?", {completar:true}":''})">${e.status==='pendente'?'Lançar pesagem':'Editar'}</button>
         <button class="btn danger sm" onclick="deleteEntrega('${e.id}')">Excluir</button>
       </div></td>
@@ -1385,8 +1399,10 @@ Object.assign(TBODY_UPDATERS, { cargas: updateTbodyCargas });
 
 function deleteEntrega(id){
   if(!confirm('Excluir esta entrega/romaneio? Essa ação não pode ser desfeita.')) return;
+  const e = state.entregas.find(x=>x.id===id);
   state.entregas = state.entregas.filter(e=>e.id!==id);
   saveEntregas();
+  if(e?.temFoto){ window.storage.delete('romaneio-foto:'+id, true).catch(()=>{}); }
   renderAll();
   toast('Entrega excluída.');
 }
@@ -1443,6 +1459,7 @@ function updateTbodyConferencia(){
       <td>${extract.romaneio||'—'}</td><td>${extract.pesoBruto} kg</td><td>${extract.scs}</td>
       <td><div class="actions-row">
         <button class="btn ghost sm" onclick="openEntregaModal('${e.id}')">Revisar</button>
+        ${e.temFoto ? `<button class="btn ghost sm" onclick="visualizarFotoRomaneio('${e.id}')">👁️ Visualizar</button>` : ''}
         <button class="btn sm" onclick="confirmarEntrega('${e.id}')">✓ Confirmar</button>
         <button class="btn danger sm" onclick="rejeitarEntrega('${e.id}')">Rejeitar</button>
       </div></td>
@@ -1554,8 +1571,10 @@ function confirmarEntrega(id){
 }
 function rejeitarEntrega(id){
   if(!confirm('Rejeitar e excluir este envio? O motorista precisará enviar novamente.')) return;
+  const e = state.entregas.find(x=>x.id===id);
   state.entregas = state.entregas.filter(e=>e.id!==id);
   saveEntregas(); renderAll();
+  if(e?.temFoto){ window.storage.delete('romaneio-foto:'+id, true).catch(()=>{}); }
   toast('Envio rejeitado.');
 }
 
@@ -1876,6 +1895,7 @@ function openCadastroModal(kind, id){
         <div class="field"><label>Volume (sacas de 60kg) <span class="small-note">calculado</span></label><input id="fContratoVolumeSacas" type="text" value="${c?.volumeSacas?fmtInt(c.volumeSacas):''}" readonly></div>
         <div class="field"><label>Valor da saca <span class="small-note">calculado</span></label><input id="fContratoValorSaca" type="text" value="${c?.valorSaca?fmtMoedaContrato(c.valorSaca, c.moeda):''}" readonly></div>
         <div class="field"><label>Avisar consumo a partir de (%)</label><input id="fContratoAlerta" type="number" value="${c?.alertaPercentual||75}" placeholder="75"></div>
+        <div class="field"><label>Data do contrato</label><input id="fContratoDataAssinatura" type="date" value="${c?.dataAssinatura||''}"></div>
         <div class="field"><label>Início da entrega</label><input id="fContratoDataInicio" type="date" value="${c?.dataInicioEntrega||''}"></div>
         <div class="field"><label>Final da entrega</label><input id="fContratoDataFinal" type="date" value="${c?.dataFinalEntrega||''}"></div>
         <div class="field"><label>Data do pagamento</label><input id="fContratoDataPagamento" type="date" value="${c?.dataPagamento||''}"></div>
@@ -1890,18 +1910,21 @@ function openCadastroModal(kind, id){
 
   if(kind==='importarContratoPDF'){
     const p = contratoPdfParsed || {};
-    title.textContent = 'Confirmar dados extraídos do PDF';
+    const valorKgCalc = p.valorPorKg || (p.valorPorSaca ? p.valorPorSaca/60 : 0);
+    const culturaMatch = state.culturas.find(c=>stripAccents(c.nome).toLowerCase()===stripAccents(p.cultura||'').toLowerCase());
+    const culturaPadrao = culturaMatch || state.culturas.find(c=>c.nome===state.config.cultura);
+    title.textContent = 'Confirmar dados extraídos do contrato (lido por IA)';
     body.innerHTML = `
-      <p class="small-note" style="margin-top:-4px;">Confira e corrija o que o sistema encontrou no PDF antes de gravar — nem sempre a leitura automática acerta 100%.</p>
+      <p class="small-note" style="margin-top:-4px;">A IA leu o contrato e preencheu os campos abaixo — confira e corrija o que precisar antes de gravar.</p>
       <div class="form-grid">
-        <div class="field full"><label>Vendedor (produtor) — nome</label><input id="fPdfVendedorNome" value="${p.vendedorNome||''}" placeholder="Nome do vendedor"></div>
-        <div class="field full"><label>Vendedor — CPF/CNPJ</label><input id="fPdfVendedorDoc" value="${p.vendedorDoc||''}" placeholder="opcional"></div>
+        <div class="field full"><label>Produtor (vendedor) — nome</label><input id="fPdfVendedorNome" value="${p.produtorNome||''}" placeholder="Nome do produtor"></div>
+        <div class="field full"><label>Produtor — CPF</label><input id="fPdfVendedorDoc" value="${p.produtorCpf||''}" placeholder="opcional"></div>
         <div class="field full"><label>Comprador (empresa) — nome</label><input id="fPdfCompradorNome" value="${p.compradorNome||''}" placeholder="Nome do comprador"></div>
-        <div class="field full"><label>Comprador — CNPJ</label><input id="fPdfCompradorDoc" value="${p.compradorDoc||''}" placeholder="opcional"></div>
-        <div class="field"><label>Nº do contrato</label><input id="fPdfContratoNr" value="${p.contratoNr||''}" placeholder="Ex: 534/535"></div>
+        <div class="field full"><label>Comprador — CNPJ</label><input id="fPdfCompradorDoc" value="${p.compradorCnpj||''}" placeholder="opcional"></div>
+        <div class="field"><label>Nº do contrato</label><input id="fPdfContratoNr" value="${p.numeroContrato||''}" placeholder="Ex: 534/535"></div>
         <div class="field"><label>Tipo</label><select id="fPdfTipo">${optionsTipos()}</select></div>
-        <div class="field"><label>Cultura</label><select id="fPdfCultura">${optionsCulturas(state.culturas.find(c=>c.nome===state.config.cultura)?.id)}</select></div>
-        <div class="field"><label>Volume (kg)</label><input id="fPdfVolumeKg" type="text" inputmode="numeric" value="${p.volumeKg?fmtInt(p.volumeKg):''}" placeholder="Ex: 500.000" oninput="maskMilhar(this)"></div>
+        <div class="field"><label>Cultura</label><select id="fPdfCultura">${optionsCulturas(culturaPadrao?.id)}</select></div>
+        <div class="field"><label>Volume (kg)</label><input id="fPdfVolumeKg" type="text" inputmode="numeric" value="${p.quantidadeKg?fmtInt(p.quantidadeKg):''}" placeholder="Ex: 500.000" oninput="maskMilhar(this)"></div>
         <div class="field">
           <label>Valor do kg</label>
           <div class="actions-row" style="gap:6px;">
@@ -1909,9 +1932,13 @@ function openCadastroModal(kind, id){
               <option value="BRL" ${p.moeda!=='USD'?'selected':''}>R$</option>
               <option value="USD" ${p.moeda==='USD'?'selected':''}>US$</option>
             </select>
-            <input id="fPdfValorKg" type="text" inputmode="decimal" value="${p.valorKg?String(+p.valorKg.toFixed(4)).replace('.',','):''}" placeholder="Ex: 0,81" style="flex:1;">
+            <input id="fPdfValorKg" type="text" inputmode="decimal" value="${valorKgCalc?String(+valorKgCalc.toFixed(4)).replace('.',','):''}" placeholder="Ex: 0,81" style="flex:1;">
           </div>
         </div>
+        <div class="field"><label>Data do contrato</label><input type="date" id="fPdfDataContrato" value="${p.dataContrato||''}"></div>
+        <div class="field"><label>Início da entrega</label><input type="date" id="fPdfPrazoInicio" value="${p.prazoEntregaInicio||''}"></div>
+        <div class="field"><label>Final da entrega</label><input type="date" id="fPdfPrazoFim" value="${p.prazoEntregaFim||''}"></div>
+        <div class="field"><label>Data do pagamento</label><input type="date" id="fPdfDataPagamento" value="${p.dataPagamento||''}"></div>
       </div>
       <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
         <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
@@ -2083,6 +2110,7 @@ function salvarContrato(){
   const volumeSacas = num(document.getElementById('fContratoVolumeSacas').value);
   const valorSaca = num(document.getElementById('fContratoValorSaca').value);
   const alertaPercentual = num(document.getElementById('fContratoAlerta').value) || 75;
+  const dataAssinatura = document.getElementById('fContratoDataAssinatura').value || '';
   const dataInicioEntrega = document.getElementById('fContratoDataInicio').value || '';
   const dataFinalEntrega = document.getElementById('fContratoDataFinal').value || '';
   const dataPagamento = document.getElementById('fContratoDataPagamento').value || '';
@@ -2094,7 +2122,7 @@ function salvarContrato(){
   }
   const overlay = document.getElementById('modalCadastro');
   const id = overlay.dataset.id;
-  const dados = {tipo, culturaId, empresaId, produtorId, doc, moeda, volumeKg, valorKg, volumeSacas, valorSaca, alertaPercentual, dataInicioEntrega, dataFinalEntrega, dataPagamento, obs};
+  const dados = {tipo, culturaId, empresaId, produtorId, doc, moeda, volumeKg, valorKg, volumeSacas, valorSaca, alertaPercentual, dataAssinatura, dataInicioEntrega, dataFinalEntrega, dataPagamento, obs};
   if(id){
     const c = state.contratos.find(x=>x.id===id);
     Object.assign(c, dados);
@@ -2268,13 +2296,17 @@ function renderEntregaForm(entrega){
     <div class="field"><label>Motorista</label><input id="fEntregaMotorista" value="${entrega?.motorista||''}"></div>
     <div class="field"><label>Placa</label><input id="fEntregaPlaca" value="${entrega?.placa||''}"></div>
     <div class="field"><label>Nº Romaneio</label><input id="fEntregaRomaneio" value="${entrega?.nrRomaneio||''}"></div>
+    <div class="field"><label>Data de entrada</label><input type="date" id="fEntregaDataEntrada" value="${entrega?.dataEntrada||''}"></div>
+    <div class="field"><label>Hora de entrada</label><input type="time" id="fEntregaHoraEntrada" value="${entrega?.horaEntrada||''}"></div>
     <div class="field"><label>Data de saída</label><input type="date" id="fEntregaDataSaida" value="${entrega?.dataSaida||todayISO()}"></div>
+    <div class="field"><label>Hora de saída</label><input type="time" id="fEntregaHoraSaida" value="${entrega?.horaSaida||''}"></div>
   </div>`;
 
   // PESAGEM (só quando tipoLancamento = completo)
   html += `<div class="form-grid">
       <div class="field" data-completo-only><label>Peso fiscal (kg)</label><input type="number" id="fEntregaPesoFiscal" value="${entrega?.pesoFiscal ?? PESO_FISCAL_PADRAO}" oninput="updateComputedPreview()"></div>
       <div class="field" data-completo-only><label>Peso bruto (kg)</label><input type="number" id="fEntregaPesoBruto" value="${entrega?.pesoBruto ?? ''}" oninput="updateComputedPreview()"></div>
+      <div class="field" data-completo-only><label>Tara (kg)</label><input type="number" id="fEntregaTara" value="${entrega?.tara ?? ''}" oninput="updateComputedPreview()"></div>
       <div class="field" data-completo-only><label>Umidade — desconto (kg)</label><input type="number" id="fEntregaUmidade" value="${entrega?.umidade ?? 0}" oninput="updateComputedPreview()"></div>
       <div class="field" data-completo-only><label>Impureza — desconto (kg)</label><input type="number" id="fEntregaImpureza" value="${entrega?.impureza ?? 0}" oninput="updateComputedPreview()"></div>
       <div class="field" data-completo-only><label>Ardido/avariado — desconto (kg)</label><input type="number" id="fEntregaArdido" value="${entrega?.ardido ?? 0}" oninput="updateComputedPreview()"></div>
@@ -2402,9 +2434,15 @@ async function handleRomaneioFileMotorista(file){
 
   statusWrap.innerHTML = `<div class="ocr-status"><div class="spinner"></div> Lendo romaneio com IA...</div>`;
 
+  const [parsedResult, fotoResult] = await Promise.allSettled([
+    ocrRomaneio(file),
+    comprimirImagemArquivo(file, 1400, 0.72)
+  ]);
+
   let parsed = null, erro = null;
-  try{ parsed = await ocrRomaneio(file); }
-  catch(err){ erro = err.message; }
+  if(parsedResult.status === 'fulfilled') parsed = parsedResult.value;
+  else erro = parsedResult.reason?.message;
+  motoristaFotoAtual = fotoResult.status === 'fulfilled' ? fotoResult.value : null;
 
   const completo = !!(parsed && parsed.pesoBruto && parsed.pesoLiquidoComDesc && parsed.nrRomaneio);
 
@@ -2456,12 +2494,22 @@ function applyOcrToForm(p){
     const matchMot = state.motoristas.find(m=>stripAccents(m.nome)===stripAccents(p.motorista) || stripAccents(p.motorista).includes(stripAccents(m.nome)));
     if(matchMot){ const sel=document.getElementById('fCargaMotoristaSelect'); if(sel){ sel.value = matchMot.id; } }
   }
+  if(p.produtorNome){
+    const matchProd = state.produtores.find(x=>stripAccents(x.nome)===stripAccents(p.produtorNome) || stripAccents(p.produtorNome).includes(stripAccents(x.nome)));
+    const selProd = document.getElementById('fNovaVendaProdutor');
+    if(matchProd && selProd) selProd.value = matchProd.id;
+  }
   setVal('fEntregaMotorista', p.motorista);
   setVal('fEntregaPlaca', p.placa);
   setVal('fEntregaRomaneio', p.nrRomaneio);
+  const isoEntrada = toISODate(p.dataEntrada);
+  if(isoEntrada) setVal('fEntregaDataEntrada', isoEntrada);
+  setVal('fEntregaHoraEntrada', p.horaEntrada);
   const iso = toISODate(p.dataSaida);
   if(iso) setVal('fEntregaDataSaida', iso);
+  setVal('fEntregaHoraSaida', p.horaSaida);
   setVal('fEntregaPesoBruto', p.pesoBruto);
+  setVal('fEntregaTara', p.tara);
   setVal('fEntregaUmidade', p.umidade);
   setVal('fEntregaImpureza', p.impureza);
   setVal('fEntregaArdido', p.ardido);
@@ -2486,11 +2534,12 @@ function setVal(id, v){
 function updateComputedPreview(){
   const g = id => { const el = document.getElementById(id); return el ? num(el.value) : 0; };
   const pesoBruto = g('fEntregaPesoBruto');
+  const tara = g('fEntregaTara');
   const umidade = g('fEntregaUmidade'), impureza = g('fEntregaImpureza'), ardido = g('fEntregaArdido');
   const pesoLiquido = g('fEntregaPesoLiquido');
   const precoFrete = g('fEntregaPrecoFrete');
 
-  const pesoLiqSemDesc = pesoLiquido - umidade - impureza - ardido;
+  const pesoLiqSemDesc = tara ? (pesoBruto - tara) : (pesoLiquido - umidade - impureza - ardido);
   const scsBruto = pesoBruto/60;
   const scsLiquido = pesoLiqSemDesc/60;
   const valorFrete = scsBruto * precoFrete;
@@ -2549,11 +2598,15 @@ function salvarEntrega(){
   entrega.motorista = document.getElementById('fEntregaMotorista').value.trim();
   entrega.placa = document.getElementById('fEntregaPlaca').value.trim();
   entrega.nrRomaneio = document.getElementById('fEntregaRomaneio').value.trim();
+  entrega.dataEntrada = document.getElementById('fEntregaDataEntrada')?.value || '';
+  entrega.horaEntrada = document.getElementById('fEntregaHoraEntrada')?.value || '';
   entrega.dataSaida = document.getElementById('fEntregaDataSaida').value || todayISO();
+  entrega.horaSaida = document.getElementById('fEntregaHoraSaida')?.value || '';
 
   if(tipoLancamento==='completo'){
     entrega.pesoFiscal = document.getElementById('fEntregaPesoFiscal').value;
     entrega.pesoBruto = document.getElementById('fEntregaPesoBruto').value;
+    entrega.tara = document.getElementById('fEntregaTara')?.value || 0;
     entrega.umidade = document.getElementById('fEntregaUmidade').value;
     entrega.impureza = document.getElementById('fEntregaImpureza').value;
     entrega.ardido = document.getElementById('fEntregaArdido').value;
@@ -2584,6 +2637,46 @@ function salvarEntrega(){
    ============================================================ */
 
 let motoristaOcrData = null;
+let motoristaFotoAtual = null; // dataURL comprimido da foto do romaneio atual, salva junto com o envio
+function comprimirImagemArquivo(file, maxDim, quality){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if(w > maxDim || h > maxDim){
+          const scale = maxDim / Math.max(w, h);
+          w = Math.round(w*scale); h = Math.round(h*scale);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+async function visualizarFotoRomaneio(entregaId){
+  try{
+    const res = await window.storage.get('romaneio-foto:'+entregaId, true);
+    if(!res || !res.value){ toast('Foto não encontrada para este romaneio.', true); return; }
+    abrirLightboxFoto(res.value);
+  }catch(e){
+    toast('Não consegui carregar a foto deste romaneio.', true);
+  }
+}
+function abrirLightboxFoto(dataUrl){
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;cursor:zoom-out;';
+  overlay.innerHTML = `<img src="${dataUrl}" style="max-width:100%;max-height:100%;border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,.5);">`;
+  overlay.onclick = ()=>overlay.remove();
+  document.body.appendChild(overlay);
+}
 
 function renderModoMotorista(placaConhecida){
   document.body.innerHTML = `
@@ -2668,14 +2761,17 @@ function renderMinhasCargas(){
 }
 async function cancelarCargaMotorista(entregaId){
   if(!confirm('Cancelar este envio? Ele será removido e precisará ser reenviado se ainda for válido.')) return;
+  const e = state.entregas.find(x=>x.id===entregaId);
   state.entregas = state.entregas.filter(e=>e.id!==entregaId);
   await saveEntregas();
+  if(e?.temFoto){ window.storage.delete('romaneio-foto:'+entregaId, true).catch(()=>{}); }
   renderMinhasCargas();
   toast('Envio cancelado.');
 }
 
 function renderMotoristaForm(){
   motoristaOcrData = null;
+  motoristaFotoAtual = null;
   document.getElementById('motoristaSuccessWrap').style.display = 'none';
   const wrap = document.getElementById('motoristaFormWrap');
   wrap.style.display = '';
@@ -2698,11 +2794,14 @@ function renderMotoristaForm(){
 
 function resumoOcrHtml(p){
   const linhas = [
+    ['Produtor', p.produtorNome||'—'],
     ['Motorista', p.motorista||'—'],
     ['Placa', p.placa||'—'],
+    ['NF', p.nrNF || p.nrNFRemessa || '—'],
     ['Nº romaneio', p.nrRomaneio||'—'],
     ['Peso bruto', p.pesoBruto?fmt(p.pesoBruto,0)+' kg':'—'],
-    ['Peso líquido', p.pesoLiquidoComDesc?fmt(p.pesoLiquidoComDesc,0)+' kg':'—'],
+    ['Tara', p.tara?fmt(p.tara,0)+' kg':'—'],
+    ['Peso líquido final', p.pesoLiquidoComDesc?fmt(p.pesoLiquidoComDesc,0)+' kg':'—'],
   ];
   return `<div class="card" style="margin-top:10px;padding:12px 14px;">
     ${linhas.map(([l,v])=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;"><span style="color:var(--ink-dim);">${l}</span><b>${v}</b></div>`).join('')}
@@ -2728,61 +2827,76 @@ async function submitMotorista(forcarManual){
   const placaLogin = normalizarPlaca(document.getElementById('fMotoristaPlacaAtual')?.value || localStorage.getItem('brc_motorista_placa') || '');
   const placaFinal = normalizarPlaca(p.placa || placaLogin) || placaLogin;
   const motoristaCadastro = state.motoristas.find(m=>normalizarPlaca(m.placa)===placaFinal);
+  const nfRef = p.nrNF || p.nrNFRemessa || '';
 
   let link = { tipo:'novo' };
-  if(p.nrNFRemessa){
-    const entregaExistente = state.entregas.find(e=>e.nrNFRemessa && String(e.nrNFRemessa)===String(p.nrNFRemessa) && e.status!=='completo');
+  if(nfRef){
+    const entregaExistente = state.entregas.find(e=>e.nrNFRemessa && String(e.nrNFRemessa)===String(nfRef) && e.status!=='completo');
     if(entregaExistente){ link = { tipo:'entrega', entregaId: entregaExistente.id }; }
     else{
-      const vendaExistente = state.vendas.find(v=>String(v.nrNF)===String(p.nrNFRemessa));
+      const vendaExistente = state.vendas.find(v=>String(v.nrNF)===String(nfRef));
       if(vendaExistente){ link = { tipo:'venda', vendaId: vendaExistente.id }; }
     }
   }
 
   const dataSaida = toISODate(p.dataSaida) || todayISO();
+  const dataEntrada = toISODate(p.dataEntrada) || '';
   const camposComuns = {
     motorista: p.motorista || motoristaCadastro?.nome || '',
     placa: placaFinal || p.placa || '',
     nrRomaneio: p.nrRomaneio || '',
-    dataSaida,
+    dataEntrada, horaEntrada: p.horaEntrada || '',
+    dataSaida, horaSaida: p.horaSaida || '',
     pesoFiscal: PESO_FISCAL_PADRAO,
     pesoBruto: p.pesoBruto || 0,
+    tara: p.tara || 0,
     umidade: p.umidade || 0,
     impureza: p.impureza || 0,
     ardido: p.ardido || 0,
     txRecebimento: p.txRecebimento || 0,
     pesoLiquidoComDesc: p.pesoLiquidoComDesc || 0,
     precoFrete: p.precoFrete || 0,
+    temFoto: !!motoristaFotoAtual,
     updatedAt: new Date().toISOString(),
   };
 
+  let entregaFinal;
   if(link.tipo==='entrega'){
     const e = state.entregas.find(x=>x.id===link.entregaId);
     Object.assign(e, camposComuns);
     recalcEntrega(e);
     e.status = 'aguardando_conferencia';
+    entregaFinal = e;
   }else{
     let vendaId = link.vendaId;
     if(link.tipo==='novo'){
+      const produtorId = p.produtorNome ? getOrCreateProdutor(p.produtorNome) : null;
+      const empresaId = p.empresaNome ? getOrCreateEmpresa(p.empresaNome) : null;
       const venda = {
-        id: uid('venda'), empresaId: null, produtorId: null, contratoId: null,
-        nrNF: p.nrNFRemessa || ('S/N-'+Date.now()),
+        id: uid('venda'), empresaId, produtorId, contratoId: null,
+        nrNF: nfRef || ('S/N-'+Date.now()),
         dataNF: dataSaida, pesoFiscal: camposComuns.pesoBruto || 0, valorFiscal: 0, chaveNFe:'',
-        precisaCompletar: true,
+        precisaCompletar: !(produtorId && empresaId),
         createdAt: new Date().toISOString(),
       };
       state.vendas.push(venda);
       vendaId = venda.id;
     }
     const entrega = Object.assign({
-      id: uid('ent'), vendaId, temRemessa: !!p.nrNFRemessa, nrNFRemessa: p.nrNFRemessa || '', empresaDestinoId: null,
+      id: uid('ent'), vendaId, temRemessa: !!nfRef, nrNFRemessa: nfRef, empresaDestinoId: null,
       status: 'aguardando_conferencia', createdAt: new Date().toISOString(),
     }, camposComuns);
     recalcEntrega(entrega);
     state.entregas.push(entrega);
+    entregaFinal = entrega;
   }
 
   await saveCadastros(); await saveVendas(); await saveEntregas();
+
+  if(motoristaFotoAtual && entregaFinal){
+    try{ await window.storage.set('romaneio-foto:'+entregaFinal.id, motoristaFotoAtual, true); }
+    catch(e){ /* a foto é complementar — não trava o envio do romaneio se ela falhar ao salvar */ }
+  }
 
   document.getElementById('motoristaFormWrap').style.display = 'none';
   const successWrap = document.getElementById('motoristaSuccessWrap');
@@ -3257,7 +3371,14 @@ function handleImportContratoPDF(file){
         const content = await page.getTextContent();
         texto += content.items.map(it=>it.str).join(' ') + ' ';
       }
-      contratoPdfParsed = parseContratoPDFTexto(texto);
+      toast('Lendo o contrato com IA...');
+      try{
+        contratoPdfParsed = await analisarContratoIA(texto);
+      }catch(errIA){
+        console.error(errIA);
+        toast('A IA não conseguiu ler os dados automaticamente — preencha manualmente.', true);
+        contratoPdfParsed = {};
+      }
       openCadastroModal('importarContratoPDF', null);
     }catch(err){
       console.error(err);
@@ -3266,34 +3387,45 @@ function handleImportContratoPDF(file){
   };
   reader.readAsArrayBuffer(file);
 }
-function parseContratoPDFTexto(textoOriginal){
-  const t = String(textoOriginal||'').replace(/\s+/g,' ');
-  const r = { vendedorNome:'', vendedorDoc:'', compradorNome:'', compradorDoc:'', volumeKg:0, valorKg:0, moeda:'BRL', contratoNr:'' };
+async function analisarContratoIA(texto){
+  const prompt = `Você é um especialista em contratos de compra e venda de grãos (soja, milho, algodão) do agronegócio brasileiro.
+Leia o texto abaixo, extraído de um contrato de compra e venda de grãos, e responda APENAS com um JSON válido (sem markdown, sem texto antes ou depois), usando exatamente estas chaves:
+{
+ "produtorNome": string ou null (nome da PESSOA FÍSICA produtora rural responsável por entregar o produto. Normalmente aparece como "PRODUTOR" ou "PRODUTOR GARANTIDOR E RESPONSÁVEL SOLIDÁRIO". Se o "VENDEDOR" do contrato for uma cooperativa/empresa (pessoa jurídica) e houver um produtor pessoa física garantidor listado separadamente, use o nome desse produtor pessoa física, e não o da cooperativa/empresa. Se não houver produtor pessoa física separado e o próprio VENDEDOR for pessoa física, use o nome do VENDEDOR),
+ "produtorCpf": string ou null (CPF do produtor pessoa física acima, com ou sem pontuação),
+ "compradorNome": string ou null (razão social da empresa COMPRADORA),
+ "compradorCnpj": string ou null (CNPJ da compradora, com ou sem pontuação),
+ "numeroContrato": string ou null (número/identificação do contrato),
+ "dataContrato": string ou null (data de assinatura/emissão do contrato, formato AAAA-MM-DD),
+ "prazoEntregaInicio": string ou null (data de início do prazo de entrega da mercadoria, formato AAAA-MM-DD),
+ "prazoEntregaFim": string ou null (data final do prazo de entrega da mercadoria, formato AAAA-MM-DD),
+ "dataPagamento": string ou null (data prevista de pagamento ao produtor/vendedor, formato AAAA-MM-DD),
+ "cultura": string ou null (exatamente uma destas opções: "Milho", "Soja" ou "Algodão", conforme o produto do contrato),
+ "quantidadeKg": number ou null (quantidade total contratada, em quilos),
+ "moeda": string ou null ("BRL" ou "USD"),
+ "valorPorSaca": number ou null (valor por saca de 60kg, valor numérico, ex: 48.5),
+ "valorPorKg": number ou null (valor por quilo; se o contrato só trouxer valor por saca, calcule dividindo por 60)
+}
+Se um campo não estiver no texto ou não puder ser determinado com segurança, use null. Não invente valores. Responda somente o JSON.
 
-  let m = t.match(/CONTRATO\s*N[ºO°]?\.?\s*[:\-]?\s*([0-9A-Za-z./-]+)/i);
-  if(m) r.contratoNr = m[1];
+TEXTO DO CONTRATO:
+"""
+${String(texto||'').slice(0, 15000)}
+"""`;
 
-  m = t.match(/VENDEDOR[A-Za-zÀ-ú\s]*?[:\-]\s*([^,;]{3,80}?)\s*[-,]?\s*(?:CPF|CNPJ)[:\s\/n°º.]*([\d.\/-]{11,18})/i);
-  if(m){ r.vendedorNome = m[1].trim(); r.vendedorDoc = m[2].trim(); }
-
-  m = t.match(/COMPRADOR[A-Za-zÀ-ú\s]*?[:\-]\s*([^,;]{3,80}?)\s*[-,]?\s*(?:CPF|CNPJ)[:\s\/n°º.]*([\d.\/-]{11,18})/i);
-  if(m){ r.compradorNome = m[1].trim(); r.compradorDoc = m[2].trim(); }
-
-  m = t.match(/([\d.,]{2,12})\s*(?:kg|quilos|quilogramas)/i);
-  if(m) r.volumeKg = num(m[1]);
-  if(!r.volumeKg){
-    m = t.match(/([\d.,]{1,10})\s*sacas?/i);
-    if(m) r.volumeKg = num(m[1]) * 60;
-  }
-
-  if(/US\$|D[ÓO]LAR/i.test(t)) r.moeda = 'USD';
-  m = t.match(/(?:PRE[ÇC]O|VALOR)\s*(?:DO|POR)?\s*KG[:\s]*(?:R\$|US\$)?\s*([\d.,]{1,8})/i);
-  if(m) r.valorKg = num(m[1]);
-  if(!r.valorKg){
-    m = t.match(/(?:PRE[ÇC]O|VALOR)\s*(?:DA|POR)?\s*SACA[:\s]*(?:R\$|US\$)?\s*([\d.,]{1,8})/i);
-    if(m) r.valorKg = num(m[1]) / 60;
-  }
-  return r;
+  const response = await fetch(`${API_BASE}/analisar-contrato`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-api-key": API_KEY },
+    body: JSON.stringify({ prompt })
+  });
+  if(!response.ok) throw new Error('Falha ao consultar IA (status ' + response.status + ')');
+  const data = await response.json();
+  const textBlock = (data.content || []).map(b=>b.text||'').join('\n').trim();
+  const clean = textBlock.replace(/^```json/i,'').replace(/^```/,'').replace(/```$/,'').trim();
+  let parsed;
+  try{ parsed = JSON.parse(clean); }
+  catch(e){ throw new Error('A IA não retornou um JSON válido.'); }
+  return parsed;
 }
 function confirmarImportContratoPDF(){
   const vendedorNome = document.getElementById('fPdfVendedorNome').value.trim();
@@ -3306,8 +3438,12 @@ function confirmarImportContratoPDF(){
   const moeda = document.getElementById('fPdfMoeda').value;
   const volumeKg = num(document.getElementById('fPdfVolumeKg').value);
   const valorKg = num(document.getElementById('fPdfValorKg').value);
+  const dataAssinatura = document.getElementById('fPdfDataContrato').value || '';
+  const dataInicioEntrega = document.getElementById('fPdfPrazoInicio').value || '';
+  const dataFinalEntrega = document.getElementById('fPdfPrazoFim').value || '';
+  const dataPagamento = document.getElementById('fPdfDataPagamento').value || '';
 
-  if(!vendedorNome || !compradorNome){ toast('Informe ao menos o nome do vendedor e do comprador.', true); return; }
+  if(!vendedorNome || !compradorNome){ toast('Informe ao menos o nome do produtor e do comprador.', true); return; }
   if(!contratoNr){ toast('Informe o número do contrato.', true); return; }
 
   const produtorId = getOrCreateProdutor(vendedorNome, vendedorDoc);
@@ -3317,7 +3453,8 @@ function confirmarImportContratoPDF(){
   const dados = {
     tipo, culturaId, empresaId, produtorId, doc: contratoNr, moeda,
     volumeKg, valorKg, volumeSacas: volumeKg ? +(volumeKg/60).toFixed(2) : 0, valorSaca: valorKg ? +(valorKg*60).toFixed(2) : 0,
-    alertaPercentual: 75, obs: 'Criado a partir de importação de PDF de contrato.',
+    dataAssinatura, dataInicioEntrega, dataFinalEntrega, dataPagamento,
+    alertaPercentual: 75, obs: 'Criado a partir de importação de PDF de contrato (lido por IA).',
   };
   if(contrato){ Object.assign(contrato, dados); }
   else { contrato = {id: uid('ctr'), ...dados}; state.contratos.push(contrato); }
