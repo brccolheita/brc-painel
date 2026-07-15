@@ -914,7 +914,11 @@ Se um campo não estiver legível ou não existir na imagem, use null. Não inve
     headers: { "Content-Type": "application/json", "x-api-key": API_KEY },
     body: JSON.stringify({ base64, mediaType, prompt })
   });
-  if(!response.ok) throw new Error('Falha ao consultar IA (status ' + response.status + ')');
+  if(!response.ok){
+    let detalhe = '';
+    try{ const errBody = await response.json(); detalhe = errBody.error || errBody.message || ''; }catch(e){}
+    throw new Error('Falha ao consultar IA (status ' + response.status + ')' + (detalhe ? ': ' + detalhe : ''));
+  }
   const data = await response.json();
   const textBlock = (data.content || []).map(b=>b.text||'').join('\n').trim();
   const clean = textBlock.replace(/^```json/i,'').replace(/^```/,'').replace(/```$/,'').trim();
@@ -1309,11 +1313,28 @@ function deleteColheita(id){
 /* ---------------- CARGAS & ROMANEIOS (entregas + vendas sem entrega) ---------------- */
 let mostrarComprovantes = false;
 function toggleComprovantes(){ mostrarComprovantes = !mostrarComprovantes; updateTbodyCargas(); }
+let cargasModo = 'ativas';
+function setCargasModo(m){ cargasModo = m; renderCargas(); }
+
 function renderCargas(){
   const el = document.getElementById('tab-cargas');
+  const nRejeitadas = state.entregas.filter(e=>e.status==='rejeitado').length;
+  el.innerHTML = `
+    <div class="actions-row" style="margin-bottom:16px;">
+      <button class="btn ${cargasModo==='ativas'?'':'ghost'} sm" onclick="setCargasModo('ativas')">Cargas &amp; Romaneios</button>
+      <button class="btn ${cargasModo==='rejeitadas'?'':'ghost'} sm" onclick="setCargasModo('rejeitadas')">Cargas rejeitadas${nRejeitadas>0?' ('+nRejeitadas+')':''}</button>
+    </div>
+    <div id="cargasConteudo"></div>
+  `;
+  if(cargasModo==='rejeitadas') renderCargasRejeitadas();
+  else renderCargasAtivas();
+}
+
+function renderCargasAtivas(){
+  const el = document.getElementById('cargasConteudo');
   el.innerHTML = `
     <div class="card">
-      <h2>Cargas &amp; Romaneios <small>${state.entregas.length} carga(s) — ${state.entregas.filter(e=>e.status==='completo').length} com pesagem completa</small>
+      <h2>Cargas &amp; Romaneios <small>${state.entregas.filter(e=>e.status!=='rejeitado').length} carga(s) — ${state.entregas.filter(e=>e.status==='completo').length} com pesagem completa</small>
         <button class="btn sm" id="btnNovaCarga">➕ Nova entrega</button>
       </h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:10px;">Dados da NF (importados) e dados do romaneio (foto/manual) na mesma linha, assim que cada carga é pesada.
@@ -1334,9 +1355,48 @@ function renderCargas(){
   updateTbodyCargas();
   document.getElementById('btnNovaCarga').addEventListener('click', ()=>openEntregaModal());
 }
+
+function renderCargasRejeitadas(){
+  const el = document.getElementById('cargasConteudo');
+  el.innerHTML = `
+    <div class="card">
+      <h2>Cargas rejeitadas <small>${state.entregas.filter(e=>e.status==='rejeitado').length} romaneio(s)</small></h2>
+      <p class="small-note" style="margin-top:-6px;margin-bottom:14px;">Romaneios enviados por motoristas e rejeitados pela conferência, com o motivo informado. O motorista é avisado ao acessar o link.</p>
+      <div class="table-wrap"><table>
+        <thead>${filterHeaderCells('cargasRejeitadas',[
+          {key:'rejeitadoEm',label:'Rejeitado em'},{key:'motorista',label:'Motorista'},{key:'romaneio',label:'Romaneio'},
+          {key:'motivo',label:'Motivo'},{key:null,label:''}])}</thead>
+        <tbody id="tbody-cargasRejeitadas"></tbody>
+      </table></div>
+    </div>
+  `;
+  updateTbodyCargasRejeitadas();
+}
+function updateTbodyCargasRejeitadas(){
+  const filters = getFilterValues('cargasRejeitadas');
+  const lista = state.entregas.filter(e=>e.status==='rejeitado').sort((a,b)=>(b.rejeitadoEm||'').localeCompare(a.rejeitadoEm||''));
+  const rows = lista.map(e=>{
+    const extract = {
+      rejeitadoEm: e.rejeitadoEm ? new Date(e.rejeitadoEm).toLocaleString('pt-BR') : '—',
+      motorista: (e.motorista||'')+(e.placa?' '+e.placa:''), romaneio: e.nrRomaneio||'', motivo: e.motivoRejeicao||''
+    };
+    const html = `<tr>
+      <td>${extract.rejeitadoEm}</td><td>${e.motorista||'—'}${e.placa?` (${e.placa})`:''}</td><td>${extract.romaneio||'—'}</td>
+      <td style="max-width:320px;white-space:normal;">${extract.motivo||'—'}</td>
+      <td><div class="actions-row">
+        ${e.temFoto ? `<button class="btn ghost sm" onclick="visualizarFotoRomaneio('${e.id}')">👁️ Visualizar</button>` : ''}
+        <button class="btn danger sm" onclick="deleteEntrega('${e.id}')">Excluir definitivamente</button>
+      </div></td>
+    </tr>`;
+    return {extract, html};
+  }).filter(r=>rowMatches(r.extract, filters));
+  document.getElementById('tbody-cargasRejeitadas').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(5,'Nenhuma carga rejeitada.');
+}
+Object.assign(TBODY_UPDATERS, { cargasRejeitadas: updateTbodyCargasRejeitadas });
 function statusTag(status){
   if(status==='completo') return `<span class="tag ok">completo</span>`;
   if(status==='aguardando_conferencia') return `<span class="tag pending">aguardando conferência</span>`;
+  if(status==='rejeitado') return `<span class="tag muted" style="color:var(--red);border-color:var(--red-dim);">rejeitado</span>`;
   return `<span class="tag muted">aguardando pesagem</span>`;
 }
 function labelColheita(colheitaId){
@@ -1350,7 +1410,7 @@ function labelColheita(colheitaId){
 }
 function updateTbodyCargas(){
   const filters = getFilterValues('cargas');
-  let lista = state.entregas.slice().sort((a,b)=>(b.dataSaida||'').localeCompare(a.dataSaida||''));
+  let lista = state.entregas.filter(e=>e.status!=='rejeitado').slice().sort((a,b)=>(b.dataSaida||'').localeCompare(a.dataSaida||''));
   if(!mostrarComprovantes){
     lista = lista.filter(e=>{ const v = vendaById(e.vendaId); return !v || v.usarParaConfronto !== false; });
   }
@@ -1573,12 +1633,21 @@ function confirmarEntrega(id){
   toast('Entrega confirmada e lançada no dashboard.');
 }
 function rejeitarEntrega(id){
-  if(!confirm('Rejeitar e excluir este envio? O motorista precisará enviar novamente.')) return;
+  openCadastroModal('rejeitarEntrega', id);
+}
+async function confirmarRejeicaoEntrega(id){
+  const motivo = document.getElementById('fMotivoRejeicao').value.trim();
+  if(!motivo){ toast('Escreva o motivo da rejeição — o motorista vai ver esse texto ao acessar o link.', true); return; }
   const e = state.entregas.find(x=>x.id===id);
-  state.entregas = state.entregas.filter(e=>e.id!==id);
-  saveEntregas(); renderAll();
-  if(e?.temFoto){ window.storage.delete('romaneio-foto:'+id, true).catch(()=>{}); }
-  toast('Envio rejeitado.');
+  if(!e) return;
+  e.status = 'rejeitado';
+  e.motivoRejeicao = motivo;
+  e.rejeitadoEm = new Date().toISOString();
+  e.vistoPeloMotorista = false;
+  await saveEntregas();
+  closeCadastroModal();
+  renderAll();
+  toast('Romaneio rejeitado. O motorista será avisado ao acessar o link.');
 }
 
 /* ---------------- CONTRATOS & SALDOS ---------------- */
@@ -1949,6 +2018,20 @@ function openCadastroModal(kind, id){
       </div>`;
   }
 
+  if(kind==='rejeitarEntrega'){
+    const e = state.entregas.find(x=>x.id===id);
+    title.textContent = 'Rejeitar romaneio';
+    body.innerHTML = `
+      <p class="small-note" style="margin-top:-4px;">Romaneio ${e?.nrRomaneio||'—'} · ${e?.motorista||'—'}${e?.placa?' ('+e.placa+')':''}</p>
+      <div class="field"><label>Motivo da rejeição <span class="small-note">(o motorista vai ver esse texto ao acessar o link)</span></label>
+        <textarea id="fMotivoRejeicao" rows="4" placeholder="Ex: Foto ilegível, peso não confere, romaneio duplicado..."></textarea>
+      </div>
+      <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
+        <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
+        <button class="btn danger" onclick="confirmarRejeicaoEntrega('${id}')">Rejeitar romaneio</button>
+      </div>`;
+  }
+
   if(kind==='motorista'){
     const m = id ? state.motoristas.find(x=>x.id===id) : null;
     const acesso = id ? state.usuarios.find(u=>u.papel==='motorista' && u.motoristaId===id) : null;
@@ -2200,6 +2283,7 @@ function salvarColheita(){
    ============================================================ */
 
 let entregaModalState = { id:null, vendaId:null, mode:'novaEntregaComVenda', tipoLancamento:'completo' };
+let entregaFotoAtual = null; // dataURL comprimido da foto enviada no modal de carga do admin
 
 function openEntregaModal(id, opts){
   opts = opts || {};
@@ -2210,6 +2294,7 @@ function openEntregaModal(id, opts){
   else { mode = 'novaEntregaComVenda'; }
 
   entregaModalState = { id: id||null, vendaId: entrega ? entrega.vendaId : (opts.vendaId||null), mode, tipoLancamento:'completo' };
+  entregaFotoAtual = null;
   document.getElementById('modalCargaTitle').textContent =
     mode==='completarPesagem' ? 'Lançar pesagem do romaneio' :
     mode==='editar' ? 'Editar entrega' : 'Nova entrega / romaneio';
@@ -2283,9 +2368,10 @@ function renderEntregaForm(entrega){
       <input type="file" id="fotoRomaneioInput" accept="image/*" capture="environment">
       <div class="icon">📷</div>
       <div><b>Envie a foto do romaneio</b> — a IA lê e preenche os campos abaixo</div>
-      <small>Arraste, cole (Ctrl+V) ou clique para escolher • usada só para leitura, não é salva</small>
+      <small>Arraste, cole (Ctrl+V) ou clique para escolher • a foto fica salva junto com o lançamento pra conferência</small>
     </div>
     <div id="ocrStatusWrap"></div>
+    ${entrega?.temFoto ? `<button type="button" class="btn ghost sm" style="margin-top:8px;" onclick="visualizarFotoRomaneio('${entrega.id}')">👁️ Ver foto já anexada a este romaneio</button>` : ''}
   `;
 
   // REMESSA + MOTORISTA + ROMANEIO (sempre visíveis — mesmo em lançamentos "pendentes", já pode se saber quem é o motorista)
@@ -2401,12 +2487,17 @@ async function handleRomaneioFile(file){
   reader.readAsDataURL(file);
 
   statusWrap.innerHTML = `<div class="ocr-status"><div class="spinner"></div> Lendo romaneio com IA...</div>`;
-  try{
-    const parsed = await ocrRomaneio(file);
-    applyOcrToForm(parsed);
+  const [parsedResult, fotoResult] = await Promise.allSettled([
+    ocrRomaneio(file),
+    comprimirImagemArquivo(file, 1400, 0.72)
+  ]);
+  entregaFotoAtual = fotoResult.status === 'fulfilled' ? fotoResult.value : null;
+
+  if(parsedResult.status === 'fulfilled'){
+    applyOcrToForm(parsedResult.value);
     statusWrap.innerHTML = `<div class="ocr-status" style="color:var(--lime)">✓ Romaneio lido — confira os campos antes de salvar</div>` + statusWrap.innerHTML;
-  }catch(err){
-    statusWrap.innerHTML = `<div class="ocr-status" style="color:var(--red)">⚠ ${err.message}. Preencha manualmente.</div>` + statusWrap.innerHTML;
+  }else{
+    statusWrap.innerHTML = `<div class="ocr-status" style="color:var(--red)">⚠ ${parsedResult.reason?.message||'Falha ao consultar a IA'}. A foto foi mantida — preencha os campos manualmente e salve normalmente.</div>` + statusWrap.innerHTML;
   }
   const camposWrap = document.getElementById('motoristaCamposWrap');
   if(camposWrap){
@@ -2555,7 +2646,7 @@ function updateComputedPreview(){
 function setText(id, v){ const el = document.getElementById(id); if(el) el.value = v; }
 
 /* ---------------- SALVAR ENTREGA ---------------- */
-function salvarEntrega(){
+async function salvarEntrega(){
   const mode = entregaModalState.mode;
   const tipoLancamento = (mode==='completarPesagem') ? 'completo' : (document.getElementById('fEntregaTipoLancamento')?.value || 'completo');
 
@@ -2625,9 +2716,14 @@ function salvarEntrega(){
     entrega.status = 'pendente';
   }
   entrega.updatedAt = new Date().toISOString();
+  if(entregaFotoAtual){ entrega.temFoto = true; }
 
   if(mode!=='editar' && mode!=='completarPesagem'){ state.entregas.push(entrega); }
-  saveCadastros(); saveVendas(); saveEntregas();
+  await saveCadastros(); await saveVendas(); await saveEntregas();
+  if(entregaFotoAtual){
+    try{ await window.storage.set('romaneio-foto:'+entrega.id, entregaFotoAtual, true); }
+    catch(e){ /* a foto é complementar — não trava o lançamento se falhar ao salvar */ }
+  }
   renderAll();
   closeCargaModal();
   toast(entrega.status==='completo' ? 'Entrega lançada com sucesso.' : 'Entrega registrada como pendente de pesagem.');
@@ -2690,6 +2786,8 @@ function renderModoMotorista(placaConhecida){
       </div>
       <p style="color:var(--ink-dim);font-size:13px;margin:0 0 16px 0;">Tire uma foto do romaneio. A equipe confere antes de lançar oficialmente — pode enviar quantos precisar.</p>
 
+      <div id="motoristaAvisoRejeicao"></div>
+
       <div class="field">
         <label>Placa do caminhão</label>
         <input id="fMotoristaPlacaAtual" style="text-transform:uppercase;" oninput="onPlacaAtualChange()" value="${placaConhecida||localStorage.getItem('brc_motorista_placa')||''}" ${placaConhecida?'disabled':''}>
@@ -2709,6 +2807,28 @@ function renderModoMotorista(placaConhecida){
   `;
   renderMotoristaForm();
   motoristaSwitchTab('enviar');
+  renderAvisosRejeicaoMotorista();
+}
+
+function renderAvisosRejeicaoMotorista(){
+  const wrap = document.getElementById('motoristaAvisoRejeicao');
+  if(!wrap) return;
+  const placaAtual = normalizarPlaca(document.getElementById('fMotoristaPlacaAtual')?.value || localStorage.getItem('brc_motorista_placa') || '');
+  if(!placaAtual){ wrap.innerHTML = ''; return; }
+  const rejeitados = state.entregas.filter(e=>e.status==='rejeitado' && !e.vistoPeloMotorista && normalizarPlaca(e.placa)===placaAtual);
+  if(!rejeitados.length){ wrap.innerHTML = ''; return; }
+  wrap.innerHTML = rejeitados.map(e=>`
+    <div class="card" style="border-color:var(--red-dim);background:var(--red-dim);margin-bottom:12px;padding:14px;">
+      <div style="font-weight:700;color:var(--red);">⚠ Romaneio rejeitado — Nº ${e.nrRomaneio||'—'}</div>
+      <div style="margin-top:6px;font-size:13.5px;">${String(e.motivoRejeicao||'').replace(/</g,'&lt;')}</div>
+      <button class="btn sm" style="margin-top:10px;" onclick="marcarRejeicaoVista('${e.id}')">Entendi</button>
+    </div>
+  `).join('');
+}
+async function marcarRejeicaoVista(entregaId){
+  const e = state.entregas.find(x=>x.id===entregaId);
+  if(e){ e.vistoPeloMotorista = true; await saveEntregas(); }
+  renderAvisosRejeicaoMotorista();
 }
 
 function normalizarPlaca(v){ return String(v||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
@@ -2718,6 +2838,7 @@ function onPlacaAtualChange(){
   const fPlaca = document.getElementById('fEntregaPlaca');
   if(fPlaca && !fPlaca.value) fPlaca.value = v;
   if(document.getElementById('motTabCargas').style.display !== 'none') renderMinhasCargas();
+  renderAvisosRejeicaoMotorista();
 }
 function motoristaSwitchTab(tab){
   const btnEnviar = document.getElementById('motTabBtnEnviar');
@@ -2758,6 +2879,7 @@ function renderMinhasCargas(){
           ${statusTag(e.status)}
         </div>
         <div style="margin-top:8px;font-size:13px;">Peso líquido: <b>${fmt(pesoLiq,0)} kg</b></div>
+        ${e.status==='rejeitado' ? `<div style="margin-top:8px;font-size:12.5px;color:var(--red);">Motivo: ${String(e.motivoRejeicao||'').replace(/</g,'&lt;')}</div>` : ''}
         ${podecancelar ? `<button class="btn ghost sm" style="margin-top:10px;" onclick="cancelarCargaMotorista('${e.id}')">Cancelar envio</button>` : ''}
       </div>`;
   }).join('');
@@ -3421,7 +3543,11 @@ ${String(texto||'').slice(0, 15000)}
     headers: { "Content-Type": "application/json", "x-api-key": API_KEY },
     body: JSON.stringify({ prompt })
   });
-  if(!response.ok) throw new Error('Falha ao consultar IA (status ' + response.status + ')');
+  if(!response.ok){
+    let detalhe = '';
+    try{ const errBody = await response.json(); detalhe = errBody.error || errBody.message || ''; }catch(e){}
+    throw new Error('Falha ao consultar IA (status ' + response.status + ')' + (detalhe ? ': ' + detalhe : ''));
+  }
   const data = await response.json();
   const textBlock = (data.content || []).map(b=>b.text||'').join('\n').trim();
   const clean = textBlock.replace(/^```json/i,'').replace(/^```/,'').replace(/```$/,'').trim();
