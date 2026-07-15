@@ -222,7 +222,10 @@ body.read-only .interacoes-fixed{ display:none; }
 .small-note{ font-size:11.5px; color:var(--ink-dim); }
 
 .th-flex{ display:flex; align-items:center; gap:6px; justify-content:space-between; }
-.filter-input.mini{ width:64px; padding:2px 6px; font-size:10.5px; background:var(--bg); border:1px solid var(--line); border-radius:5px; color:var(--ink-dim); opacity:.7; transition:opacity .15s, width .15s; }
+.th-filter-btn{ background:none; border:none; padding:1px 3px; cursor:pointer; font-size:11px; opacity:.45; border-radius:4px; line-height:1; }
+.th-filter-btn:hover{ opacity:.85; background:var(--bg); }
+.th-filter-btn.active{ opacity:1; color:var(--gold); }
+.filter-input.mini{ width:64px; padding:2px 6px; font-size:10.5px; background:var(--bg); border:1px solid var(--line); border-radius:5px; color:var(--ink-dim); opacity:.7; transition:opacity .15s, width .15s; margin-top:4px; }
 .filter-input.mini:focus{ opacity:1; width:100px; border-color:var(--gold-dim); color:var(--ink); }
 .filter-input.mini::placeholder{ color:var(--ink-dim); }
 
@@ -1073,8 +1076,18 @@ function rowMatches(extract, filters){
 }
 function filterHeaderCells(tableKey, cols){
   // cols: [{key, label}] — key null = coluna sem filtro (ex: ações)
-  const ths = cols.map(c=>`<th><div class="th-flex"><span>${c.label}</span>${c.key ? `<input type="text" class="filter-input mini" data-ftable="${tableKey}" data-fkey="${c.key}" placeholder="filtrar" oninput="onFilterInput('${tableKey}')">` : ''}</div></th>`).join('');
+  const ths = cols.map(c=>{
+    if(!c.key) return `<th>${c.label}</th>`;
+    return `<th><div class="th-flex"><span>${c.label}</span><button type="button" class="th-filter-btn" onclick="toggleColFilter(this)" title="Filtrar esta coluna">🔍</button></div><input type="text" class="filter-input mini" data-ftable="${tableKey}" data-fkey="${c.key}" placeholder="filtrar" style="display:none;" oninput="onFilterInput('${tableKey}'); this.previousElementSibling.querySelector('.th-filter-btn').classList.toggle('active', !!this.value)"></th>`;
+  }).join('');
   return `<tr>${ths}</tr>`;
+}
+function toggleColFilter(btn){
+  const th = btn.closest('th');
+  const input = th.querySelector('.filter-input');
+  const abrindo = input.style.display === 'none';
+  input.style.display = abrindo ? 'block' : 'none';
+  if(abrindo) input.focus();
 }
 function emptyRow(cols,msg){ return `<tr><td colspan="${cols}" style="text-align:center;color:var(--ink-dim);padding:20px;">${msg}</td></tr>`; }
 
@@ -1350,9 +1363,13 @@ function renderCargasAtivas(){
       <div class="table-wrap"><table>
         <thead>${filterHeaderCells('cargas',[
           {key:'empresa',label:'Empresa'},{key:'produtor',label:'Proprietário'},{key:'natureza',label:'Natureza'},
-          {key:'contrato',label:'Contrato nº'},{key:'nfVenda',label:'Nº NF'},{key:'data',label:'Data'},{key:'colheita',label:'Colheita'},
+          {key:'contrato',label:'Contrato nº'},{key:'nfVenda',label:'Nº NF'},{key:'data',label:'Data saída'},{key:'colheita',label:'Colheita'},
           {key:'pesoFiscal',label:'Peso fiscal'},{key:'valorFiscal',label:'Valor fiscal'},{key:'motorista',label:'Motorista'},{key:'placa',label:'Placa'},
-          {key:'romaneio',label:'Romaneio'},{key:'pesoBruto',label:'Peso bruto'},{key:'scs',label:'Scs líquido'},{key:'status',label:'Status'},{key:null,label:''}])}</thead>
+          {key:'romaneio',label:'Nº Romaneio'},{key:'pesoBruto',label:'Peso Bruto (Kg)'},{key:'umidade',label:'Umidade (kg)'},{key:'impureza',label:'Impureza (kg)'},
+          {key:'ardido',label:'Ardido/Avariado (kg)'},{key:'txRecebimento',label:'Tx Depósito (kg)'},
+          {key:'pesoLiqCom',label:'Peso Líq. COM desc. Depósito (Kg)'},{key:'pesoLiqSem',label:'Peso Líq. SEM desc. Depósito (Kg)'},
+          {key:'scsBruto',label:'Scs Bruto'},{key:'scsLiqCom',label:'Scs Líq. COM desc. Depósito'},{key:'scsLiqSem',label:'Scs Líq. SEM desc. Depósito'},
+          {key:'status',label:'Status'},{key:null,label:''}])}</thead>
         <tbody id="tbody-cargas"></tbody>
       </table></div>
     </div>
@@ -1431,7 +1448,9 @@ function updateTbodyCargas(){
       pesoFiscal: (e.pesoFiscal || v?.pesoFiscal) ? fmt(e.pesoFiscal || v.pesoFiscal,0) : '',
       valorFiscal: (e.valorFiscal || v?.valorFiscal) ? fmtMoney(e.valorFiscal || v.valorFiscal) : '',
       motorista: e.motorista||'', placa: e.placa||'', romaneio: e.nrRomaneio||'',
-      pesoBruto: fmt(e.pesoBruto,0), scs: fmt(e.scsLiquidoSemDesc), status: e.status
+      pesoBruto: fmt(e.pesoBruto,0), umidade: fmt(e.umidade,0), impureza: fmt(e.impureza,0), ardido: fmt(e.ardido,0),
+      txRecebimento: fmt(e.txRecebimento,0), pesoLiqCom: fmt(e.pesoLiquidoComDesc,0), pesoLiqSem: fmt(e.pesoLiquidoSemDesc,0),
+      scsBruto: fmt(e.scsBruto), scsLiqCom: fmt(e.scsLiquidoComDesc), scsLiqSem: fmt(e.scsLiquidoSemDesc), status: e.status
     };
     const produtorCell = incompleta
       ? `<span class="tag pending" title="Vindo do relatório de remessa sem produtor identificado">⚠ a identificar</span>`
@@ -1444,14 +1463,25 @@ function updateTbodyCargas(){
           ? `${colheitaTxt} <button class="btn ghost sm" onclick="openCadastroModal('selecionarColheita','${v.id}')" title="Trocar">✎</button>`
           : `<button class="btn ghost sm" onclick="openCadastroModal('selecionarColheita','${v.id}')">Selecionar colheita</button>`)
       : '—';
+    const pesado = e.status!=='pendente';
     const html = `<tr${ehComprovante?' style="opacity:.6"':''}>
       <td>${extract.empresa}</td><td>${produtorCell}</td><td>${naturezaCell}</td>
       <td class="mono" style="font-size:11.5px">${extract.contrato||'—'}</td><td>${extract.nfVenda||'—'}</td><td>${extract.data}</td>
       <td>${colheitaCell}</td>
       <td>${extract.pesoFiscal ? extract.pesoFiscal+' kg' : '<span class="small-note">a informar</span>'}</td>
       <td>${extract.valorFiscal||'—'}</td><td>${extract.motorista||'—'}</td><td>${extract.placa||'—'}</td>
-      <td>${extract.romaneio||'—'}</td><td>${e.status==='pendente' ? '—' : extract.pesoBruto+' kg'}</td>
-      <td>${e.status==='pendente' ? '—' : extract.scs}</td><td>${statusTag(e.status)}</td>
+      <td>${extract.romaneio||'—'}</td>
+      <td>${pesado ? extract.pesoBruto+' kg' : '—'}</td>
+      <td>${pesado ? extract.umidade+' kg' : '—'}</td>
+      <td>${pesado ? extract.impureza+' kg' : '—'}</td>
+      <td>${pesado ? extract.ardido+' kg' : '—'}</td>
+      <td>${pesado ? extract.txRecebimento+' kg' : '—'}</td>
+      <td>${pesado ? extract.pesoLiqCom+' kg' : '—'}</td>
+      <td>${pesado ? extract.pesoLiqSem+' kg' : '—'}</td>
+      <td>${pesado ? extract.scsBruto : '—'}</td>
+      <td>${pesado ? extract.scsLiqCom : '—'}</td>
+      <td>${pesado ? extract.scsLiqSem : '—'}</td>
+      <td>${statusTag(e.status)}</td>
       <td><div class="actions-row">
         ${incompleta ? `<button class="btn ghost sm" onclick="openCadastroModal('completarVenda','${v.id}')">Completar produtor</button>` : ''}
         ${e.temFoto ? `<button class="btn ghost sm" onclick="visualizarFotoRomaneio('${e.id}')">👁️ Visualizar</button>` : ''}
@@ -1461,7 +1491,7 @@ function updateTbodyCargas(){
     </tr>`;
     return {extract, html};
   }).filter(r=>rowMatches(r.extract, filters));
-  document.getElementById('tbody-cargas').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(16,'Nenhuma carga encontrada. Importe o relatório de NFs para começar.');
+  document.getElementById('tbody-cargas').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(24,'Nenhuma carga encontrada. Importe o relatório de NFs para começar.');
 }
 Object.assign(TBODY_UPDATERS, { cargas: updateTbodyCargas });
 
@@ -1503,8 +1533,12 @@ function renderConferenciaMotoristas(){
       <div class="table-wrap"><table>
         <thead>${filterHeaderCells('conferencia',[
           {key:'recebido',label:'Recebido em'},{key:'empresa',label:'Empresa venda'},{key:'produtor',label:'Produtor'},
-          {key:'nfRemessa',label:'Nº NF Remessa'},{key:'motorista',label:'Motorista'},{key:'romaneio',label:'Romaneio'},
-          {key:'pesoBruto',label:'Peso bruto'},{key:'scs',label:'Scs líquido'},{key:null,label:''}])}</thead>
+          {key:'nfRemessa',label:'Nº NF'},{key:'motorista',label:'Motorista'},{key:'romaneio',label:'Nº Romaneio'},{key:'data',label:'Data saída'},
+          {key:'pesoBruto',label:'Peso Bruto (Kg)'},{key:'umidade',label:'Umidade (kg)'},{key:'impureza',label:'Impureza'},{key:'ardido',label:'Ardido/Avariado'},
+          {key:'txRecebimento',label:'Tx Recebimento (kg)'},
+          {key:'pesoLiqCom',label:'Peso Líquido com desc. de Taxa de Depósito(Kg)'},{key:'pesoLiqSem',label:'Peso Líquido sem taxa de desconto de Depósito (Kg)'},
+          {key:'scsBruto',label:'Scs Bruto'},{key:'scsLiqCom',label:'Sacas líquido com desc. de taxa de depósito'},{key:'scsLiqSem',label:'Sacas líquido sem desc. de taxa de depósito'},
+          {key:null,label:''}])}</thead>
         <tbody id="tbody-conferencia"></tbody>
       </table></div>
     </div>
@@ -1519,12 +1553,18 @@ function updateTbodyConferencia(){
     const extract = {
       recebido: new Date(e.createdAt).toLocaleString('pt-BR'), empresa: v?empresaNome(v.empresaId):'—',
       produtor: v?produtorNome(v.produtorId):'—', nfRemessa: e.nrNFRemessa||'', motorista: (e.motorista||'')+(e.placa?' '+e.placa:''),
-      romaneio: e.nrRomaneio||'', pesoBruto: fmt(e.pesoBruto,0), scs: fmt(e.scsLiquidoSemDesc)
+      romaneio: e.nrRomaneio||'', data: dataBR(e.dataSaida),
+      pesoBruto: fmt(e.pesoBruto,0), umidade: fmt(e.umidade,0), impureza: fmt(e.impureza,0), ardido: fmt(e.ardido,0),
+      txRecebimento: fmt(e.txRecebimento,0), pesoLiqCom: fmt(e.pesoLiquidoComDesc,0), pesoLiqSem: fmt(e.pesoLiquidoSemDesc,0),
+      scsBruto: fmt(e.scsBruto), scsLiqCom: fmt(e.scsLiquidoComDesc), scsLiqSem: fmt(e.scsLiquidoSemDesc)
     };
     const html = `<tr>
       <td>${extract.recebido}</td><td>${extract.empresa}</td><td>${extract.produtor}</td>
       <td>${extract.nfRemessa||'—'}</td><td>${e.motorista||'—'}${e.placa?` (${e.placa})`:''}</td>
-      <td>${extract.romaneio||'—'}</td><td>${extract.pesoBruto} kg</td><td>${extract.scs}</td>
+      <td>${extract.romaneio||'—'}</td><td>${extract.data}</td>
+      <td>${extract.pesoBruto} kg</td><td>${extract.umidade} kg</td><td>${extract.impureza} kg</td><td>${extract.ardido} kg</td>
+      <td>${extract.txRecebimento} kg</td><td>${extract.pesoLiqCom} kg</td><td>${extract.pesoLiqSem} kg</td>
+      <td>${extract.scsBruto}</td><td>${extract.scsLiqCom}</td><td>${extract.scsLiqSem}</td>
       <td><div class="actions-row">
         <button class="btn ghost sm" onclick="openEntregaModal('${e.id}')">Revisar</button>
         ${e.temFoto ? `<button class="btn ghost sm" onclick="visualizarFotoRomaneio('${e.id}')">👁️ Visualizar</button>` : ''}
@@ -1534,7 +1574,7 @@ function updateTbodyConferencia(){
     </tr>`;
     return {extract, html};
   }).filter(r=>rowMatches(r.extract, filters));
-  document.getElementById('tbody-conferencia').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(9,'Nenhum envio de motorista aguardando conferência.');
+  document.getElementById('tbody-conferencia').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(18,'Nenhum envio de motorista aguardando conferência.');
 }
 Object.assign(TBODY_UPDATERS, { conferencia: updateTbodyConferencia });
 
