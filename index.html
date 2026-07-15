@@ -738,11 +738,14 @@ function calcSaldos(){
   return state.contratos.map(c=>{
     const vendasDoContrato = state.vendas.filter(v=>v.contratoId===c.id).map(v=>v.id);
     const entregasDoContrato = state.entregas.filter(e=>vendasDoContrato.includes(e.vendaId) && e.status==='completo');
-    const scsEntregues = entregasDoContrato.reduce((a,e)=>a+e.scsLiquidoSemDesc,0);
+    const entregueKg = entregasDoContrato.reduce((a,e)=>a+num(e.pesoLiquidoSemDesc),0);
+    const scsEntregues = entregueKg/60;
     const isVenda = stripAccents(c.tipo)==='venda';
     const volume = num(c.volumeSacas);
+    const volumeKg = num(c.volumeKg) || volume*60;
     const saldo = isVenda ? (scsEntregues - volume) : scsEntregues;
-    return { contrato:c, cargas: entregasDoContrato.length, scsEntregues, isVenda, volume, saldo };
+    const saldoAEntregarKg = volumeKg - entregueKg; // positivo = falta entregar; negativo = excedente
+    return { contrato:c, cargas: entregasDoContrato.length, scsEntregues, entregueKg, isVenda, volume, volumeKg, saldo, saldoAEntregarKg };
   });
 }
 
@@ -1266,7 +1269,9 @@ function updateTbodyContratosCad(){
       html: `<tr><td>${c.tipo}</td><td class="mono" style="font-size:11.5px">${c.doc}</td>
         <td>${empresaNome(c.empresaId)}</td><td>${produtorNome(c.produtorId)}</td><td>${culturaNome(c.culturaId)}</td>
         <td>${volumeTxt}</td><td>${consumoTag}</td><td>${tagPrazo(prazos.entrega)}</td><td>${tagPrazo(prazos.pagamento)}</td>
-        <td><div class="actions-row"><button class="btn ghost sm" onclick="openCadastroModal('contrato','${c.id}')">Editar</button>
+        <td><div class="actions-row">
+        ${c.temPdf ? `<button class="btn ghost sm" onclick="visualizarPdfContrato('${c.id}')">👁️ Visualizar</button>` : ''}
+        <button class="btn ghost sm" onclick="openCadastroModal('contrato','${c.id}')">Editar</button>
         <button class="btn danger sm" onclick="deleteContrato('${c.id}')">Excluir</button></div></td></tr>`
     };
   }).filter(r=>rowMatches(r.extract, filters));
@@ -1323,8 +1328,10 @@ function deleteContrato(id){
   const emUso = state.vendas.some(v=>v.contratoId===id);
   if(emUso){ toast('Este contrato tem vendas lançadas e não pode ser excluído.', true); return; }
   if(!confirm('Excluir este contrato?')) return;
+  const c = state.contratos.find(x=>x.id===id);
   state.contratos = state.contratos.filter(c=>c.id!==id);
   saveCadastros(); renderAll(); toast('Contrato excluído.');
+  if(c?.temPdf){ window.storage.delete('contrato-pdf:'+id, true).catch(()=>{}); }
 }
 function deleteMotorista(id){
   if(!confirm('Excluir este motorista?')) return;
@@ -1709,29 +1716,33 @@ async function confirmarRejeicaoEntrega(id){
 }
 
 /* ---------------- CONTRATOS & SALDOS ---------------- */
+let saldosUnidade = 'kg';
+function toggleSaldosUnidade(){ saldosUnidade = saldosUnidade==='kg' ? 'sacas' : 'kg'; renderContratos(); }
+
 function renderContratos(){
   const el = document.getElementById('tab-contratos');
   const atrasados = state.contratos.filter(c=>{ const p = calcPrazosContrato(c); return p.entrega.status==='atrasado' || p.pagamento.status==='atrasado'; });
   el.innerHTML = `
     <div class="card" style="margin-bottom:20px;">
-      <h2>Controle de saldos de contrato <small>${state.contratos.length} contrato(s)</small>
-        <button class="btn sm" onclick="openCadastroModal('contrato')">➕ Novo contrato</button>
+      <h2>Controle de saldos de contrato <small>${state.contratos.length} contrato(s) · somente visualização</small>
+        <button class="btn ghost sm" onclick="toggleSaldosUnidade()">⇄ Ver em ${saldosUnidade==='kg'?'sacas':'kg'}</button>
       </h2>
+      <p class="small-note" style="margin-top:-6px;margin-bottom:10px;">Contratos são criados e editados em "Dados de Colheita e Comercialização" → Contratos. Aqui é só acompanhamento.</p>
       ${atrasados.length ? `<p class="small-note" style="color:var(--red,#e05555);margin-bottom:12px;">⚠ ${atrasados.length} contrato(s) com entrega e/ou pagamento atrasado — veja as colunas destacadas abaixo.</p>` : ''}
       <div class="table-wrap resizable-wrap"><table id="table-contratos">
         <thead>${filterHeaderCells('contratos',[
           {key:'tipo',label:'Tipo'},{key:'empresa',label:'Empresa'},{key:'produtor',label:'Produtor'},{key:'doc',label:'Nº Contrato'},
-          {key:'volume',label:'Volume contratado (sc)'},{key:'entregues',label:'Scs entregues'},
-          {key:'saldo',label:'Saldo (sc)'},{key:'consumoKg',label:'Consumo (kg)'},{key:'entrega',label:'Prazo entrega'},{key:'pagamento',label:'Pagamento'},{key:null,label:''}])}</thead>
+          {key:'volume',label:'Volume do contrato ('+saldosUnidade+')'},{key:'entregues',label:'Entregue ('+saldosUnidade+')'},
+          {key:'saldo',label:'Saldo a entregar ('+saldosUnidade+')'},{key:'entrega',label:'Prazo entrega'},{key:'pagamento',label:'Pagamento'},{key:null,label:''}])}</thead>
         <tbody id="tbody-contratos"></tbody>
       </table></div>
     </div>
     <p class="small-note">
-      <b>Como funciona o saldo:</b> para contratos do tipo <b>Venda</b>, o saldo é <span class="mono">scs entregues − volume contratado</span>
-      (negativo = ainda falta entregar). Para <b>Depósito</b>, <b>Depósito a Fixar</b> e <b>Complemento</b>, o saldo mostra o total em sacas
-      já depositadas no armazém para esse contrato. O consumo em kg é calculado sobre o volume em kg cadastrado, e mostra um aviso
-      quando ultrapassa o percentual configurado (padrão 75%) e quando chega a 100% (contrato finalizado). Prazo de entrega e
-      pagamento ficam vermelhos quando vencidos, e amarelos quando faltam 7 dias ou menos.
+      <b>Como funciona o saldo:</b> "Entregue" é a soma do peso líquido de todas as cargas com pesagem completa vinculadas a este contrato.
+      Para contratos do tipo <b>Venda</b>, o "Saldo a entregar" é <span class="mono">volume do contrato − entregue</span> — quando fica
+      negativo, significa que já foi entregue além do volume contratado (excedente). Para <b>Depósito</b>, <b>Depósito a Fixar</b> e
+      <b>Complemento</b>, não existe um teto fixo — o saldo mostra apenas o total já entregue/depositado. Prazo de entrega e pagamento
+      ficam vermelhos quando vencidos, e amarelos quando faltam 7 dias ou menos.
     </p>
   `;
   updateTbodyContratos();
@@ -1740,41 +1751,41 @@ function renderContratos(){
 function updateTbodyContratos(){
   const filters = getFilterValues('contratos');
   const saldos = calcSaldos();
+  const div = saldosUnidade==='sacas' ? 60 : 1;
   const rows = saldos.map(s=>{
-    const cons = calcConsumoContrato(s.contrato);
     const prazos = calcPrazosContrato(s.contrato);
-    const tagClass = cons.status==='finalizado' ? 'neg' : (cons.status==='atencao' ? 'pending' : 'ok');
-    const consumoKgTxt = s.contrato.volumeKg
-      ? `<span class="tag ${tagClass}">${fmt(cons.consumidoKg,0)} / ${fmt(cons.volumeKg,0)} kg (${fmt(cons.percentual)}%)</span>`
-      : '<span class="small-note">sem volume em kg</span>';
+    const volumeTxt = s.volumeKg ? fmt(s.volumeKg/div, saldosUnidade==='kg'?0:2) : '—';
+    const entregueTxt = fmt(s.entregueKg/div, saldosUnidade==='kg'?0:2);
     const extract = {
       tipo: s.contrato.tipo, empresa: empresaNome(s.contrato.empresaId), produtor: produtorNome(s.contrato.produtorId),
-      doc: s.contrato.doc, volume: s.isVenda?fmt(s.volume):'', entregues: fmt(s.scsEntregues), saldo: fmt(s.saldo),
-      consumoKg: cons.status, entrega: prazos.entrega.status, pagamento: prazos.pagamento.status
+      doc: s.contrato.doc, volume: volumeTxt, entregues: entregueTxt, saldo: fmt(s.saldoAEntregarKg/div),
+      entrega: prazos.entrega.status, pagamento: prazos.pagamento.status
     };
     const html = `<tr>
       <td>${extract.tipo}</td><td>${extract.empresa}</td><td>${extract.produtor}</td>
       <td class="mono" style="font-size:11.5px">${extract.doc}</td>
-      <td>${s.isVenda ? fmt(s.volume) : '—'}</td><td>${fmt(s.scsEntregues)}</td><td>${saldoTag(s)}</td>
-      <td>${consumoKgTxt}</td><td>${tagPrazo(prazos.entrega)}</td><td>${tagPrazo(prazos.pagamento)}</td>
+      <td>${volumeTxt}</td><td>${entregueTxt}</td><td>${saldoTag(s, div)}</td>
+      <td>${tagPrazo(prazos.entrega)}</td><td>${tagPrazo(prazos.pagamento)}</td>
       <td><div class="actions-row">
-        <button class="btn ghost sm" onclick="openCadastroModal('contrato','${s.contrato.id}')">Editar</button>
-        <button class="btn danger sm" onclick="deleteContrato('${s.contrato.id}')">Excluir</button>
+        ${s.contrato.temPdf ? `<button class="btn ghost sm" onclick="visualizarPdfContrato('${s.contrato.id}')">👁️ Visualizar</button>` : '<span class="small-note">sem PDF</span>'}
       </div></td>
     </tr>`;
     return {extract, html};
   }).filter(r=>rowMatches(r.extract, filters));
-  document.getElementById('tbody-contratos').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(11,'Nenhum contrato encontrado.');
+  document.getElementById('tbody-contratos').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(10,'Nenhum contrato encontrado.');
 }
 Object.assign(TBODY_UPDATERS, { contratos: updateTbodyContratos });
 
-function saldoTag(s){
+function saldoTag(s, div){
+  div = div || 1;
+  const unidade = div===60 ? '' : ' kg';
   if(s.isVenda){
-    if(s.saldo < -0.5) return `<span class="tag pending">-${fmt(Math.abs(s.saldo))} (falta entregar)</span>`;
-    if(s.saldo > 0.5) return `<span class="tag ok">+${fmt(s.saldo)} (excedente)</span>`;
+    if(!s.volumeKg) return '<span class="small-note">defina o volume do contrato</span>';
+    if(s.saldoAEntregarKg > 0.5) return `<span class="tag pending">${fmt(s.saldoAEntregarKg/div)}${unidade} (falta entregar)</span>`;
+    if(s.saldoAEntregarKg < -0.5) return `<span class="tag ok">${fmt(Math.abs(s.saldoAEntregarKg)/div)}${unidade} (excedente)</span>`;
     return `<span class="tag ok">cumprido</span>`;
   }
-  return `<span class="tag muted">${fmt(s.saldo)} sc</span>`;
+  return `<span class="tag muted">${fmt(s.entregueKg/div)}${unidade} entregue</span>`;
 }
 
 /* ---------------- TROCA DE ABA ---------------- */
@@ -2047,6 +2058,8 @@ function openCadastroModal(kind, id){
     title.textContent = 'Confirmar dados extraídos do contrato (lido por IA)';
     body.innerHTML = `
       <p class="small-note" style="margin-top:-4px;">A IA leu o contrato e preencheu os campos abaixo — confira e corrija o que precisar antes de gravar.</p>
+      ${contratoPdfErro ? `<div class="ocr-status" style="color:var(--red);margin-bottom:12px;">⚠ A IA não conseguiu ler o contrato automaticamente: ${contratoPdfErro}. Preencha os campos manualmente abaixo.</div>` : ''}
+      ${contratoPdfArquivo ? `<button type="button" class="btn ghost sm" style="margin-bottom:12px;" onclick="visualizarPdfAtual()">👁️ Ver PDF enviado</button>` : ''}
       <div class="form-grid">
         <div class="field full"><label>Produtor (vendedor) — nome</label><input id="fPdfVendedorNome" value="${p.produtorNome||''}" placeholder="Nome do produtor"></div>
         <div class="field full"><label>Produtor — CPF</label><input id="fPdfVendedorDoc" value="${p.produtorCpf||''}" placeholder="opcional"></div>
@@ -3585,6 +3598,29 @@ function getOrCreateMotorista(nome, placa){
    por palavras-chave comuns em contrato de compra e venda de grãos. A extração é uma
    sugestão — o usuário sempre confere e corrige antes de gravar na base de dados. */
 let contratoPdfParsed = null;
+let contratoPdfErro = null;
+let contratoPdfArquivo = null; // dataURL do PDF original, arquivado junto com o contrato
+function arquivoParaDataUrl(file){
+  return new Promise((resolve, reject)=>{
+    const r = new FileReader();
+    r.onload = ()=>resolve(r.result);
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
+function visualizarPdfAtual(){
+  if(contratoPdfArquivo) window.open(contratoPdfArquivo, '_blank');
+  else toast('PDF não disponível.', true);
+}
+async function visualizarPdfContrato(contratoId){
+  try{
+    const res = await window.storage.get('contrato-pdf:'+contratoId, true);
+    if(!res || !res.value){ toast('PDF não encontrado para este contrato.', true); return; }
+    window.open(res.value, '_blank');
+  }catch(e){
+    toast('Não consegui carregar o PDF deste contrato.', true);
+  }
+}
 function handleImportContratoPDF(file){
   if(!window.pdfjsLib){ toast('Biblioteca de leitura de PDF não carregou. Verifique sua conexão.', true); return; }
   const reader = new FileReader();
@@ -3598,13 +3634,16 @@ function handleImportContratoPDF(file){
         texto += content.items.map(it=>it.str).join(' ') + ' ';
       }
       toast('Lendo o contrato com IA...');
+      contratoPdfErro = null;
       try{
         contratoPdfParsed = await analisarContratoIA(texto);
       }catch(errIA){
         console.error(errIA);
-        toast('A IA não conseguiu ler os dados automaticamente — preencha manualmente.', true);
+        contratoPdfErro = errIA.message;
         contratoPdfParsed = {};
       }
+      try{ contratoPdfArquivo = await arquivoParaDataUrl(file); }
+      catch(e){ contratoPdfArquivo = null; }
       openCadastroModal('importarContratoPDF', null);
     }catch(err){
       console.error(err);
@@ -3691,12 +3730,18 @@ function confirmarImportContratoPDF(){
     dataAssinatura, dataInicioEntrega, dataFinalEntrega, dataPagamento,
     alertaPercentual: 75, obs: 'Criado a partir de importação de PDF de contrato (lido por IA).',
   };
+  if(contratoPdfArquivo) dados.temPdf = true;
   if(contrato){ Object.assign(contrato, dados); }
   else { contrato = {id: uid('ctr'), ...dados}; state.contratos.push(contrato); }
 
   saveCadastros(); renderAll(); closeCadastroModal();
+  if(contratoPdfArquivo){
+    window.storage.set('contrato-pdf:'+contrato.id, contratoPdfArquivo, true).catch(()=>{});
+  }
   toast(`Contrato ${contratoNr} gravado: produtor "${vendedorNome}", empresa "${compradorNome}".`);
   contratoPdfParsed = null;
+  contratoPdfErro = null;
+  contratoPdfArquivo = null;
 }
 
 function parseMotoristaPlaca(v){
