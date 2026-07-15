@@ -916,7 +916,12 @@ Se um campo não estiver legível ou não existir na imagem, use null. Não inve
   });
   if(!response.ok){
     let detalhe = '';
-    try{ const errBody = await response.json(); detalhe = errBody.error || errBody.message || ''; }catch(e){}
+    try{
+      const errBody = await response.json();
+      if(typeof errBody.error === 'string') detalhe = errBody.error;
+      else if(errBody.error && errBody.error.message) detalhe = errBody.error.message;
+      else if(errBody.message) detalhe = errBody.message;
+    }catch(e){}
     throw new Error('Falha ao consultar IA (status ' + response.status + ')' + (detalhe ? ': ' + detalhe : ''));
   }
   const data = await response.json();
@@ -3545,7 +3550,12 @@ ${String(texto||'').slice(0, 15000)}
   });
   if(!response.ok){
     let detalhe = '';
-    try{ const errBody = await response.json(); detalhe = errBody.error || errBody.message || ''; }catch(e){}
+    try{
+      const errBody = await response.json();
+      if(typeof errBody.error === 'string') detalhe = errBody.error;
+      else if(errBody.error && errBody.error.message) detalhe = errBody.error.message;
+      else if(errBody.message) detalhe = errBody.message;
+    }catch(e){}
     throw new Error('Falha ao consultar IA (status ' + response.status + ')' + (detalhe ? ': ' + detalhe : ''));
   }
   const data = await response.json();
