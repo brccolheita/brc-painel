@@ -224,8 +224,7 @@ body.read-only .interacoes-fixed{ display:none; }
 .th-flex{ display:flex; align-items:center; gap:6px; justify-content:space-between; }
 table.table-resizable thead th{ color:var(--gold); font-weight:700; }
 body.tema-claro table.table-resizable thead th{ color:#000; }
-.col-resizer{ position:absolute; top:0; right:-3px; width:7px; height:100%; cursor:col-resize; z-index:3; }
-.col-resizer:hover, .col-resizer.resizing{ background:var(--gold-dim); }
+.table-wrap.resizable-wrap{ overflow:auto; resize:both; border:1px solid var(--line); border-radius:8px; min-width:320px; min-height:220px; max-width:100%; }
 .th-filter-btn{ background:none; border:none; padding:1px 3px; cursor:pointer; font-size:11px; opacity:.45; border-radius:4px; line-height:1; }
 .th-filter-btn:hover{ opacity:.85; background:var(--bg); }
 .th-filter-btn.active{ opacity:1; color:var(--gold); }
@@ -1099,30 +1098,6 @@ function tornarColunasRedimensionaveis(tableId){
   const table = document.getElementById(tableId);
   if(!table) return;
   table.classList.add('table-resizable');
-  const thead = table.querySelector('thead');
-  if(!thead) return;
-  Array.from(thead.querySelectorAll('th')).forEach(th=>{
-    if(th.querySelector('.col-resizer')) return;
-    th.style.position = 'relative';
-    const grip = document.createElement('span');
-    grip.className = 'col-resizer';
-    th.appendChild(grip);
-    grip.addEventListener('mousedown', e=>{
-      e.preventDefault(); e.stopPropagation();
-      const startX = e.clientX;
-      const startWidth = th.offsetWidth;
-      table.style.tableLayout = 'fixed';
-      grip.classList.add('resizing');
-      function onMove(ev){ th.style.width = Math.max(50, startWidth + (ev.clientX - startX)) + 'px'; }
-      function onUp(){
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
-        grip.classList.remove('resizing');
-      }
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
-    });
-  });
 }
 
 /* ---------------- CADASTROS (Produtores / Empresas / Contratos / Motoristas / Talhões) ---------------- */
@@ -1394,7 +1369,7 @@ function renderCargasAtivas(){
       <label class="small-note" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:14px;cursor:pointer;">
         <input type="checkbox" ${mostrarComprovantes?'checked':''} onchange="toggleComprovantes()"> mostrar também os comprovantes de remessa/complemento (fora do confronto)
       </label>
-      <div class="table-wrap"><table id="table-cargas">
+      <div class="table-wrap resizable-wrap"><table id="table-cargas">
         <thead>${filterHeaderCells('cargas',[
           {key:'empresa',label:'Empresa'},{key:'produtor',label:'Proprietário'},{key:'natureza',label:'Natureza'},
           {key:'contrato',label:'Contrato nº'},{key:'nfVenda',label:'Nº NF'},{key:'data',label:'Data saída'},{key:'colheita',label:'Colheita'},
@@ -1419,7 +1394,7 @@ function renderCargasRejeitadas(){
     <div class="card">
       <h2>Cargas rejeitadas <small>${state.entregas.filter(e=>e.status==='rejeitado').length} romaneio(s)</small></h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:14px;">Romaneios enviados por motoristas e rejeitados pela conferência, com o motivo informado. O motorista é avisado ao acessar o link.</p>
-      <div class="table-wrap"><table id="table-cargasRejeitadas">
+      <div class="table-wrap resizable-wrap"><table id="table-cargasRejeitadas">
         <thead>${filterHeaderCells('cargasRejeitadas',[
           {key:'rejeitadoEm',label:'Rejeitado em'},{key:'motorista',label:'Motorista'},{key:'romaneio',label:'Romaneio'},
           {key:'motivo',label:'Motivo'},{key:null,label:''}])}</thead>
@@ -1566,7 +1541,7 @@ function renderConferenciaMotoristas(){
       <p class="small-note" style="margin-top:-6px;margin-bottom:16px;">
         Lançamentos feitos pelo link do motorista caem aqui primeiro. Confira os dados antes de lançar oficialmente no dashboard.
       </p>
-      <div class="table-wrap"><table id="table-conferencia">
+      <div class="table-wrap resizable-wrap"><table id="table-conferencia">
         <thead>${filterHeaderCells('conferencia',[
           {key:'recebido',label:'Recebido em'},{key:'empresa',label:'Empresa venda'},{key:'produtor',label:'Produtor'},
           {key:'nfRemessa',label:'Nº NF'},{key:'motorista',label:'Motorista'},{key:'romaneio',label:'Nº Romaneio'},{key:'data',label:'Data saída'},
@@ -1639,7 +1614,7 @@ function renderConciliacao(){
     </div>
     ${conciliacaoResultado ? `
     <div class="card">
-      <div class="table-wrap"><table id="table-conciliacao">
+      <div class="table-wrap resizable-wrap"><table id="table-conciliacao">
         <thead><tr><th>Nº NF</th><th>Placa</th><th>Peso — empresa</th><th>Peso — nosso</th><th>Diferença</th><th>Status</th></tr></thead>
         <tbody>
           ${conciliacaoResultado.map(r=>`<tr>
@@ -1743,7 +1718,7 @@ function renderContratos(){
         <button class="btn sm" onclick="openCadastroModal('contrato')">➕ Novo contrato</button>
       </h2>
       ${atrasados.length ? `<p class="small-note" style="color:var(--red,#e05555);margin-bottom:12px;">⚠ ${atrasados.length} contrato(s) com entrega e/ou pagamento atrasado — veja as colunas destacadas abaixo.</p>` : ''}
-      <div class="table-wrap"><table id="table-contratos">
+      <div class="table-wrap resizable-wrap"><table id="table-contratos">
         <thead>${filterHeaderCells('contratos',[
           {key:'tipo',label:'Tipo'},{key:'empresa',label:'Empresa'},{key:'produtor',label:'Produtor'},{key:'doc',label:'Nº Contrato'},
           {key:'volume',label:'Volume contratado (sc)'},{key:'entregues',label:'Scs entregues'},
