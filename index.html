@@ -231,10 +231,13 @@ body.read-only .interacoes-fixed{ display:none; }
 }
 .choice-popover.aberto{ display:flex; }
 .choice-popover button{
-  background:transparent; border:none; color:var(--ink); text-align:left;
-  padding:9px 10px; border-radius:8px; font-size:13px; cursor:pointer; font-family:inherit; width:100%;
+  background:rgba(127,127,127,.08); border:1px solid var(--line); color:var(--ink); text-align:left;
+  padding:10px 12px; border-radius:9px; font-size:13px; cursor:pointer; font-family:inherit; width:100%;
+  display:flex; align-items:center; gap:8px; transition:background .12s ease, border-color .12s ease, transform .1s ease;
 }
-.choice-popover button:hover{ background:rgba(127,127,127,.14); }
+.choice-popover button + button{ margin-top:3px; }
+.choice-popover button:hover{ background:var(--gold-dim); border-color:var(--gold-dim); transform:translateX(2px); }
+.choice-popover button:active{ transform:translateX(0) scale(.98); }
 .small-note{ font-size:11.5px; color:var(--ink-dim); }
 
 .th-flex{ display:flex; align-items:center; gap:6px; justify-content:space-between; }
@@ -2088,7 +2091,13 @@ function openCadastroModal(kind, id){
           <b>Senha:</b> ${acesso?.senha ? 'a senha definida no cadastro do motorista (veja/altere em "Editar")' : '<span style="color:var(--red)">ainda não definida — edite o motorista e defina uma senha antes de liberar o acesso</span>'}
         </p>
         <div class="field"><label>Prazo de validade deste acesso <span class="small-note">(opcional)</span></label><input type="date" id="fAcessoMotoristaExpira" value="${acesso?.expiraEm||''}"></div>
-        <button class="btn ghost sm" style="width:100%;margin-bottom:4px;" onclick="compartilharAcessoMotorista('${id}')">📤 Compartilhar dados de acesso</button>
+        <span class="choice-wrap" style="display:block;width:100%;margin-bottom:4px;">
+          <button class="btn ghost sm" style="width:100%;" onclick="toggleChoicePopover('popoverAcessoModal')">📤 Compartilhar dados de acesso</button>
+          <span class="choice-popover" id="popoverAcessoModal" style="left:0;right:0;">
+            <button onclick="fecharChoicePopovers(); compartilharAcessoMotorista('${id}');">📋 Copiar dados de acesso</button>
+            <button onclick="fecharChoicePopovers(); enviarAcessoMotoristaWhatsapp('${id}');">📲 Enviar via WhatsApp</button>
+          </span>
+        </span>
         <div class="actions-row" style="justify-content:flex-end;margin-top:14px;">
           ${acesso ? `<button class="btn danger" onclick="revogarAcessoMotorista('${id}')">Revogar acesso</button>` : ''}
           <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
@@ -2501,7 +2510,7 @@ async function handleAnexarDocumentoMotorista(file, motoristaId){
     toast('Documento anexado.');
   }catch(e){
     console.error(e);
-    toast('Não consegui anexar esse documento (pode ser grande demais).', true);
+    toast('Não consegui anexar esse documento: ' + (e.message||'pode ser grande demais'), true);
   }
 }
 async function visualizarDocumentoMotorista(motoristaId, docId){
@@ -2510,14 +2519,15 @@ async function visualizarDocumentoMotorista(motoristaId, docId){
     const res = await window.storage.get('motorista-doc:'+motoristaId+':'+docId, true);
     if(!res || !res.value){
       if(win) win.close();
-      toast('Documento não encontrado.', true);
+      toast('Documento não encontrado — pode não ter sido salvo com sucesso ao anexar (arquivo grande demais, por exemplo).', true);
       return;
     }
-    if(win) win.location.href = res.value;
-    else toast('Seu navegador bloqueou a nova aba. Permita pop-ups para este site e tente de novo.', true);
+    if(win){ win.location.href = res.value; }
+    else{ toast('Seu navegador bloqueou a nova aba. Permita pop-ups para este site e tente de novo.', true); }
   }catch(e){
+    console.error(e);
     if(win) win.close();
-    toast('Não consegui carregar esse documento.', true);
+    toast('Não consegui carregar esse documento: ' + (e.message||'erro desconhecido'), true);
   }
 }
 async function removerDocumentoMotorista(motoristaId, docId){
@@ -3900,6 +3910,20 @@ function handleImportContratoPDF(file){
   };
   reader.readAsArrayBuffer(file);
 }
+function extrairJsonDaResposta(textBlock){
+  let clean = String(textBlock||'').replace(/^```json/i,'').replace(/^```/,'').replace(/```$/,'').trim();
+  const idxObj = clean.indexOf('{');
+  const idxArr = clean.indexOf('[');
+  let start = -1;
+  if(idxObj !== -1 && (idxArr === -1 || idxObj < idxArr)) start = idxObj;
+  else if(idxArr !== -1) start = idxArr;
+  if(start !== -1){
+    const fechamento = clean[start] === '{' ? '}' : ']';
+    const end = clean.lastIndexOf(fechamento);
+    if(end > start) clean = clean.slice(start, end+1);
+  }
+  return JSON.parse(clean);
+}
 async function analisarContratoIA(texto){
   const prompt = `Você é um especialista em contratos de compra e venda de grãos (soja, milho, algodão) do agronegócio brasileiro.
 Leia o texto abaixo, extraído de um contrato de compra e venda de grãos, e responda APENAS com um JSON válido (sem markdown, sem texto antes ou depois), usando exatamente estas chaves:
@@ -3930,7 +3954,7 @@ ${String(texto||'').slice(0, 15000)}
   const response = await fetch(`${API_BASE}/analisar-contrato`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-api-key": API_KEY },
-    body: JSON.stringify({ prompt })
+    body: JSON.stringify({ prompt, maxTokens: 2500 })
   });
   if(!response.ok){
     let detalhe = '';
@@ -3944,10 +3968,12 @@ ${String(texto||'').slice(0, 15000)}
   }
   const data = await response.json();
   const textBlock = (data.content || []).map(b=>b.text||'').join('\n').trim();
-  const clean = textBlock.replace(/^```json/i,'').replace(/^```/,'').replace(/```$/,'').trim();
   let parsed;
-  try{ parsed = JSON.parse(clean); }
-  catch(e){ throw new Error('A IA não retornou um JSON válido.'); }
+  try{ parsed = extrairJsonDaResposta(textBlock); }
+  catch(e){
+    console.error('Resposta da IA (não era JSON válido):', textBlock);
+    throw new Error('A IA não retornou um JSON válido. Tente novamente — se persistir, o contrato pode ser longo demais para a leitura automática.');
+  }
   return parsed;
 }
 async function confirmarImportContratoPDF(){
@@ -4449,10 +4475,12 @@ ${String(texto||'').slice(0, 40000)}
   }
   const data = await response.json();
   const textBlock = (data.content || []).map(b=>b.text||'').join('\n').trim();
-  const clean = textBlock.replace(/^```json/i,'').replace(/^```/,'').replace(/```$/,'').trim();
   let parsed;
-  try{ parsed = JSON.parse(clean); }
-  catch(e){ throw new Error('A IA não retornou um JSON válido.'); }
+  try{ parsed = extrairJsonDaResposta(textBlock); }
+  catch(e){
+    console.error('Resposta da IA (não era JSON válido):', textBlock);
+    throw new Error('A IA não retornou um JSON válido. Tente novamente — se o relatório tiver muitas notas fiscais, considere dividir em partes menores.');
+  }
   return parsed;
 }
 function exportarRelatorioCargasPDF(){
