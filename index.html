@@ -244,7 +244,9 @@ body.read-only .interacoes-fixed{ display:none; }
 table.table-resizable thead th{ color:var(--gold); font-weight:700; }
 body.tema-claro table.table-resizable thead th{ color:#000; }
 .table-wrap.resizable-wrap{ overflow:auto; resize:both; border:1px solid var(--line); border-radius:8px; min-width:320px; min-height:220px; max-width:100%; }
-.sticky-hscroll{ position:sticky; bottom:0; left:0; height:14px; overflow-x:auto; overflow-y:hidden; background:var(--bg-2); z-index:6; border-top:1px solid var(--line); }
+.sticky-hscroll{ position:sticky; left:0; height:14px; overflow-x:auto; overflow-y:hidden; background:var(--bg-2); z-index:6; }
+.sticky-hscroll-top{ top:0; border-bottom:1px solid var(--line); }
+.sticky-hscroll-bottom{ bottom:0; border-top:1px solid var(--line); }
 .sticky-hscroll-inner{ height:1px; }
 .col-filter-popover{
   background:var(--menu-bg); backdrop-filter:blur(18px) saturate(160%); -webkit-backdrop-filter:blur(18px) saturate(160%);
@@ -1171,26 +1173,58 @@ function tornarBarraRolagemFixa(tableId){
   if(!table) return;
   const wrap = table.closest('.table-wrap');
   if(!wrap) return;
-  let barra = wrap.querySelector('.sticky-hscroll');
-  if(!barra){
+
+  // cabeçalho fixo (sticky) ao rolar a planilha pra baixo
+  table.querySelectorAll('thead th').forEach(th=>{
+    th.style.position = 'sticky';
+    th.style.top = '15px';
+    th.style.zIndex = '4';
+    th.style.background = 'var(--bg-2)';
+  });
+
+  function pegarOuCriarBarra(posicao){
+    let barra = wrap.querySelector('.sticky-hscroll-'+posicao);
+    if(barra) return barra;
     barra = document.createElement('div');
-    barra.className = 'sticky-hscroll';
+    barra.className = 'sticky-hscroll sticky-hscroll-'+posicao;
     const inner = document.createElement('div');
     inner.className = 'sticky-hscroll-inner';
     barra.appendChild(inner);
-    wrap.appendChild(barra);
-    barra.addEventListener('scroll', ()=>{ wrap.scrollLeft = barra.scrollLeft; });
-    wrap.addEventListener('scroll', ()=>{ if(barra.scrollLeft !== wrap.scrollLeft) barra.scrollLeft = wrap.scrollLeft; });
+    if(posicao==='top') wrap.insertBefore(barra, wrap.firstChild);
+    else wrap.appendChild(barra);
+    return barra;
   }
-  const inner = barra.querySelector('.sticky-hscroll-inner');
+  const barraTop = pegarOuCriarBarra('top');
+  const barraBottom = pegarOuCriarBarra('bottom');
+  const barras = [barraTop, barraBottom];
+
+  barras.forEach(barra=>{
+    if(barra._ligado) return;
+    barra._ligado = true;
+    barra.addEventListener('scroll', ()=>{
+      wrap.scrollLeft = barra.scrollLeft;
+      barras.forEach(b=>{ if(b!==barra && b.scrollLeft!==barra.scrollLeft) b.scrollLeft = barra.scrollLeft; });
+    });
+  });
+  if(!wrap._ligadoScrollSync){
+    wrap._ligadoScrollSync = true;
+    wrap.addEventListener('scroll', ()=>{
+      barras.forEach(b=>{ if(b.scrollLeft !== wrap.scrollLeft) b.scrollLeft = wrap.scrollLeft; });
+    });
+  }
   const sync = ()=>{
-    inner.style.width = table.scrollWidth + 'px';
-    barra.style.display = table.scrollWidth > wrap.clientWidth + 2 ? 'block' : 'none';
+    const innerTop = barraTop.querySelector('.sticky-hscroll-inner');
+    const innerBottom = barraBottom.querySelector('.sticky-hscroll-inner');
+    innerTop.style.width = table.scrollWidth + 'px';
+    innerBottom.style.width = table.scrollWidth + 'px';
+    const mostrar = table.scrollWidth > wrap.clientWidth + 2;
+    barraTop.style.display = mostrar ? 'block' : 'none';
+    barraBottom.style.display = mostrar ? 'block' : 'none';
   };
   sync();
-  if(window.ResizeObserver && !barra._observado){
+  if(window.ResizeObserver && !table._resizeObsBarra){
     new ResizeObserver(sync).observe(table);
-    barra._observado = true;
+    table._resizeObsBarra = true;
   }
 }
 
@@ -2483,24 +2517,42 @@ function openCadastroModal(kind, id){
     const placasDisponiveis = Array.from(new Set(state.entregas.map(e=>e.placa).filter(Boolean))).sort();
     title.textContent = 'Gerar relatório de Cargas & Romaneios';
     body.innerHTML = `
-      <p class="small-note" style="margin-top:-4px;">Deixe em branco ou sem seleção qualquer filtro que não quiser aplicar — assim ele traz tudo.</p>
+      <p class="small-note" style="margin-top:-4px;">Deixe em branco ou sem marcar qualquer filtro que não quiser aplicar — assim ele traz tudo. Marque só os itens que quiser incluir no relatório.</p>
       <div class="form-grid">
         <div class="field"><label>Data inicial</label><input type="date" id="fRelDataIni"></div>
         <div class="field"><label>Data final</label><input type="date" id="fRelDataFim"></div>
       </div>
-      <div class="field"><label>Produtor(es)</label>
-        <select id="fRelProdutores" multiple size="5">${state.produtores.map(p=>`<option value="${p.id}">${p.nome}</option>`).join('')}</select>
+      <div class="field"><label>Produtor(es) <span class="small-note">(nenhum marcado = todos)</span></label>
+        <div class="actions-row" style="margin-bottom:4px;">
+          <button type="button" class="btn ghost sm" onclick="marcarTodosCheckList('fRelProdutoresLista', true)">Marcar todos</button>
+          <button type="button" class="btn ghost sm" onclick="marcarTodosCheckList('fRelProdutoresLista', false)">Desmarcar todos</button>
+        </div>
+        <div class="col-filter-lista" id="fRelProdutoresLista" style="max-height:160px;border:1px solid var(--line);border-radius:8px;padding:6px;">
+          ${state.produtores.map(p=>`<label class="col-filter-item"><input type="checkbox" value="${p.id}"><span>${p.nome}</span></label>`).join('')}
+        </div>
       </div>
-      <div class="field"><label>Contrato(s)</label>
-        <select id="fRelContratos" multiple size="5">${state.contratos.map(c=>`<option value="${c.id}">${c.doc||'(sem nº)'} — ${empresaNome(c.empresaId)}</option>`).join('')}</select>
+      <div class="field"><label>Contrato(s) <span class="small-note">(nenhum marcado = todos)</span></label>
+        <div class="actions-row" style="margin-bottom:4px;">
+          <button type="button" class="btn ghost sm" onclick="marcarTodosCheckList('fRelContratosLista', true)">Marcar todos</button>
+          <button type="button" class="btn ghost sm" onclick="marcarTodosCheckList('fRelContratosLista', false)">Desmarcar todos</button>
+        </div>
+        <div class="col-filter-lista" id="fRelContratosLista" style="max-height:160px;border:1px solid var(--line);border-radius:8px;padding:6px;">
+          ${state.contratos.map(c=>`<label class="col-filter-item"><input type="checkbox" value="${c.id}"><span>${c.doc||'(sem nº)'} — ${empresaNome(c.empresaId)}</span></label>`).join('')}
+        </div>
       </div>
       <div class="form-grid">
         <div class="field"><label>NF de</label><input id="fRelNfDe" placeholder="opcional"></div>
         <div class="field"><label>NF até</label><input id="fRelNfAte" placeholder="opcional"></div>
       </div>
       <div class="field"><label>ou NFs específicas <span class="small-note">(separadas por vírgula — se preenchido, sobrepõe o intervalo acima)</span></label><input id="fRelNfsEspecificas" placeholder="Ex: 664, 700, 712"></div>
-      <div class="field"><label>Placa(s)</label>
-        <select id="fRelPlacas" multiple size="5">${placasDisponiveis.map(p=>`<option value="${p}">${p}</option>`).join('')}</select>
+      <div class="field"><label>Placa(s) <span class="small-note">(nenhuma marcada = todas)</span></label>
+        <div class="actions-row" style="margin-bottom:4px;">
+          <button type="button" class="btn ghost sm" onclick="marcarTodosCheckList('fRelPlacasLista', true)">Marcar todos</button>
+          <button type="button" class="btn ghost sm" onclick="marcarTodosCheckList('fRelPlacasLista', false)">Desmarcar todos</button>
+        </div>
+        <div class="col-filter-lista" id="fRelPlacasLista" style="max-height:160px;border:1px solid var(--line);border-radius:8px;padding:6px;">
+          ${placasDisponiveis.map(p=>`<label class="col-filter-item"><input type="checkbox" value="${p}"><span>${p}</span></label>`).join('')}
+        </div>
       </div>
       <div class="actions-row" style="justify-content:flex-end;margin-top:14px;flex-wrap:wrap;gap:8px;">
         <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
@@ -4779,16 +4831,22 @@ function compararNF(a, b){
   if(!isNaN(na) && !isNaN(nb)) return na - nb;
   return String(a).localeCompare(String(b));
 }
+function marcarTodosCheckList(containerId, marcar){
+  document.querySelectorAll('#'+containerId+' input[type="checkbox"]').forEach(cb=>{ cb.checked = marcar; });
+}
+function coletarValoresMarcados(containerId){
+  return Array.from(document.querySelectorAll('#'+containerId+' input[type="checkbox"]:checked')).map(cb=>cb.value);
+}
 function coletarFiltrosRelatorioCargas(){
   return {
     dataIni: document.getElementById('fRelDataIni').value || '',
     dataFim: document.getElementById('fRelDataFim').value || '',
-    produtoresSel: Array.from(document.getElementById('fRelProdutores').selectedOptions).map(o=>o.value),
-    contratosSel: Array.from(document.getElementById('fRelContratos').selectedOptions).map(o=>o.value),
+    produtoresSel: coletarValoresMarcados('fRelProdutoresLista'),
+    contratosSel: coletarValoresMarcados('fRelContratosLista'),
     nfDe: document.getElementById('fRelNfDe').value.trim(),
     nfAte: document.getElementById('fRelNfAte').value.trim(),
     nfsEspecificas: document.getElementById('fRelNfsEspecificas').value.split(',').map(s=>s.trim()).filter(Boolean),
-    placasSel: Array.from(document.getElementById('fRelPlacas').selectedOptions).map(o=>o.value),
+    placasSel: coletarValoresMarcados('fRelPlacasLista'),
   };
 }
 function aplicarFiltrosCargas(filtros){
