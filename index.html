@@ -364,6 +364,7 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
           <button class="interacoes-item" id="btnLinkProdutor" data-item-id="linkProdutor">🔗 Link p/ produtor</button>
           <button class="interacoes-item" id="btnLinkMotorista" data-item-id="linkMotorista">📱 Link p/ motorista</button>
           <button class="interacoes-item" id="btnSalvarComplementares" data-item-id="salvarComplementares">💾 Salvar informações complementares</button>
+          <button class="interacoes-item" id="btnExportBackup" data-item-id="exportBackup">💾 Exportar backup completo (Excel)</button>
           <button class="interacoes-item" id="btnGerarDashboard" data-item-id="gerarDashboard">📊 Gerar Dashboard</button>
           <div class="interacoes-divider"></div>
           <button class="interacoes-item" id="btnToggleTema" data-item-id="tema">🌗 Tema claro / escuro</button>
@@ -1439,13 +1440,7 @@ function renderCargasAtivas(){
             <button onclick="fecharChoicePopovers(); document.getElementById('importInputPDF').click();">📄 Relatório em PDF</button>
           </span>
         </span>
-        <span class="choice-wrap">
-          <button class="btn ghost sm" onclick="toggleChoicePopover('popoverRelatorio')">📤 Gerar relatório</button>
-          <span class="choice-popover" id="popoverRelatorio">
-            <button onclick="fecharChoicePopovers(); exportToXlsx();">📊 Excel (.xlsx)</button>
-            <button onclick="fecharChoicePopovers(); exportarRelatorioCargasPDF();">📄 PDF</button>
-          </span>
-        </span>
+        <button class="btn ghost sm" onclick="openCadastroModal('filtroRelatorioCargas')">📤 Gerar relatório</button>
         <button class="btn sm" id="btnNovaCarga">➕ Nova entrega</button>
       </h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:10px;">Dados da NF (importados) e dados do romaneio (foto/manual) na mesma linha, assim que cada carga é pesada.
@@ -1892,6 +1887,7 @@ function bindShellEvents(){
   document.getElementById('btnForcarSincronizacao').addEventListener('click', ()=>{ panel.classList.remove('aberto'); forcarSincronizacao(); });
   document.getElementById('btnVincularPlanilha').addEventListener('click', ()=>{ panel.classList.remove('aberto'); openCadastroModal('guiaPlanilha'); });
   document.getElementById('btnGerarDashboard').addEventListener('click', ()=>{ panel.classList.remove('aberto'); switchTab('dashboard'); window.scrollTo({top:0, behavior:'smooth'}); });
+  document.getElementById('btnExportBackup').addEventListener('click', ()=>{ panel.classList.remove('aberto'); exportToXlsx(); });
   document.getElementById('btnSalvarComplementares').addEventListener('click', async ()=>{
     panel.classList.remove('aberto');
     await saveCadastros();
@@ -2220,6 +2216,36 @@ function openCadastroModal(kind, id){
       <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
         <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
         <button class="btn" onclick="confirmarImportContratoPDF()">Criar/atualizar registros</button>
+      </div>`;
+  }
+
+  if(kind==='filtroRelatorioCargas'){
+    const placasDisponiveis = Array.from(new Set(state.entregas.map(e=>e.placa).filter(Boolean))).sort();
+    title.textContent = 'Gerar relatório de Cargas & Romaneios';
+    body.innerHTML = `
+      <p class="small-note" style="margin-top:-4px;">Deixe em branco ou sem seleção qualquer filtro que não quiser aplicar — assim ele traz tudo.</p>
+      <div class="form-grid">
+        <div class="field"><label>Data inicial</label><input type="date" id="fRelDataIni"></div>
+        <div class="field"><label>Data final</label><input type="date" id="fRelDataFim"></div>
+      </div>
+      <div class="field"><label>Produtor(es)</label>
+        <select id="fRelProdutores" multiple size="5">${state.produtores.map(p=>`<option value="${p.id}">${p.nome}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Contrato(s)</label>
+        <select id="fRelContratos" multiple size="5">${state.contratos.map(c=>`<option value="${c.id}">${c.doc||'(sem nº)'} — ${empresaNome(c.empresaId)}</option>`).join('')}</select>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>NF de</label><input id="fRelNfDe" placeholder="opcional"></div>
+        <div class="field"><label>NF até</label><input id="fRelNfAte" placeholder="opcional"></div>
+      </div>
+      <div class="field"><label>ou NFs específicas <span class="small-note">(separadas por vírgula — se preenchido, sobrepõe o intervalo acima)</span></label><input id="fRelNfsEspecificas" placeholder="Ex: 664, 700, 712"></div>
+      <div class="field"><label>Placa(s)</label>
+        <select id="fRelPlacas" multiple size="5">${placasDisponiveis.map(p=>`<option value="${p}">${p}</option>`).join('')}</select>
+      </div>
+      <div class="actions-row" style="justify-content:flex-end;margin-top:14px;flex-wrap:wrap;gap:8px;">
+        <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
+        <button class="btn ghost" onclick="gerarRelatorioCargasFiltrado('xlsx')">📊 Gerar Excel</button>
+        <button class="btn" onclick="gerarRelatorioCargasFiltrado('pdf')">📄 Gerar PDF</button>
       </div>`;
   }
 
@@ -4483,8 +4509,65 @@ ${String(texto||'').slice(0, 40000)}
   }
   return parsed;
 }
-function exportarRelatorioCargasPDF(){
-  const lista = state.entregas.filter(e=>e.status!=='rejeitado');
+function compararNF(a, b){
+  const na = parseFloat(a), nb = parseFloat(b);
+  if(!isNaN(na) && !isNaN(nb)) return na - nb;
+  return String(a).localeCompare(String(b));
+}
+function coletarFiltrosRelatorioCargas(){
+  return {
+    dataIni: document.getElementById('fRelDataIni').value || '',
+    dataFim: document.getElementById('fRelDataFim').value || '',
+    produtoresSel: Array.from(document.getElementById('fRelProdutores').selectedOptions).map(o=>o.value),
+    contratosSel: Array.from(document.getElementById('fRelContratos').selectedOptions).map(o=>o.value),
+    nfDe: document.getElementById('fRelNfDe').value.trim(),
+    nfAte: document.getElementById('fRelNfAte').value.trim(),
+    nfsEspecificas: document.getElementById('fRelNfsEspecificas').value.split(',').map(s=>s.trim()).filter(Boolean),
+    placasSel: Array.from(document.getElementById('fRelPlacas').selectedOptions).map(o=>o.value),
+  };
+}
+function aplicarFiltrosCargas(filtros){
+  return state.entregas.filter(e=>e.status!=='rejeitado').filter(e=>{
+    const v = vendaById(e.vendaId);
+    if(filtros.dataIni && (e.dataSaida||'') < filtros.dataIni) return false;
+    if(filtros.dataFim && (e.dataSaida||'') > filtros.dataFim) return false;
+    if(filtros.produtoresSel.length && (!v || !filtros.produtoresSel.includes(v.produtorId))) return false;
+    if(filtros.contratosSel.length && (!v || !filtros.contratosSel.includes(v.contratoId))) return false;
+    if(filtros.placasSel.length && !filtros.placasSel.includes(e.placa)) return false;
+    const nf = v ? String(v.nrNF) : '';
+    if(filtros.nfsEspecificas.length){
+      if(!filtros.nfsEspecificas.includes(nf)) return false;
+    }else if(filtros.nfDe || filtros.nfAte){
+      if(!nf) return false;
+      if(filtros.nfDe && compararNF(nf, filtros.nfDe) < 0) return false;
+      if(filtros.nfAte && compararNF(nf, filtros.nfAte) > 0) return false;
+    }
+    return true;
+  });
+}
+function gerarRelatorioCargasFiltrado(formato){
+  const filtros = coletarFiltrosRelatorioCargas();
+  const lista = aplicarFiltrosCargas(filtros);
+  closeCadastroModal();
+  if(!lista.length){ toast('Nenhuma carga encontrada com esses filtros.', true); return; }
+  if(formato==='xlsx') gerarExcelCargasFiltrado(lista);
+  else exportarRelatorioCargasPDF(lista);
+}
+function gerarExcelCargasFiltrado(lista){
+  const headers = ['Empresa','Produtor','Nº NF','Data saída','Motorista','Placa','Romaneio','Peso bruto (kg)','Peso líq. final (kg)','Status'];
+  const rows = lista.map(e=>{
+    const v = vendaById(e.vendaId);
+    return [v?empresaNome(v.empresaId):'', v?produtorNome(v.produtorId):'', v?v.nrNF:'', dataBR(e.dataSaida), e.motorista||'', e.placa||'',
+      e.nrRomaneio||'', e.status!=='pendente'?e.pesoBruto:'', e.status!=='pendente'?e.pesoLiquidoComDesc:'', e.status];
+  });
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'CARGAS E ROMANEIOS');
+  XLSX.writeFile(wb, `Relatorio_cargas_${todayISO()}.xlsx`);
+  toast('Relatório gerado.');
+}
+function exportarRelatorioCargasPDF(listaFiltrada){
+  const lista = listaFiltrada || state.entregas.filter(e=>e.status!=='rejeitado');
   const linhas = lista.map(e=>{
     const v = vendaById(e.vendaId);
     return `<tr>
@@ -4494,7 +4577,8 @@ function exportarRelatorioCargasPDF(){
       <td>${e.status!=='pendente'?fmtInt(e.pesoLiquidoComDesc):'—'}</td><td>${e.status}</td>
     </tr>`;
   }).join('');
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Relatório de Cargas e Romaneios — ${todayISO()}</title>
+  const tituloPagina = `Relatório de Cargas e Romaneios — ${todayISO()}`;
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${tituloPagina}</title>
     <style>
       body{ font-family: Arial, Helvetica, sans-serif; padding:24px; color:#111; }
       h1{ font-size:18px; margin-bottom:4px; }
@@ -4502,17 +4586,22 @@ function exportarRelatorioCargasPDF(){
       table{ width:100%; border-collapse:collapse; font-size:10.5px; }
       th, td{ border:1px solid #ccc; padding:5px 7px; text-align:left; }
       th{ background:#f0f0f0; }
-      #btnImprimir{ margin-top:20px; padding:10px 18px; font-size:14px; cursor:pointer; }
-      @media print{ #btnImprimir{ display:none; } }
+      #acoesRelatorio{ margin-top:20px; display:flex; gap:10px; flex-wrap:wrap; }
+      #acoesRelatorio button{ padding:10px 18px; font-size:14px; cursor:pointer; }
+      @media print{ #acoesRelatorio{ display:none; } }
     </style>
   </head><body>
     <h1>Relatório de Cargas &amp; Romaneios — BRC Colheita</h1>
     <p class="sub">Gerado em ${new Date().toLocaleString('pt-BR')} · ${lista.length} carga(s)</p>
     <table>
       <thead><tr><th>Empresa</th><th>Produtor</th><th>Nº NF</th><th>Data saída</th><th>Motorista</th><th>Placa</th><th>Romaneio</th><th>Peso bruto (kg)</th><th>Peso líq. final (kg)</th><th>Status</th></tr></thead>
-      <tbody>${linhas || '<tr><td colspan="10" style="text-align:center;">Nenhuma carga cadastrada.</td></tr>'}</tbody>
+      <tbody>${linhas || '<tr><td colspan="10" style="text-align:center;">Nenhuma carga encontrada.</td></tr>'}</tbody>
     </table>
-    <button id="btnImprimir" onclick="window.print()">🖨️ Salvar como PDF / Imprimir</button>
+    <div id="acoesRelatorio">
+      <button onclick="window.print()">💾 Salvar como (PDF)</button>
+      <button onclick="window.print()">🖨️ Imprimir</button>
+      <button onclick="if(navigator.share){ navigator.share({title:document.title, text:document.title}).catch(()=>{}); } else { alert('Seu navegador não permite compartilhar diretamente. Clique em \\'Salvar como\\' para baixar o PDF e compartilhe o arquivo pelo WhatsApp, e-mail etc.'); }">📤 Compartilhar</button>
+    </div>
   </body></html>`;
   const win = window.open('', '_blank');
   if(!win){ toast('Seu navegador bloqueou a nova aba. Permita pop-ups para este site e tente de novo.', true); return; }
