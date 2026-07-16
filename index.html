@@ -192,7 +192,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover{ opacity:1; }
 .actions-row{ display:flex; gap:8px; }
 
 /* ---- MENU FLUTUANTE "INTERAÇÕES" ---- */
-.interacoes-fixed{ position:fixed; left:20px; bottom:20px; z-index:150; }
+.interacoes-fixed{ position:relative; display:inline-block; z-index:150; }
 .interacoes-trigger{
   display:flex; align-items:center; gap:8px;
   background:var(--menu-bg); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
@@ -202,12 +202,12 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover{ opacity:1; }
 }
 .interacoes-trigger:hover{ border-color:var(--gold-dim); }
 .interacoes-panel{
-  position:absolute; left:0; bottom:calc(100% + 10px);
+  position:absolute; right:0; top:calc(100% + 10px);
   background:var(--menu-bg); backdrop-filter:blur(18px) saturate(160%); -webkit-backdrop-filter:blur(18px) saturate(160%);
   border:1px solid var(--line); border-radius:16px; padding:8px;
   min-width:250px; box-shadow:0 16px 48px rgba(0,0,0,.45);
   display:flex; flex-direction:column; gap:2px;
-  opacity:0; transform:translateY(8px) scale(.98); pointer-events:none;
+  opacity:0; transform:translateY(-8px) scale(.98); pointer-events:none;
   transition:opacity .16s ease, transform .16s ease;
 }
 .interacoes-panel.aberto{ opacity:1; transform:translateY(0) scale(1); pointer-events:auto; }
@@ -217,6 +217,8 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover{ opacity:1; }
   display:flex; align-items:center; gap:10px; font-family:inherit; width:100%;
 }
 .interacoes-item:hover{ background:rgba(127,127,127,.14); }
+.interacoes-item.arrastando{ opacity:.4; }
+.interacoes-item.drag-over{ border-top:2px solid var(--gold); }
 .interacoes-divider{ height:1px; background:var(--line); margin:6px 6px; }
 body.read-only .interacoes-fixed{ display:none; }
 .choice-wrap{ position:relative; display:inline-block; }
@@ -349,12 +351,22 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
       <h1 id="pageTitle">BRC - Colheita e Comercialização</h1>
       <p>Cadastre produtores, contratos e empresas; lance cargas por foto do romaneio ou manualmente; acompanhe saldos e o dashboard em tempo real.</p>
     </div>
-    <div class="hero-actions" style="flex-direction:column;align-items:flex-end;gap:8px;">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <span id="sessaoUsuarioLabel" style="color:var(--ink);font-size:13px;font-weight:600;align-self:center;"></span>
-        <button class="btn danger" onclick="logout()">🚪 Sair</button>
+    <div class="hero-actions" style="align-items:center;gap:10px;">
+      <span id="sessaoUsuarioLabel" style="color:var(--ink);font-size:13px;font-weight:600;align-self:center;"></span>
+      <div class="interacoes-fixed" id="cardAcoesRapidas">
+        <button class="interacoes-trigger" id="btnInteracoesToggle">☰ Interações</button>
+        <div class="interacoes-panel" id="interacoesPanel">
+          <button class="interacoes-item" id="btnForcarSincronizacao" data-item-id="sincronizacao">🔄 Forçar sincronização</button>
+          <button class="interacoes-item" id="btnVincularPlanilha" data-item-id="vincular">🔗 Vincular planilha online</button>
+          <button class="interacoes-item" id="btnLinkProdutor" data-item-id="linkProdutor">🔗 Link p/ produtor</button>
+          <button class="interacoes-item" id="btnLinkMotorista" data-item-id="linkMotorista">📱 Link p/ motorista</button>
+          <button class="interacoes-item" id="btnSalvarComplementares" data-item-id="salvarComplementares">💾 Salvar informações complementares</button>
+          <button class="interacoes-item" id="btnGerarDashboard" data-item-id="gerarDashboard">📊 Gerar Dashboard</button>
+          <div class="interacoes-divider"></div>
+          <button class="interacoes-item" id="btnToggleTema" data-item-id="tema">🌗 Tema claro / escuro</button>
+        </div>
       </div>
-      <button class="btn ghost sm" onclick="forcarSincronizacao()">🔄 Forçar sincronização</button>
+      <button class="btn danger" onclick="logout()">🚪 Sair</button>
     </div>
   </div>
   <input type="file" id="importInput" accept=".xlsx,.xls" style="display:none">
@@ -377,19 +389,6 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
   <section class="tab-panel" id="tab-dashboard"></section>
   <section class="tab-panel" id="tab-usuarios"></section>
 </main>
-
-<div class="interacoes-fixed" id="cardAcoesRapidas">
-  <div class="interacoes-panel" id="interacoesPanel">
-    <button class="interacoes-item" id="btnVincularPlanilha">🔗 Vincular planilha online</button>
-    <button class="interacoes-item" id="btnLinkProdutor">🔗 Link p/ produtor</button>
-    <button class="interacoes-item" id="btnLinkMotorista">📱 Link p/ motorista</button>
-    <button class="interacoes-item" id="btnSalvarComplementares">💾 Salvar informações complementares</button>
-    <button class="interacoes-item" id="btnGerarDashboard">📊 Gerar Dashboard</button>
-    <div class="interacoes-divider"></div>
-    <button class="interacoes-item" id="btnToggleTema">🌗 Tema claro / escuro</button>
-  </div>
-  <button class="interacoes-trigger" id="btnInteracoesToggle">☰ Interações</button>
-</div>
 
 <div class="modal-overlay hidden" id="modalCarga">
   <div class="modal">
@@ -903,10 +902,13 @@ function onLinkMotoristaSelectChange(){
   linkMotoristaTextoAtual = r.texto;
   wrap.innerHTML = `
     <div class="card" style="margin-top:12px;padding:12px;white-space:pre-wrap;font-size:13px;">${r.texto.replace(/</g,'&lt;')}</div>
-    <div class="actions-row" style="margin-top:10px;">
-      <button class="btn ghost sm" onclick="copiarTexto(linkMotoristaTextoAtual)">📋 Copiar</button>
-      <button class="btn sm" onclick="enviarWhatsapp(linkMotoristaTextoAtual)">📲 Enviar via WhatsApp</button>
-    </div>`;
+    <span class="choice-wrap" style="display:block;margin-top:10px;">
+      <button class="btn sm" onclick="toggleChoicePopover('popoverLinkMotorista')">📤 Compartilhar dados de acesso</button>
+      <span class="choice-popover" id="popoverLinkMotorista">
+        <button onclick="fecharChoicePopovers(); copiarTexto(linkMotoristaTextoAtual);">📋 Copiar dados de acesso</button>
+        <button onclick="fecharChoicePopovers(); enviarWhatsapp(linkMotoristaTextoAtual);">📲 Enviar via WhatsApp</button>
+      </span>
+    </span>`;
 }
 function compartilharAcessoUsuario(usuarioId){
   const u = state.usuarios.find(x=>x.id===usuarioId);
@@ -1339,8 +1341,14 @@ function updateTbodyMotoristas(){
       html: `<tr><td>${m.nome}</td><td class="mono" style="font-size:11.5px">${m.cpf||'—'}</td><td class="mono" style="font-size:11.5px">${m.placa||'—'}</td><td>${acessoLabel}</td>
         <td><div class="actions-row">
         <button class="btn ghost sm cred-btn-acesso" onclick="openCadastroModal('acessoMotorista','${m.id}')">${acesso?'Gerenciar acesso':'Liberar acesso'}</button>
-        <button class="btn ghost sm" onclick="compartilharAcessoMotorista('${m.id}')">📤 Compartilhar dados de acesso</button>
-        <button class="btn ghost sm" onclick="enviarAcessoMotoristaWhatsapp('${m.id}')">📲 WhatsApp</button>
+        <span class="choice-wrap">
+          <button class="btn ghost sm" onclick="toggleChoicePopover('popoverAcesso-${m.id}')">📤 Compartilhar dados de acesso</button>
+          <span class="choice-popover" id="popoverAcesso-${m.id}">
+            <button onclick="fecharChoicePopovers(); compartilharAcessoMotorista('${m.id}');">📋 Copiar dados de acesso</button>
+            <button onclick="fecharChoicePopovers(); enviarAcessoMotoristaWhatsapp('${m.id}');">📲 Enviar via WhatsApp</button>
+          </span>
+        </span>
+        <button class="btn ghost sm" onclick="abrirDocumentosMotorista('${m.id}')">📁 Documentos${m.documentos?.length ? ' ('+m.documentos.length+')' : ''}</button>
         <button class="btn ghost sm" onclick="openCadastroModal('motorista','${m.id}')">Editar</button>
         <button class="btn danger sm" onclick="deleteMotorista('${m.id}')">Excluir</button></div></td></tr>`
     };
@@ -1385,8 +1393,10 @@ function deleteContrato(id){
 }
 function deleteMotorista(id){
   if(!confirm('Excluir este motorista?')) return;
+  const m = state.motoristas.find(x=>x.id===id);
   state.motoristas = state.motoristas.filter(m=>m.id!==id);
   saveCadastros(); renderAll(); toast('Motorista excluído.');
+  (m?.documentos||[]).forEach(d=>{ window.storage.delete('motorista-doc:'+id+':'+d.id, true).catch(()=>{}); });
 }
 function deleteColheita(id){
   if(!confirm('Excluir esta colheita? Os números das outras colheitas se reorganizam automaticamente.')) return;
@@ -1598,6 +1608,7 @@ function renderConferencia(){
     <div class="actions-row" style="margin-bottom:16px;">
       <button class="btn ${conferenciaModo==='motoristas'?'':'ghost'} sm" onclick="setConferenciaModo('motoristas')">Conferência de motoristas</button>
       <button class="btn ${conferenciaModo==='conciliacao'?'':'ghost'} sm" onclick="setConferenciaModo('conciliacao')">Conciliação com empresa compradora</button>
+      <button class="btn ghost sm" onclick="forcarSincronizacao()">🔄 Forçar sincronização</button>
     </div>
     <div id="conferenciaConteudo"></div>
   `;
@@ -1875,6 +1886,7 @@ function bindShellEvents(){
       panel.classList.remove('aberto');
     }
   });
+  document.getElementById('btnForcarSincronizacao').addEventListener('click', ()=>{ panel.classList.remove('aberto'); forcarSincronizacao(); });
   document.getElementById('btnVincularPlanilha').addEventListener('click', ()=>{ panel.classList.remove('aberto'); openCadastroModal('guiaPlanilha'); });
   document.getElementById('btnGerarDashboard').addEventListener('click', ()=>{ panel.classList.remove('aberto'); switchTab('dashboard'); window.scrollTo({top:0, behavior:'smooth'}); });
   document.getElementById('btnSalvarComplementares').addEventListener('click', async ()=>{
@@ -1896,8 +1908,51 @@ function bindShellEvents(){
     openCadastroModal('linkMotorista');
   });
   document.getElementById('btnToggleTema').addEventListener('click', ()=>{ panel.classList.remove('aberto'); toggleTema(); });
+  restaurarOrdemInteracoes();
+  inicializarDragReorderInteracoes();
 }
 bindShellEvents();
+function restaurarOrdemInteracoes(){
+  try{
+    const ordemSalva = JSON.parse(localStorage.getItem('brc_ordem_interacoes') || 'null');
+    if(!Array.isArray(ordemSalva)) return;
+    const container = document.getElementById('interacoesPanel');
+    ordemSalva.forEach(itemId=>{
+      const el = container.querySelector(`[data-item-id="${itemId}"]`);
+      if(el) container.appendChild(el);
+    });
+  }catch(e){ /* ignora erro de restauração de ordem */ }
+}
+function salvarOrdemInteracoes(){
+  const ids = Array.from(document.querySelectorAll('#interacoesPanel .interacoes-item[data-item-id]')).map(el=>el.dataset.itemId);
+  localStorage.setItem('brc_ordem_interacoes', JSON.stringify(ids));
+}
+function inicializarDragReorderInteracoes(){
+  const itens = document.querySelectorAll('#interacoesPanel .interacoes-item[data-item-id]');
+  let arrastando = null;
+  itens.forEach(item=>{
+    item.setAttribute('draggable', 'true');
+    item.addEventListener('dragstart', ()=>{ arrastando = item; item.classList.add('arrastando'); });
+    item.addEventListener('dragend', ()=>{
+      item.classList.remove('arrastando');
+      document.querySelectorAll('.interacoes-item.drag-over').forEach(el=>el.classList.remove('drag-over'));
+      salvarOrdemInteracoes();
+    });
+    item.addEventListener('dragover', e=>{ e.preventDefault(); if(item!==arrastando) item.classList.add('drag-over'); });
+    item.addEventListener('dragleave', ()=>{ item.classList.remove('drag-over'); });
+    item.addEventListener('drop', e=>{
+      e.preventDefault();
+      item.classList.remove('drag-over');
+      if(!arrastando || arrastando===item) return;
+      const container = item.parentElement;
+      const itensAtuais = Array.from(container.querySelectorAll('.interacoes-item[data-item-id]'));
+      const idxArrastando = itensAtuais.indexOf(arrastando);
+      const idxAlvo = itensAtuais.indexOf(item);
+      if(idxArrastando < idxAlvo) item.after(arrastando);
+      else item.before(arrastando);
+    });
+  });
+}
 function toggleTema(){
   document.body.classList.toggle('tema-claro');
   const claro = document.body.classList.contains('tema-claro');
@@ -2203,10 +2258,29 @@ function openCadastroModal(kind, id){
         <input id="fMotoristaSenha" value="${acesso?.senha||''}" placeholder="defina uma senha">
         <p class="small-note" style="margin-top:6px;">O motorista faz login com a placa do caminhão como usuário e a senha definida aqui. Depois de salvar, use "📤 Compartilhar dados de acesso" na listagem pra enviar isso pra ele.</p>
       </div>
+      <div class="field" style="margin-top:6px;">
+        <button type="button" class="btn ghost sm" onclick="toggleAnexoDocumentos()">📎 Anexar documentos (opcional)</button>
+        <div id="anexoDocumentosWrap" style="display:none;margin-top:10px;">
+          ${m ? `
+            <div class="dropzone" id="dropzoneDocMotorista" style="padding:16px;">
+              <input type="file" id="fotoDocMotoristaInput" style="display:none;">
+              <div class="icon">📎</div>
+              <div><b>Toque ou arraste pra anexar um documento</b></div>
+              <small>CNH, ANTT, comprovante etc. — fica salvo só pra este motorista</small>
+            </div>
+            <div id="listaDocumentosMotorista" style="margin-top:10px;">${renderListaDocumentosMotorista(m.id)}</div>
+          ` : `<p class="small-note">Salve o motorista primeiro (botão "Salvar" abaixo) e depois volte em "Editar" pra anexar documentos.</p>`}
+        </div>
+      </div>
       <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
         <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
         <button class="btn" onclick="salvarMotorista()">Salvar</button>
       </div>`;
+    if(m) bindDropzoneDocMotorista(m.id);
+    if(motoristaAbrirDocsAoRenderizar){
+      motoristaAbrirDocsAoRenderizar = false;
+      setTimeout(()=>toggleAnexoDocumentos(true), 30);
+    }
   }
 
   if(kind==='colheita'){
@@ -2375,6 +2449,86 @@ function salvarContrato(){
     state.contratos.push({id: uid('ctr'), ...dados});
   }
   saveCadastros(); renderAll(); closeCadastroModal(); toast('Contrato salvo.');
+}
+let motoristaAbrirDocsAoRenderizar = false;
+function abrirDocumentosMotorista(motoristaId){
+  motoristaAbrirDocsAoRenderizar = true;
+  openCadastroModal('motorista', motoristaId);
+}
+function toggleAnexoDocumentos(forcarAberto){
+  const wrap = document.getElementById('anexoDocumentosWrap');
+  if(!wrap) return;
+  const abrir = forcarAberto===true || wrap.style.display==='none';
+  wrap.style.display = abrir ? '' : 'none';
+  if(abrir) wrap.scrollIntoView({behavior:'smooth', block:'center'});
+}
+function renderListaDocumentosMotorista(motoristaId){
+  const m = state.motoristas.find(x=>x.id===motoristaId);
+  const docs = m?.documentos || [];
+  if(!docs.length) return '<p class="small-note">Nenhum documento anexado ainda.</p>';
+  return docs.map(d=>`
+    <div class="actions-row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);">
+      <span style="font-size:13px;">📄 ${d.nome}</span>
+      <div class="actions-row">
+        <button class="btn ghost sm" onclick="visualizarDocumentoMotorista('${motoristaId}','${d.id}')">👁️ Ver</button>
+        <button class="btn danger sm" onclick="removerDocumentoMotorista('${motoristaId}','${d.id}')">🗑️</button>
+      </div>
+    </div>`).join('');
+}
+function bindDropzoneDocMotorista(motoristaId){
+  const dz = document.getElementById('dropzoneDocMotorista');
+  if(!dz) return;
+  const input = document.getElementById('fotoDocMotoristaInput');
+  dz.addEventListener('click', ()=>input.click());
+  ['dragover','dragenter'].forEach(evt=>dz.addEventListener(evt, e=>{ e.preventDefault(); dz.classList.add('drag'); }));
+  ['dragleave','drop'].forEach(evt=>dz.addEventListener(evt, e=>{ e.preventDefault(); dz.classList.remove('drag'); }));
+  dz.addEventListener('drop', e=>{ if(e.dataTransfer.files.length) handleAnexarDocumentoMotorista(e.dataTransfer.files[0], motoristaId); });
+  input.addEventListener('change', e=>{ if(e.target.files.length) handleAnexarDocumentoMotorista(e.target.files[0], motoristaId); e.target.value=''; });
+}
+async function handleAnexarDocumentoMotorista(file, motoristaId){
+  if(!motoristaId){ toast('Salve o motorista primeiro para poder anexar documentos.', true); return; }
+  toast('Anexando documento...');
+  try{
+    const dataUrl = await arquivoParaDataUrl(file);
+    const docId = uid('doc');
+    await window.storage.set('motorista-doc:'+motoristaId+':'+docId, dataUrl, true);
+    const m = state.motoristas.find(x=>x.id===motoristaId);
+    if(!m.documentos) m.documentos = [];
+    m.documentos.push({ id: docId, nome: file.name, tipo: file.type||'', tamanho: file.size||0, uploadedAt: new Date().toISOString() });
+    await saveCadastros();
+    const lista = document.getElementById('listaDocumentosMotorista');
+    if(lista) lista.innerHTML = renderListaDocumentosMotorista(motoristaId);
+    toast('Documento anexado.');
+  }catch(e){
+    console.error(e);
+    toast('Não consegui anexar esse documento (pode ser grande demais).', true);
+  }
+}
+async function visualizarDocumentoMotorista(motoristaId, docId){
+  const win = window.open('', '_blank');
+  try{
+    const res = await window.storage.get('motorista-doc:'+motoristaId+':'+docId, true);
+    if(!res || !res.value){
+      if(win) win.close();
+      toast('Documento não encontrado.', true);
+      return;
+    }
+    if(win) win.location.href = res.value;
+    else toast('Seu navegador bloqueou a nova aba. Permita pop-ups para este site e tente de novo.', true);
+  }catch(e){
+    if(win) win.close();
+    toast('Não consegui carregar esse documento.', true);
+  }
+}
+async function removerDocumentoMotorista(motoristaId, docId){
+  if(!confirm('Remover este documento?')) return;
+  const m = state.motoristas.find(x=>x.id===motoristaId);
+  if(m?.documentos) m.documentos = m.documentos.filter(d=>d.id!==docId);
+  await saveCadastros();
+  try{ await window.storage.delete('motorista-doc:'+motoristaId+':'+docId, true); }catch(e){}
+  const lista = document.getElementById('listaDocumentosMotorista');
+  if(lista) lista.innerHTML = renderListaDocumentosMotorista(motoristaId);
+  toast('Documento removido.');
 }
 async function salvarMotorista(){
   const nome = document.getElementById('fMotoristaNome').value.trim();
