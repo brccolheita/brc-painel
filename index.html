@@ -1137,16 +1137,6 @@ function renderCadastros(){
       </div>
     </div>
 
-    <div class="section-title">Dados da Colheita</div>
-    <div class="card" style="margin-bottom:24px;">
-      <h2>Colheitas lançadas <button class="btn sm" onclick="openCadastroModal('colheita')">➕ Incluir nova colheita</button></h2>
-      <p class="small-note" style="margin-top:-6px;margin-bottom:12px;">Cada lançamento junta cultura, variedade, hectares e o número do talhão em um só passo — numerado na ordem em que você lança.</p>
-      <div class="table-wrap"><table>
-        <thead><tr><th>Nº</th><th>Cultura</th><th>Variedade</th><th>Hectares</th><th>Talhão</th><th>Produtor</th><th></th></tr></thead>
-        <tbody id="tbody-colheitas"></tbody>
-      </table></div>
-    </div>
-
     <div class="section-title">Cadastro de Produtor</div>
     <div class="card" style="margin-bottom:24px;">
       <h2>Produtores cadastrados <button class="btn sm" onclick="openCadastroModal('produtor')">➕ Novo produtor</button></h2>
@@ -1154,6 +1144,16 @@ function renderCadastros(){
       <div class="table-wrap"><table>
         <thead>${filterHeaderCells('produtores',[{key:'nome',label:'Nome'},{key:'cpf',label:'CPF'},{key:'cnpj',label:'CNPJ'},{key:null,label:''}])}</thead>
         <tbody id="tbody-produtores"></tbody>
+      </table></div>
+    </div>
+
+    <div class="section-title">Dados da Colheita</div>
+    <div class="card" style="margin-bottom:24px;">
+      <h2>Colheitas lançadas <button class="btn sm" onclick="openCadastroModal('colheita')">➕ Incluir nova colheita</button></h2>
+      <p class="small-note" style="margin-top:-6px;margin-bottom:12px;">Cada lançamento junta cultura, variedade, hectares e o número do talhão em um só passo — numerado na ordem em que você lança.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Nº</th><th>Cultura</th><th>Variedade</th><th>Hectares</th><th>Talhão</th><th>Produtor</th><th></th></tr></thead>
+        <tbody id="tbody-colheitas"></tbody>
       </table></div>
     </div>
 
@@ -1174,6 +1174,7 @@ function renderCadastros(){
           </p>
           <button class="btn sm" id="btnImportContratoPDF">📄 Importar contrato em PDF</button>
           <button class="btn ghost sm" onclick="gerarRelacaoContratos()">📊 Gerar relação de contratos</button>
+          <button class="btn ghost sm" onclick="exportarRelacaoContratosPDF()">🖨️ Exportar relação em PDF</button>
           <input type="file" id="importContratoPDFInput" accept=".pdf" style="display:none">
         </div>
       </div>
@@ -1728,6 +1729,7 @@ function renderContratos(){
     <div class="card" style="margin-bottom:20px;">
       <h2>Controle de saldos de contrato <small>${state.contratos.length} contrato(s) · somente visualização</small>
         <button class="btn ghost sm" onclick="toggleSaldosUnidade()">⇄ Ver em ${saldosUnidade==='kg'?'sacas':'kg'}</button>
+        <button class="btn ghost sm" onclick="exportarRelacaoContratosPDF()">🖨️ Exportar relação em PDF</button>
       </h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:10px;">Contratos são criados e editados em "Dados de Colheita e Comercialização" → Contratos. Aqui é só acompanhamento.</p>
       ${atrasados.length ? `<p class="small-note" style="color:var(--red,#e05555);margin-bottom:12px;">⚠ ${atrasados.length} contrato(s) com entrega e/ou pagamento atrasado — veja as colunas destacadas abaixo.</p>` : ''}
@@ -1798,9 +1800,7 @@ function switchTab(name){
 function bindShellEvents(){
   document.querySelectorAll('.tab-btn').forEach(b=>b.addEventListener('click', ()=>switchTab(b.dataset.tab)));
   document.getElementById('modalCadastroClose').addEventListener('click', closeCadastroModal);
-  document.getElementById('modalCadastro').addEventListener('click', (e)=>{ if(e.target.id==='modalCadastro') closeCadastroModal(); });
   document.getElementById('modalCargaClose').addEventListener('click', closeCargaModal);
-  document.getElementById('modalCarga').addEventListener('click', (e)=>{ if(e.target.id==='modalCarga') closeCargaModal(); });
   document.getElementById('importInput').addEventListener('change', (e)=>{ if(e.target.files.length) abrirSelecaoColheitaImportacao(e.target.files[0]); e.target.value=''; });
 
   // Menu flutuante "Interações"
@@ -3618,11 +3618,18 @@ function visualizarPdfAtual(){
   else toast('PDF não disponível.', true);
 }
 async function visualizarPdfContrato(contratoId){
+  const win = window.open('', '_blank');
   try{
     const res = await window.storage.get('contrato-pdf:'+contratoId, true);
-    if(!res || !res.value){ toast('PDF não encontrado para este contrato.', true); return; }
-    window.open(res.value, '_blank');
+    if(!res || !res.value){
+      if(win) win.close();
+      toast('PDF não encontrado para este contrato — pode não ter sido arquivado com sucesso ao importar.', true);
+      return;
+    }
+    if(win) win.location.href = res.value;
+    else toast('Seu navegador bloqueou a nova aba. Permita pop-ups para este site e tente de novo.', true);
   }catch(e){
+    if(win) win.close();
     toast('Não consegui carregar o PDF deste contrato.', true);
   }
 }
@@ -3707,7 +3714,7 @@ ${String(texto||'').slice(0, 15000)}
   catch(e){ throw new Error('A IA não retornou um JSON válido.'); }
   return parsed;
 }
-function confirmarImportContratoPDF(){
+async function confirmarImportContratoPDF(){
   const vendedorNome = document.getElementById('fPdfVendedorNome').value.trim();
   const vendedorDoc = document.getElementById('fPdfVendedorDoc').value.trim();
   const compradorNome = document.getElementById('fPdfCompradorNome').value.trim();
@@ -3737,15 +3744,29 @@ function confirmarImportContratoPDF(){
     valorTotal, dataAssinatura, dataInicioEntrega, dataFinalEntrega, dataPagamento,
     alertaPercentual: 75, obs: 'Criado a partir de importação de PDF de contrato (lido por IA).',
   };
-  if(contratoPdfArquivo) dados.temPdf = true;
   if(contrato){ Object.assign(contrato, dados); }
   else { contrato = {id: uid('ctr'), ...dados}; state.contratos.push(contrato); }
 
-  saveCadastros(); renderAll(); closeCadastroModal();
+  let pdfFalhou = false;
   if(contratoPdfArquivo){
-    window.storage.set('contrato-pdf:'+contrato.id, contratoPdfArquivo, true).catch(()=>{});
+    try{
+      await window.storage.set('contrato-pdf:'+contrato.id, contratoPdfArquivo, true);
+      contrato.temPdf = true;
+    }catch(e){
+      console.error(e);
+      contrato.temPdf = false;
+      pdfFalhou = true;
+    }
   }
-  toast(`Contrato ${contratoNr} gravado: produtor "${vendedorNome}", empresa "${compradorNome}".`);
+
+  await saveCadastros();
+  renderAll();
+  closeCadastroModal();
+  if(pdfFalhou){
+    toast(`Contrato ${contratoNr} gravado, mas o PDF não pôde ser arquivado (pode estar muito grande). Os dados foram salvos normalmente.`, true);
+  }else{
+    toast(`Contrato ${contratoNr} gravado: produtor "${vendedorNome}", empresa "${compradorNome}".`);
+  }
   contratoPdfParsed = null;
   contratoPdfErro = null;
   contratoPdfArquivo = null;
@@ -4185,6 +4206,43 @@ function gerarRelacaoContratos(){
   XLSX.utils.book_append_sheet(wb, ws, 'RELAÇÃO DE CONTRATOS');
   XLSX.writeFile(wb, `Relacao_de_contratos_${todayISO()}.xlsx`);
   toast('Relação de contratos gerada.');
+}
+function exportarRelacaoContratosPDF(){
+  const saldos = calcSaldos();
+  const linhas = saldos.map(s=>{
+    const c = s.contrato;
+    return `<tr>
+      <td>${c.tipo||''}</td><td>${c.doc||''}</td><td>${empresaNome(c.empresaId)}</td><td>${produtorNome(c.produtorId)}</td>
+      <td>${culturaNome(c.culturaId)}</td><td>${c.volumeKg?fmtInt(c.volumeKg):'—'}</td>
+      <td>${fmtInt(s.entregueKg)}</td><td>${fmtInt(s.saldoAEntregarKg)}</td>
+      <td>${c.dataInicioEntrega?dataBR(c.dataInicioEntrega):'—'} a ${c.dataFinalEntrega?dataBR(c.dataFinalEntrega):'—'}</td>
+      <td>${c.dataPagamento?dataBR(c.dataPagamento):'—'}</td>
+    </tr>`;
+  }).join('');
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Relação de Contratos — ${todayISO()}</title>
+    <style>
+      body{ font-family: Arial, Helvetica, sans-serif; padding:24px; color:#111; }
+      h1{ font-size:18px; margin-bottom:4px; }
+      p.sub{ color:#555; font-size:12px; margin-top:0; margin-bottom:18px; }
+      table{ width:100%; border-collapse:collapse; font-size:11px; }
+      th, td{ border:1px solid #ccc; padding:6px 8px; text-align:left; }
+      th{ background:#f0f0f0; }
+      #btnImprimir{ margin-top:20px; padding:10px 18px; font-size:14px; cursor:pointer; }
+      @media print{ #btnImprimir{ display:none; } }
+    </style>
+  </head><body>
+    <h1>Relação de Contratos — BRC Colheita</h1>
+    <p class="sub">Gerado em ${new Date().toLocaleString('pt-BR')} · ${saldos.length} contrato(s)</p>
+    <table>
+      <thead><tr><th>Tipo</th><th>Nº Contrato</th><th>Empresa</th><th>Produtor</th><th>Cultura</th><th>Volume (kg)</th><th>Entregue (kg)</th><th>Saldo a entregar (kg)</th><th>Prazo de entrega</th><th>Pagamento</th></tr></thead>
+      <tbody>${linhas || '<tr><td colspan="10" style="text-align:center;">Nenhum contrato cadastrado.</td></tr>'}</tbody>
+    </table>
+    <button id="btnImprimir" onclick="window.print()">🖨️ Salvar como PDF / Imprimir</button>
+  </body></html>`;
+  const win = window.open('', '_blank');
+  if(!win){ toast('Seu navegador bloqueou a nova aba. Permita pop-ups para este site e tente de novo.', true); return; }
+  win.document.write(html);
+  win.document.close();
 }
 function exportToXlsx(){
   const headers = ['Nº NF Venda','Nº NF Remessa','Empresa Venda','Empresa Destino Final','Produtor','Natureza','Contrato',
