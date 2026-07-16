@@ -244,6 +244,17 @@ body.read-only .interacoes-fixed{ display:none; }
 table.table-resizable thead th{ color:var(--gold); font-weight:700; }
 body.tema-claro table.table-resizable thead th{ color:#000; }
 .table-wrap.resizable-wrap{ overflow:auto; resize:both; border:1px solid var(--line); border-radius:8px; min-width:320px; min-height:220px; max-width:100%; }
+.sticky-hscroll{ position:sticky; bottom:0; left:0; height:14px; overflow-x:auto; overflow-y:hidden; background:var(--bg-2); z-index:6; border-top:1px solid var(--line); }
+.sticky-hscroll-inner{ height:1px; }
+.col-filter-popover{
+  background:var(--menu-bg); backdrop-filter:blur(18px) saturate(160%); -webkit-backdrop-filter:blur(18px) saturate(160%);
+  border:1px solid var(--line); border-radius:12px; padding:10px; min-width:220px; max-width:280px;
+  box-shadow:0 16px 48px rgba(0,0,0,.45); z-index:300;
+}
+.col-filter-lista{ max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:2px; }
+.col-filter-item{ display:flex; align-items:center; gap:8px; font-size:12.5px; padding:5px 4px; border-radius:6px; cursor:pointer; }
+.col-filter-item:hover{ background:rgba(127,127,127,.12); }
+.col-filter-item input{ width:auto; }
 .th-filter-btn{ background:none; border:none; padding:1px 3px; cursor:pointer; font-size:11px; opacity:.45; border-radius:4px; line-height:1; }
 .th-filter-btn:hover{ opacity:.85; background:var(--bg); }
 .th-filter-btn.active{ opacity:1; color:var(--gold); }
@@ -1153,6 +1164,34 @@ function tornarColunasRedimensionaveis(tableId){
   const table = document.getElementById(tableId);
   if(!table) return;
   table.classList.add('table-resizable');
+  tornarBarraRolagemFixa(tableId);
+}
+function tornarBarraRolagemFixa(tableId){
+  const table = document.getElementById(tableId);
+  if(!table) return;
+  const wrap = table.closest('.table-wrap');
+  if(!wrap) return;
+  let barra = wrap.querySelector('.sticky-hscroll');
+  if(!barra){
+    barra = document.createElement('div');
+    barra.className = 'sticky-hscroll';
+    const inner = document.createElement('div');
+    inner.className = 'sticky-hscroll-inner';
+    barra.appendChild(inner);
+    wrap.appendChild(barra);
+    barra.addEventListener('scroll', ()=>{ wrap.scrollLeft = barra.scrollLeft; });
+    wrap.addEventListener('scroll', ()=>{ if(barra.scrollLeft !== wrap.scrollLeft) barra.scrollLeft = wrap.scrollLeft; });
+  }
+  const inner = barra.querySelector('.sticky-hscroll-inner');
+  const sync = ()=>{
+    inner.style.width = table.scrollWidth + 'px';
+    barra.style.display = table.scrollWidth > wrap.clientWidth + 2 ? 'block' : 'none';
+  };
+  sync();
+  if(window.ResizeObserver && !barra._observado){
+    new ResizeObserver(sync).observe(table);
+    barra._observado = true;
+  }
 }
 
 /* ---------------- CADASTROS (Produtores / Empresas / Contratos / Motoristas / Talhões) ---------------- */
@@ -1791,24 +1830,244 @@ async function confirmarRejeicaoEntrega(id){
 
 /* ---------------- CONTRATOS & SALDOS ---------------- */
 let saldosUnidade = 'kg';
+let filtrosColunaSaldos = {}; // { colKey: Set(valores excluídos) }
+let coresLinhaSaldos = {}; // { contratoId: '#rrggbb' }
+let linhasOcultasSaldos = new Set();
+let colunasOcultasSaldos = new Set();
+let linhasSelecionadasSaldos = new Set();
+let filtroColunaSaldosAberto = null; // {colKey, btnEl}
+
+function carregarPreferenciasSaldos(){
+  try{
+    const raw = JSON.parse(localStorage.getItem('brc_prefs_saldos')||'null');
+    if(raw){
+      coresLinhaSaldos = raw.cores || {};
+      linhasOcultasSaldos = new Set(raw.linhasOcultas || []);
+      colunasOcultasSaldos = new Set(raw.colunasOcultas || []);
+    }
+  }catch(e){ /* preferências visuais locais, sem problema se falhar */ }
+}
+function salvarPreferenciasSaldos(){
+  localStorage.setItem('brc_prefs_saldos', JSON.stringify({
+    cores: coresLinhaSaldos,
+    linhasOcultas: Array.from(linhasOcultasSaldos),
+    colunasOcultas: Array.from(colunasOcultasSaldos),
+  }));
+}
+carregarPreferenciasSaldos();
+
+const COLUNAS_SALDOS = [
+  {key:'tipo', label:'Tipo', filtravel:true},
+  {key:'empresa', label:'Empresa', filtravel:true},
+  {key:'produtor', label:'Produtor', filtravel:true},
+  {key:'doc', label:'Nº Contrato', filtravel:true},
+  {key:'volume', label:'Volume do contrato', filtravel:false},
+  {key:'entregues', label:'Entregue', filtravel:false},
+  {key:'saldo', label:'Saldo a entregar', filtravel:false},
+  {key:'entrega', label:'Prazo entrega', filtravel:true},
+  {key:'pagamento', label:'Pagamento', filtravel:true},
+];
+function valorColunaSaldos(s, colKey){
+  const prazos = calcPrazosContrato(s.contrato);
+  switch(colKey){
+    case 'tipo': return s.contrato.tipo || '(sem tipo)';
+    case 'empresa': return empresaNome(s.contrato.empresaId);
+    case 'produtor': return produtorNome(s.contrato.produtorId);
+    case 'doc': return s.contrato.doc || '(sem número)';
+    case 'entrega': return prazos.entrega.status;
+    case 'pagamento': return prazos.pagamento.status;
+    default: return '';
+  }
+}
+function valoresUnicosColunaSaldos(colKey){
+  const saldos = calcSaldos();
+  const vistos = new Set();
+  saldos.forEach(s=>vistos.add(valorColunaSaldos(s, colKey)));
+  return Array.from(vistos).sort();
+}
+function linhaPassaFiltrosColuna(s){
+  for(const colKey in filtrosColunaSaldos){
+    const excluidos = filtrosColunaSaldos[colKey];
+    if(excluidos && excluidos.size && excluidos.has(valorColunaSaldos(s, colKey))) return false;
+  }
+  return true;
+}
+function limparFiltrosSaldos(){
+  filtrosColunaSaldos = {};
+  fecharFiltroColunaSaldosPopover();
+  updateTbodyContratos();
+  toast('Filtros limpos.');
+}
+function abrirFiltroColunaSaldos(colKey, btnEl){
+  filtroColunaSaldosAberto = {colKey, btnEl};
+  renderFiltroColunaSaldosPopover();
+}
+function renderFiltroColunaSaldosPopover(){
+  const antigo = document.getElementById('colFilterPopover');
+  if(antigo) antigo.remove();
+  if(!filtroColunaSaldosAberto) return;
+  const {colKey, btnEl} = filtroColunaSaldosAberto;
+  const valores = valoresUnicosColunaSaldos(colKey);
+  const excluidos = filtrosColunaSaldos[colKey] || new Set();
+  const pop = document.createElement('div');
+  pop.className = 'col-filter-popover';
+  pop.id = 'colFilterPopover';
+  pop.innerHTML = `
+    <div class="actions-row" style="margin-bottom:6px;">
+      <button class="btn ghost sm" onclick="marcarTodosFiltroColuna('${colKey}', true)">Marcar todos</button>
+      <button class="btn ghost sm" onclick="marcarTodosFiltroColuna('${colKey}', false)">Desmarcar todos</button>
+    </div>
+    <div class="col-filter-lista">
+      ${valores.map(v=>`
+        <label class="col-filter-item">
+          <input type="checkbox" data-valor="${String(v).replace(/"/g,'&quot;')}" ${excluidos.has(v)?'':'checked'} onchange="onCheckFiltroColuna('${colKey}', this)">
+          <span>${v||'(vazio)'}</span>
+        </label>`).join('')}
+    </div>
+    <div class="actions-row" style="justify-content:flex-end;margin-top:8px;">
+      <button class="btn sm" onclick="fecharFiltroColunaSaldosPopover()">Fechar</button>
+    </div>
+  `;
+  document.body.appendChild(pop);
+  const rect = btnEl.getBoundingClientRect();
+  pop.style.position = 'fixed';
+  pop.style.top = (rect.bottom + 4) + 'px';
+  pop.style.left = Math.max(8, Math.min(rect.left, window.innerWidth-290)) + 'px';
+  setTimeout(()=>document.addEventListener('click', onClickForaFiltroColuna, {capture:true}), 0);
+}
+function onClickForaFiltroColuna(e){
+  const pop = document.getElementById('colFilterPopover');
+  if(pop && !pop.contains(e.target) && !e.target.closest('.th-filter-btn')) fecharFiltroColunaSaldosPopover();
+}
+function fecharFiltroColunaSaldosPopover(){
+  filtroColunaSaldosAberto = null;
+  const pop = document.getElementById('colFilterPopover');
+  if(pop) pop.remove();
+  document.removeEventListener('click', onClickForaFiltroColuna, {capture:true});
+}
+function onCheckFiltroColuna(colKey, checkbox){
+  if(!filtrosColunaSaldos[colKey]) filtrosColunaSaldos[colKey] = new Set();
+  const valor = checkbox.dataset.valor;
+  if(checkbox.checked) filtrosColunaSaldos[colKey].delete(valor);
+  else filtrosColunaSaldos[colKey].add(valor);
+  updateTbodyContratos();
+}
+function marcarTodosFiltroColuna(colKey, marcar){
+  filtrosColunaSaldos[colKey] = marcar ? new Set() : new Set(valoresUnicosColunaSaldos(colKey));
+  renderFiltroColunaSaldosPopover();
+  updateTbodyContratos();
+}
+
+function onToggleSelecaoLinhaSaldos(contratoId, checkbox){
+  if(checkbox.checked) linhasSelecionadasSaldos.add(contratoId);
+  else linhasSelecionadasSaldos.delete(contratoId);
+}
+function toggleSelecionarTodosSaldos(checkbox){
+  document.querySelectorAll('.sel-linha-saldos').forEach(cb=>{
+    cb.checked = checkbox.checked;
+    const id = cb.dataset.id;
+    if(checkbox.checked) linhasSelecionadasSaldos.add(id); else linhasSelecionadasSaldos.delete(id);
+  });
+}
+const PALETA_CORES_15 = ['#FF6B6B','#FF922B','#FFD43B','#94D82D','#40C057','#20C997','#22B8CF','#4DABF7','#4C6EF5','#7950F2','#BE4BDB','#F06595','#868E96','#495057','#212529'];
+function abrirSeletorCores(){
+  fecharPopoversFlutuantesSaldos();
+  const pop = document.createElement('div');
+  pop.className = 'col-filter-popover';
+  pop.id = 'seletorCoresPopover';
+  pop.innerHTML = `
+    <p class="small-note" style="margin:0 0 8px 0;">${linhasSelecionadasSaldos.size} linha(s) selecionada(s). Clique numa cor:</p>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;">
+      ${PALETA_CORES_15.map(c=>`<button title="${c}" style="width:32px;height:32px;border-radius:6px;background:${c};border:1px solid var(--line);cursor:pointer;" onclick="aplicarCorLinhasSelecionadas('${c}')"></button>`).join('')}
+    </div>
+    <div class="actions-row" style="justify-content:space-between;margin-top:10px;">
+      <button class="btn ghost sm" onclick="aplicarCorLinhasSelecionadas(null)">Remover cor</button>
+      <button class="btn sm" onclick="document.getElementById('seletorCoresPopover').remove()">Fechar</button>
+    </div>
+  `;
+  document.body.appendChild(pop);
+  pop.style.position='fixed'; pop.style.top='120px'; pop.style.left='50%'; pop.style.transform='translateX(-50%)';
+}
+function aplicarCorLinhasSelecionadas(cor){
+  if(!linhasSelecionadasSaldos.size){ toast('Selecione ao menos uma linha primeiro (checkbox à esquerda).', true); return; }
+  linhasSelecionadasSaldos.forEach(id=>{ if(cor) coresLinhaSaldos[id] = cor; else delete coresLinhaSaldos[id]; });
+  salvarPreferenciasSaldos();
+  const pop = document.getElementById('seletorCoresPopover'); if(pop) pop.remove();
+  updateTbodyContratos();
+  toast(cor ? 'Cor aplicada às linhas selecionadas.' : 'Cor removida das linhas selecionadas.');
+}
+function ocultarLinhasSelecionadas(){
+  if(!linhasSelecionadasSaldos.size){ toast('Selecione ao menos uma linha primeiro (checkbox à esquerda).', true); return; }
+  linhasSelecionadasSaldos.forEach(id=>linhasOcultasSaldos.add(id));
+  linhasSelecionadasSaldos.clear();
+  salvarPreferenciasSaldos();
+  updateTbodyContratos();
+  toast('Linha(s) ocultada(s).');
+}
+function mostrarLinhasOcultasSaldos(){
+  linhasOcultasSaldos.clear();
+  salvarPreferenciasSaldos();
+  renderContratos();
+  toast('Linhas ocultas exibidas novamente.');
+}
+function abrirOcultarColunasSaldos(){
+  fecharPopoversFlutuantesSaldos();
+  const pop = document.createElement('div');
+  pop.className = 'col-filter-popover';
+  pop.id = 'ocultarColunasPopover';
+  pop.innerHTML = `
+    <p class="small-note" style="margin:0 0 8px 0;">Marque as colunas que quer esconder:</p>
+    ${COLUNAS_SALDOS.map(c=>`<label class="col-filter-item"><input type="checkbox" ${colunasOcultasSaldos.has(c.key)?'checked':''} onchange="toggleColunaOcultaSaldos('${c.key}', this)"><span>${c.label}</span></label>`).join('')}
+    <div class="actions-row" style="justify-content:flex-end;margin-top:8px;"><button class="btn sm" onclick="document.getElementById('ocultarColunasPopover').remove()">Fechar</button></div>
+  `;
+  document.body.appendChild(pop);
+  pop.style.position='fixed'; pop.style.top='120px'; pop.style.left='50%'; pop.style.transform='translateX(-50%)';
+}
+function toggleColunaOcultaSaldos(colKey, checkbox){
+  if(checkbox.checked) colunasOcultasSaldos.add(colKey); else colunasOcultasSaldos.delete(colKey);
+  salvarPreferenciasSaldos();
+  renderContratos();
+}
+function fecharPopoversFlutuantesSaldos(){
+  ['colFilterPopover','seletorCoresPopover','ocultarColunasPopover'].forEach(id=>{
+    const el = document.getElementById(id); if(el) el.remove();
+  });
+  filtroColunaSaldosAberto = null;
+}
 function toggleSaldosUnidade(){ saldosUnidade = saldosUnidade==='kg' ? 'sacas' : 'kg'; renderContratos(); }
 
 function renderContratos(){
   const el = document.getElementById('tab-contratos');
   const atrasados = state.contratos.filter(c=>{ const p = calcPrazosContrato(c); return p.entrega.status==='atrasado' || p.pagamento.status==='atrasado'; });
+  const colVisiveis = COLUNAS_SALDOS.filter(c=>!colunasOcultasSaldos.has(c.key));
+  const theadCols = colVisiveis.map(c=>`
+    <th>
+      <div class="th-flex">
+        <span>${c.label}${saldosUnidade!=='kg' && (c.key==='volume'||c.key==='entregues'||c.key==='saldo') ? ` (${saldosUnidade})` : (c.key==='volume'||c.key==='entregues'||c.key==='saldo') ? ' (kg)' : ''}</span>
+        ${c.filtravel ? `<button type="button" class="th-filter-btn ${filtrosColunaSaldos[c.key]&&filtrosColunaSaldos[c.key].size?'active':''}" onclick="abrirFiltroColunaSaldos('${c.key}', this)">🔍</button>` : ''}
+      </div>
+    </th>`).join('');
   el.innerHTML = `
     <div class="card" style="margin-bottom:20px;">
       <h2>Controle de saldos de contrato <small>${state.contratos.length} contrato(s) · somente visualização</small>
         <button class="btn ghost sm" onclick="toggleSaldosUnidade()">⇄ Ver em ${saldosUnidade==='kg'?'sacas':'kg'}</button>
         <button class="btn ghost sm" onclick="exportarRelacaoContratosPDF()">🖨️ Exportar relação em PDF</button>
+        <button class="btn danger sm" onclick="limparFiltrosSaldos()">✕ Excluir todos os filtros</button>
+        <div class="interacoes-fixed" id="interacoesSaldos" style="position:relative;display:inline-block;">
+          <button class="interacoes-trigger" style="padding:8px 14px;font-size:12.5px;" onclick="document.getElementById('interacoesSaldosPanel').classList.toggle('aberto')">☰ Interações</button>
+          <div class="interacoes-panel" id="interacoesSaldosPanel">
+            <button class="interacoes-item" onclick="limparFiltrosSaldos(); document.getElementById('interacoesSaldosPanel').classList.remove('aberto');">🧹 Limpar todos os filtros</button>
+            <button class="interacoes-item" onclick="document.getElementById('interacoesSaldosPanel').classList.remove('aberto'); abrirSeletorCores();">🎨 Selecionar cores</button>
+            <button class="interacoes-item" onclick="document.getElementById('interacoesSaldosPanel').classList.remove('aberto'); ocultarLinhasSelecionadas();">🙈 Ocultar linha(s) selecionada(s)</button>
+            <button class="interacoes-item" onclick="document.getElementById('interacoesSaldosPanel').classList.remove('aberto'); abrirOcultarColunasSaldos();">📐 Ocultar coluna(s)</button>
+            ${linhasOcultasSaldos.size ? `<button class="interacoes-item" onclick="document.getElementById('interacoesSaldosPanel').classList.remove('aberto'); mostrarLinhasOcultasSaldos();">👁️ Mostrar linhas ocultas (${linhasOcultasSaldos.size})</button>` : ''}
+          </div>
+        </div>
       </h2>
-      <p class="small-note" style="margin-top:-6px;margin-bottom:10px;">Contratos são criados e editados em "Dados de Colheita e Comercialização" → Contratos. Aqui é só acompanhamento.</p>
+      <p class="small-note" style="margin-top:-6px;margin-bottom:10px;">Contratos são criados e editados em "Dados de Colheita e Comercialização" → Contratos. Aqui é só acompanhamento. Use a lupa 🔍 no cabeçalho pra filtrar cada coluna (estilo Excel), marque linhas com o checkbox à esquerda pra colorir ou ocultar em lote.</p>
       ${atrasados.length ? `<p class="small-note" style="color:var(--red,#e05555);margin-bottom:12px;">⚠ ${atrasados.length} contrato(s) com entrega e/ou pagamento atrasado — veja as colunas destacadas abaixo.</p>` : ''}
       <div class="table-wrap resizable-wrap"><table id="table-contratos">
-        <thead>${filterHeaderCells('contratos',[
-          {key:'tipo',label:'Tipo'},{key:'empresa',label:'Empresa'},{key:'produtor',label:'Produtor'},{key:'doc',label:'Nº Contrato'},
-          {key:'volume',label:'Volume do contrato ('+saldosUnidade+')'},{key:'entregues',label:'Entregue ('+saldosUnidade+')'},
-          {key:'saldo',label:'Saldo a entregar ('+saldosUnidade+')'},{key:'entrega',label:'Prazo entrega'},{key:'pagamento',label:'Pagamento'},{key:null,label:''}])}</thead>
+        <thead><tr><th><input type="checkbox" id="selAllSaldos" onchange="toggleSelecionarTodosSaldos(this)"></th>${theadCols}<th></th></tr></thead>
         <tbody id="tbody-contratos"></tbody>
       </table></div>
     </div>
@@ -1824,30 +2083,30 @@ function renderContratos(){
   tornarColunasRedimensionaveis('table-contratos');
 }
 function updateTbodyContratos(){
-  const filters = getFilterValues('contratos');
   const saldos = calcSaldos();
   const div = saldosUnidade==='sacas' ? 60 : 1;
-  const rows = saldos.map(s=>{
+  const colVisiveis = COLUNAS_SALDOS.filter(c=>!colunasOcultasSaldos.has(c.key));
+  const rows = saldos.filter(s=>!linhasOcultasSaldos.has(s.contrato.id)).filter(linhaPassaFiltrosColuna).map(s=>{
     const prazos = calcPrazosContrato(s.contrato);
     const volumeTxt = s.volumeKg ? fmt(s.volumeKg/div, saldosUnidade==='kg'?0:2) : '—';
     const entregueTxt = fmt(s.entregueKg/div, saldosUnidade==='kg'?0:2);
-    const extract = {
+    const valoresCol = {
       tipo: s.contrato.tipo, empresa: empresaNome(s.contrato.empresaId), produtor: produtorNome(s.contrato.produtorId),
-      doc: s.contrato.doc, volume: volumeTxt, entregues: entregueTxt, saldo: fmt(s.saldoAEntregarKg/div),
-      entrega: prazos.entrega.status, pagamento: prazos.pagamento.status
+      doc: `<span class="mono" style="font-size:11.5px">${s.contrato.doc}</span>`, volume: volumeTxt, entregues: entregueTxt,
+      saldo: saldoTag(s, div), entrega: tagPrazo(prazos.entrega), pagamento: tagPrazo(prazos.pagamento),
     };
-    const html = `<tr>
-      <td>${extract.tipo}</td><td>${extract.empresa}</td><td>${extract.produtor}</td>
-      <td class="mono" style="font-size:11.5px">${extract.doc}</td>
-      <td>${volumeTxt}</td><td>${entregueTxt}</td><td>${saldoTag(s, div)}</td>
-      <td>${tagPrazo(prazos.entrega)}</td><td>${tagPrazo(prazos.pagamento)}</td>
+    const cor = coresLinhaSaldos[s.contrato.id];
+    const tds = colVisiveis.map(c=>`<td>${valoresCol[c.key]}</td>`).join('');
+    const html = `<tr${cor?` style="background:${cor}22;"`:''}>
+      <td><input type="checkbox" class="sel-linha-saldos" data-id="${s.contrato.id}" ${linhasSelecionadasSaldos.has(s.contrato.id)?'checked':''} onchange="onToggleSelecaoLinhaSaldos('${s.contrato.id}', this)"></td>
+      ${tds}
       <td><div class="actions-row">
         ${s.contrato.temPdf ? `<button class="btn ghost sm" onclick="visualizarPdfContrato('${s.contrato.id}')">👁️ Visualizar</button>` : '<span class="small-note">sem PDF</span>'}
       </div></td>
     </tr>`;
-    return {extract, html};
-  }).filter(r=>rowMatches(r.extract, filters));
-  document.getElementById('tbody-contratos').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(10,'Nenhum contrato encontrado.');
+    return html;
+  });
+  document.getElementById('tbody-contratos').innerHTML = rows.length ? rows.join('') : emptyRow(colVisiveis.length+2,'Nenhum contrato encontrado com os filtros atuais.');
 }
 Object.assign(TBODY_UPDATERS, { contratos: updateTbodyContratos });
 
@@ -2133,6 +2392,7 @@ function openCadastroModal(kind, id){
         <div class="field full"><label>Nome do produtor</label><input id="fProdutorNome" value="${p?p.nome:''}" placeholder="Ex: Vilmar JR"></div>
         <div class="field"><label>CPF</label><input id="fProdutorCpf" value="${p?.cpf||''}" placeholder="000.000.000-00"></div>
         <div class="field"><label>CNPJ <span class="small-note">(se comercializado por empresa do grupo)</span></label><input id="fProdutorCnpj" value="${p?.cnpj||''}" placeholder="00.000.000/0000-00"></div>
+        <div class="field full"><label>E-mail <span class="small-note">(opcional — usado pra compartilhar relatórios e contratos)</span></label><input id="fProdutorEmail" type="email" value="${p?.email||''}" placeholder="produtor@exemplo.com"></div>
       </div>
       <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
         <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
@@ -2405,14 +2665,15 @@ function salvarProdutor(){
   const nome = document.getElementById('fProdutorNome').value.trim();
   const cpf = onlyDigits(document.getElementById('fProdutorCpf').value.trim());
   const cnpj = onlyDigits(document.getElementById('fProdutorCnpj').value.trim());
+  const email = document.getElementById('fProdutorEmail').value.trim();
   if(!nome){ toast('Informe o nome do produtor.', true); return; }
   const overlay = document.getElementById('modalCadastro');
   const id = overlay.dataset.id;
   if(id){
     const p = state.produtores.find(x=>x.id===id);
-    Object.assign(p, {nome, cpf, cnpj});
+    Object.assign(p, {nome, cpf, cnpj, email});
   } else {
-    state.produtores.push({id: uid('prod'), nome, cpf, cnpj});
+    state.produtores.push({id: uid('prod'), nome, cpf, cnpj, email});
   }
   saveCadastros(); renderAll(); closeCadastroModal(); toast('Produtor salvo.');
 }
@@ -4415,6 +4676,10 @@ function fecharChoicePopovers(){
 }
 document.addEventListener('click', (e)=>{
   if(!e.target.closest('.choice-wrap')) fecharChoicePopovers();
+  const painelSaldos = document.getElementById('interacoesSaldosPanel');
+  if(painelSaldos && painelSaldos.classList.contains('aberto') && !e.target.closest('#interacoesSaldos')){
+    painelSaldos.classList.remove('aberto');
+  }
 });
 
 let tipoImportacaoPendente = 'xlsx';
@@ -4578,6 +4843,7 @@ function exportarRelatorioCargasPDF(listaFiltrada){
     </tr>`;
   }).join('');
   const tituloPagina = `Relatório de Cargas e Romaneios — ${todayISO()}`;
+  const nomeArquivo = `relatorio-cargas-romaneios-${todayISO()}.html`;
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${tituloPagina}</title>
     <style>
       body{ font-family: Arial, Helvetica, sans-serif; padding:24px; color:#111; }
@@ -4586,11 +4852,14 @@ function exportarRelatorioCargasPDF(listaFiltrada){
       table{ width:100%; border-collapse:collapse; font-size:10.5px; }
       th, td{ border:1px solid #ccc; padding:5px 7px; text-align:left; }
       th{ background:#f0f0f0; }
-      #acoesRelatorio{ margin-top:20px; display:flex; gap:10px; flex-wrap:wrap; }
+      #acoesRelatorio{ margin-top:20px; display:flex; gap:10px; flex-wrap:wrap; position:relative; }
       #acoesRelatorio button{ padding:10px 18px; font-size:14px; cursor:pointer; }
+      .pop-compartilhar{ display:none; position:absolute; top:calc(100% + 6px); left:0; background:#fff; border:1px solid #ccc; border-radius:8px; padding:6px; box-shadow:0 8px 24px rgba(0,0,0,.18); min-width:210px; z-index:50; }
+      .pop-compartilhar button{ display:flex; align-items:center; gap:8px; width:100%; text-align:left; padding:9px 10px; border:none; background:none; cursor:pointer; font-size:13.5px; border-radius:6px; }
+      .pop-compartilhar button:hover{ background:#f0f0f0; }
       @media print{ #acoesRelatorio{ display:none; } }
     </style>
-  </head><body>
+  </head><body onclick="if(!event.target.closest('.pop-compartilhar') && (!event.target.textContent || event.target.textContent.indexOf('Compartilhar')===-1)){ var p=document.getElementById('popCompartilhar'); if(p) p.style.display='none'; }">
     <h1>Relatório de Cargas &amp; Romaneios — BRC Colheita</h1>
     <p class="sub">Gerado em ${new Date().toLocaleString('pt-BR')} · ${lista.length} carga(s)</p>
     <table>
@@ -4598,9 +4867,16 @@ function exportarRelatorioCargasPDF(listaFiltrada){
       <tbody>${linhas || '<tr><td colspan="10" style="text-align:center;">Nenhuma carga encontrada.</td></tr>'}</tbody>
     </table>
     <div id="acoesRelatorio">
-      <button onclick="window.print()">💾 Salvar como (PDF)</button>
-      <button onclick="window.print()">🖨️ Imprimir</button>
-      <button onclick="if(navigator.share){ navigator.share({title:document.title, text:document.title}).catch(()=>{}); } else { alert('Seu navegador não permite compartilhar diretamente. Clique em \\'Salvar como\\' para baixar o PDF e compartilhe o arquivo pelo WhatsApp, e-mail etc.'); }">📤 Compartilhar</button>
+      <button onclick="event.stopPropagation(); var blob=new Blob(['<'+'!DOCTYPE html>'+document.documentElement.outerHTML],{type:'text/html'}); var url=URL.createObjectURL(blob); var a=document.createElement('a'); a.href=url; a.download='${nomeArquivo}'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){URL.revokeObjectURL(url);},3000);">💾 Salvar como</button>
+      <button onclick="event.stopPropagation(); window.print();">🖨️ Imprimir</button>
+      <div style="position:relative;display:inline-block;">
+        <button onclick="event.stopPropagation(); var p=document.getElementById('popCompartilhar'); p.style.display = p.style.display==='block' ? 'none' : 'block';">📤 Compartilhar</button>
+        <div class="pop-compartilhar" id="popCompartilhar">
+          <button onclick="event.stopPropagation(); var a=encodeURIComponent(document.title); var b=encodeURIComponent('Segue o relatorio gerado pelo sistema BRC. Use Salvar como e anexe o arquivo baixado a este e-mail.'); window.location.href='mailto:?subject='+a+'&body='+b;">✉️ E-mail</button>
+          <button onclick="event.stopPropagation(); window.open('https://wa.me/?text='+encodeURIComponent(document.title), '_blank');">📲 WhatsApp</button>
+          <button onclick="event.stopPropagation(); navigator.clipboard.writeText(document.title).then(function(){ alert('Resumo copiado.'); })['catch'](function(){});">📋 Copiar resumo</button>
+        </div>
+      </div>
     </div>
   </body></html>`;
   const win = window.open('', '_blank');
