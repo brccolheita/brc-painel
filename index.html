@@ -5137,12 +5137,13 @@ function exportToXlsx(){
    INICIALIZAÇÃO
    ============================================================ */
 /* ---------------- LOGIN / SESSÃO ---------------- */
-const SESSION_KEY = 'brc_session';
-function getSessao(){
-  try{ return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); }catch(e){ return null; }
-}
-function setSessao(s){ localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }
-function logout(){ localStorage.removeItem(SESSION_KEY); location.reload(); }
+// A sessão fica só em memória (nesta aba, enquanto a página não é recarregada).
+// Isso é proposital: ao recarregar a página, trocar de aba/aparelho ou reabrir o link,
+// a senha sempre precisa ser digitada de novo — nenhuma sessão fica salva entre acessos.
+let SESSAO_ATUAL = null;
+function getSessao(){ return SESSAO_ATUAL; }
+function setSessao(s){ SESSAO_ATUAL = s; }
+function logout(){ SESSAO_ATUAL = null; location.reload(); }
 
 function isModoMotoristaHash(){ return String(location.hash||'').toLowerCase()==='#motorista'; }
 function loginStorageKey(){ return isModoMotoristaHash() ? 'brc_login_placa_salva' : 'brc_login_usuario_salvo'; }
@@ -5253,8 +5254,16 @@ function bootAfterLogin(){
 
   const sessao = getSessao();
   const usuarioSessao = sessao ? state.usuarios.find(u=>u.id===sessao.usuarioId) : null;
-  if(!sessao || !usuarioSessao || usuarioExpirado(usuarioSessao)){
-    localStorage.removeItem(SESSION_KEY);
+  const sessaoValida = !!(sessao && usuarioSessao && !usuarioExpirado(usuarioSessao));
+
+  if(isModoMotoristaHash() && (!sessaoValida || sessao.papel!=='motorista')){
+    // o link com #motorista sempre deve levar à tela de envio de romaneio — nunca deve reaproveitar
+    // uma sessão de admin/produtor que porventura já esteja ativa nesse mesmo navegador/aparelho.
+    renderLoginScreen();
+    return;
+  }
+
+  if(!sessaoValida){
     renderLoginScreen();
     return;
   }
