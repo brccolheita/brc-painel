@@ -219,6 +219,20 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover{ opacity:1; }
 .interacoes-item:hover{ background:rgba(127,127,127,.14); }
 .interacoes-divider{ height:1px; background:var(--line); margin:6px 6px; }
 body.read-only .interacoes-fixed{ display:none; }
+.choice-wrap{ position:relative; display:inline-block; }
+.choice-popover{
+  position:absolute; left:0; top:calc(100% + 6px); z-index:120;
+  background:var(--menu-bg); backdrop-filter:blur(18px) saturate(160%); -webkit-backdrop-filter:blur(18px) saturate(160%);
+  border:1px solid var(--line); border-radius:12px; padding:6px;
+  min-width:180px; box-shadow:0 12px 36px rgba(0,0,0,.4);
+  display:none; flex-direction:column; gap:2px;
+}
+.choice-popover.aberto{ display:flex; }
+.choice-popover button{
+  background:transparent; border:none; color:var(--ink); text-align:left;
+  padding:9px 10px; border-radius:8px; font-size:13px; cursor:pointer; font-family:inherit; width:100%;
+}
+.choice-popover button:hover{ background:rgba(127,127,127,.14); }
 .small-note{ font-size:11.5px; color:var(--ink-dim); }
 
 .th-flex{ display:flex; align-items:center; gap:6px; justify-content:space-between; }
@@ -344,6 +358,7 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
     </div>
   </div>
   <input type="file" id="importInput" accept=".xlsx,.xls" style="display:none">
+  <input type="file" id="importInputPDF" accept=".pdf" style="display:none">
   <nav class="tabs">
     <button class="tab-btn active" data-tab="cadastros">Dados de Colheita e Comercialização</button>
     <button class="tab-btn" data-tab="cargas">Cargas &amp; Romaneios</button>
@@ -365,10 +380,9 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
 
 <div class="interacoes-fixed" id="cardAcoesRapidas">
   <div class="interacoes-panel" id="interacoesPanel">
-    <button class="interacoes-item" id="btnImport">📥 Importar planilha</button>
-    <button class="interacoes-item" id="btnExport">📤 Exportar planilha</button>
     <button class="interacoes-item" id="btnVincularPlanilha">🔗 Vincular planilha online</button>
     <button class="interacoes-item" id="btnLinkProdutor">🔗 Link p/ produtor</button>
+    <button class="interacoes-item" id="btnLinkMotorista">📱 Link p/ motorista</button>
     <button class="interacoes-item" id="btnSalvarComplementares">💾 Salvar informações complementares</button>
     <button class="interacoes-item" id="btnGerarDashboard">📊 Gerar Dashboard</button>
     <div class="interacoes-divider"></div>
@@ -855,12 +869,44 @@ function linkAcessoSistema(tipo){
   const base = location.origin + location.pathname;
   return tipo==='motorista' ? base + '#motorista' : base;
 }
-function compartilharAcessoMotorista(motoristaId){
+function textoAcessoMotorista(motoristaId){
   const m = state.motoristas.find(x=>x.id===motoristaId);
-  if(!m?.placa){ toast('Cadastre a placa deste motorista antes de compartilhar o acesso.', true); return; }
+  if(!m?.placa) return { erro: 'Cadastre a placa deste motorista antes de compartilhar o acesso.' };
   const acesso = state.usuarios.find(u=>u.papel==='motorista' && u.motoristaId===motoristaId);
-  if(!acesso?.senha){ toast('Defina uma senha pra este motorista em "Editar" antes de compartilhar o acesso.', true); return; }
-  copiarTexto(`Acesso ao sistema BRC\nLink: ${linkAcessoSistema('motorista')}\nUsuário (placa): ${normalizarPlaca(m.placa)}\nSenha: ${acesso.senha}`);
+  if(!acesso?.senha) return { erro: 'Defina uma senha pra este motorista em "Editar" antes de compartilhar o acesso.' };
+  return { texto: `Acesso ao sistema BRC\nLink: ${linkAcessoSistema('motorista')}\nUsuário (placa): ${normalizarPlaca(m.placa)}\nSenha: ${acesso.senha}` };
+}
+function compartilharAcessoMotorista(motoristaId){
+  const r = textoAcessoMotorista(motoristaId);
+  if(r.erro){ toast(r.erro, true); return; }
+  copiarTexto(r.texto);
+}
+function enviarAcessoMotoristaWhatsapp(motoristaId){
+  const r = textoAcessoMotorista(motoristaId);
+  if(r.erro){ toast(r.erro, true); return; }
+  enviarWhatsapp(r.texto);
+}
+function enviarWhatsapp(texto){
+  window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank');
+}
+let linkMotoristaTextoAtual = '';
+function onLinkMotoristaSelectChange(){
+  const id = document.getElementById('fLinkMotoristaSelect').value;
+  const wrap = document.getElementById('linkMotoristaResultado');
+  if(!id){ wrap.innerHTML = ''; linkMotoristaTextoAtual = ''; return; }
+  const r = textoAcessoMotorista(id);
+  if(r.erro){
+    wrap.innerHTML = `<p class="small-note" style="color:var(--red);margin-top:10px;">${r.erro}</p>`;
+    linkMotoristaTextoAtual = '';
+    return;
+  }
+  linkMotoristaTextoAtual = r.texto;
+  wrap.innerHTML = `
+    <div class="card" style="margin-top:12px;padding:12px;white-space:pre-wrap;font-size:13px;">${r.texto.replace(/</g,'&lt;')}</div>
+    <div class="actions-row" style="margin-top:10px;">
+      <button class="btn ghost sm" onclick="copiarTexto(linkMotoristaTextoAtual)">📋 Copiar</button>
+      <button class="btn sm" onclick="enviarWhatsapp(linkMotoristaTextoAtual)">📲 Enviar via WhatsApp</button>
+    </div>`;
 }
 function compartilharAcessoUsuario(usuarioId){
   const u = state.usuarios.find(x=>x.id===usuarioId);
@@ -1294,6 +1340,7 @@ function updateTbodyMotoristas(){
         <td><div class="actions-row">
         <button class="btn ghost sm cred-btn-acesso" onclick="openCadastroModal('acessoMotorista','${m.id}')">${acesso?'Gerenciar acesso':'Liberar acesso'}</button>
         <button class="btn ghost sm" onclick="compartilharAcessoMotorista('${m.id}')">📤 Compartilhar dados de acesso</button>
+        <button class="btn ghost sm" onclick="enviarAcessoMotoristaWhatsapp('${m.id}')">📲 WhatsApp</button>
         <button class="btn ghost sm" onclick="openCadastroModal('motorista','${m.id}')">Editar</button>
         <button class="btn danger sm" onclick="deleteMotorista('${m.id}')">Excluir</button></div></td></tr>`
     };
@@ -1372,10 +1419,25 @@ function renderCargasAtivas(){
   el.innerHTML = `
     <div class="card">
       <h2>Cargas &amp; Romaneios <small>${state.entregas.filter(e=>e.status!=='rejeitado').length} carga(s) — ${state.entregas.filter(e=>e.status==='completo').length} com pesagem completa</small>
+        <span class="choice-wrap">
+          <button class="btn ghost sm" onclick="toggleChoicePopover('popoverImportar')">📥 Importar</button>
+          <span class="choice-popover" id="popoverImportar">
+            <button onclick="fecharChoicePopovers(); document.getElementById('importInput').click();">📊 Planilha Excel (.xlsx)</button>
+            <button onclick="fecharChoicePopovers(); document.getElementById('importInputPDF').click();">📄 Relatório em PDF</button>
+          </span>
+        </span>
+        <span class="choice-wrap">
+          <button class="btn ghost sm" onclick="toggleChoicePopover('popoverRelatorio')">📤 Gerar relatório</button>
+          <span class="choice-popover" id="popoverRelatorio">
+            <button onclick="fecharChoicePopovers(); exportToXlsx();">📊 Excel (.xlsx)</button>
+            <button onclick="fecharChoicePopovers(); exportarRelatorioCargasPDF();">📄 PDF</button>
+          </span>
+        </span>
         <button class="btn sm" id="btnNovaCarga">➕ Nova entrega</button>
       </h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:10px;">Dados da NF (importados) e dados do romaneio (foto/manual) na mesma linha, assim que cada carga é pesada.
-        Quando um contrato tem NF de venda <b>e</b> NF de remessa/complemento, só a venda entra no confronto com o romaneio — a remessa vira só comprovante de entrega.</p>
+        Quando um contrato tem NF de venda <b>e</b> NF de remessa/complemento, só a venda entra no confronto com o romaneio — a remessa vira só comprovante de entrega.
+        Importar aceita tanto a planilha Excel oficial quanto um relatório de NFs em PDF (lido por IA).</p>
       <label class="small-note" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:14px;cursor:pointer;">
         <input type="checkbox" ${mostrarComprovantes?'checked':''} onchange="toggleComprovantes()"> mostrar também os comprovantes de remessa/complemento (fora do confronto)
       </label>
@@ -1802,6 +1864,7 @@ function bindShellEvents(){
   document.getElementById('modalCadastroClose').addEventListener('click', closeCadastroModal);
   document.getElementById('modalCargaClose').addEventListener('click', closeCargaModal);
   document.getElementById('importInput').addEventListener('change', (e)=>{ if(e.target.files.length) abrirSelecaoColheitaImportacao(e.target.files[0]); e.target.value=''; });
+  document.getElementById('importInputPDF').addEventListener('change', (e)=>{ if(e.target.files.length) handleImportRelatorioPDF(e.target.files[0]); e.target.value=''; });
 
   // Menu flutuante "Interações"
   const toggleBtn = document.getElementById('btnInteracoesToggle');
@@ -1812,8 +1875,6 @@ function bindShellEvents(){
       panel.classList.remove('aberto');
     }
   });
-  document.getElementById('btnImport').addEventListener('click', ()=>{ panel.classList.remove('aberto'); document.getElementById('importInput').click(); });
-  document.getElementById('btnExport').addEventListener('click', ()=>{ panel.classList.remove('aberto'); exportToXlsx(); });
   document.getElementById('btnVincularPlanilha').addEventListener('click', ()=>{ panel.classList.remove('aberto'); openCadastroModal('guiaPlanilha'); });
   document.getElementById('btnGerarDashboard').addEventListener('click', ()=>{ panel.classList.remove('aberto'); switchTab('dashboard'); window.scrollTo({top:0, behavior:'smooth'}); });
   document.getElementById('btnSalvarComplementares').addEventListener('click', async ()=>{
@@ -1829,6 +1890,10 @@ function bindShellEvents(){
     }).catch(()=>{
       prompt('Copie o link abaixo e envie para o produtor:', url);
     });
+  });
+  document.getElementById('btnLinkMotorista').addEventListener('click', ()=>{
+    panel.classList.remove('aberto');
+    openCadastroModal('linkMotorista');
   });
   document.getElementById('btnToggleTema').addEventListener('click', ()=>{ panel.classList.remove('aberto'); toggleTema(); });
 }
@@ -2091,6 +2156,23 @@ function openCadastroModal(kind, id){
       <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
         <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
         <button class="btn" onclick="confirmarImportContratoPDF()">Criar/atualizar registros</button>
+      </div>`;
+  }
+
+  if(kind==='linkMotorista'){
+    title.textContent = 'Link de acesso para motorista';
+    linkMotoristaTextoAtual = '';
+    body.innerHTML = `
+      <p class="small-note" style="margin-top:-4px;">Selecione o motorista pra gerar o link e a senha de acesso dele — depois é só copiar ou enviar direto pelo WhatsApp.</p>
+      <div class="field"><label>Motorista</label>
+        <select id="fLinkMotoristaSelect" onchange="onLinkMotoristaSelectChange()">
+          <option value="">— selecione —</option>
+          ${state.motoristas.map(m=>`<option value="${m.id}">${m.nome}${m.placa?' ('+normalizarPlaca(m.placa)+')':''}</option>`).join('')}
+        </select>
+      </div>
+      <div id="linkMotoristaResultado"></div>
+      <div class="actions-row" style="justify-content:flex-end;margin-top:14px;">
+        <button class="btn ghost" onclick="closeCadastroModal()">Fechar</button>
       </div>`;
   }
 
@@ -4116,17 +4198,161 @@ function handleImportLegacy(rows, colheitaId){
 
 /* ---- Dispatcher de importação ---- */
 let arquivoImportacaoPendente = null;
+function toggleChoicePopover(id){
+  const pop = document.getElementById(id);
+  const estavaAberto = pop.classList.contains('aberto');
+  fecharChoicePopovers();
+  if(!estavaAberto) pop.classList.add('aberto');
+}
+function fecharChoicePopovers(){
+  document.querySelectorAll('.choice-popover.aberto').forEach(p=>p.classList.remove('aberto'));
+}
+document.addEventListener('click', (e)=>{
+  if(!e.target.closest('.choice-wrap')) fecharChoicePopovers();
+});
+
+let tipoImportacaoPendente = 'xlsx';
+function handleImportRelatorioPDF(file){
+  arquivoImportacaoPendente = file;
+  tipoImportacaoPendente = 'pdf';
+  openCadastroModal('selecionarColheitaImportacao', null);
+}
+function processarRelatorioPDF(file, colheitaId){
+  if(!window.pdfjsLib){ toast('Biblioteca de leitura de PDF não carregou. Verifique sua conexão.', true); return; }
+  const reader = new FileReader();
+  reader.onload = async (ev)=>{
+    try{
+      const pdf = await pdfjsLib.getDocument({data: ev.target.result}).promise;
+      let texto = '';
+      for(let i=1;i<=pdf.numPages;i++){
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        texto += content.items.map(it=>it.str).join(' ') + '\n';
+      }
+      toast('Lendo o relatório de NFs com IA...');
+      let linhas;
+      try{
+        linhas = await analisarRelatorioNFsIA(texto);
+      }catch(errIA){
+        console.error(errIA);
+        toast('A IA não conseguiu ler esse relatório em PDF: ' + errIA.message, true);
+        return;
+      }
+      if(!Array.isArray(linhas) || !linhas.length){
+        toast('Não encontrei nenhuma nota fiscal legível nesse PDF.', true);
+        return;
+      }
+      const rows = linhas.map(r=>({
+        Status: r.status||'', Produtor: r.produtor||'', Numero: r.numero||'',
+        'Valor Total': r.valorTotal||0, 'Data Emissao': r.dataEmissao||'',
+        Operacao: r.operacao||'', Destinatario: r.destinatario||'',
+        Transportadora: r.transportadora||'', Placa: r.placa||'', Observacao: r.observacao||''
+      }));
+      handleImportPadraoNF(rows, colheitaId);
+    }catch(err){
+      console.error(err);
+      toast('Não consegui ler esse PDF. Confira se não é uma imagem escaneada sem texto.', true);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+async function analisarRelatorioNFsIA(texto){
+  const prompt = `Você é um especialista em relatórios de notas fiscais de venda/remessa de grãos do agronegócio brasileiro.
+Leia o texto abaixo, extraído de um relatório de notas fiscais emitidas, e responda APENAS com um JSON válido (sem markdown, sem texto antes ou depois): um array de objetos, um item por nota fiscal encontrada, cada um com exatamente estas chaves:
+{
+ "status": string ou null (ex: "Autorizada", "Cancelada"),
+ "produtor": string ou null (nome do produtor/remetente da carga),
+ "numero": string ou null (número da NF),
+ "valorTotal": number ou null,
+ "dataEmissao": string ou null (formato AAAA-MM-DD),
+ "operacao": string ou null (natureza da operação, ex: "Venda", "Remessa para depósito", "Complemento"),
+ "destinatario": string ou null (nome da empresa/armazém destinatário),
+ "transportadora": string ou null (nome do motorista ou da transportadora),
+ "placa": string ou null,
+ "observacao": string ou null (qualquer observação da linha, inclusive referência a contrato se houver)
+}
+Inclua uma entrada no array para cada nota fiscal do relatório, mesmo que sejam muitas. Se um campo não existir ou não estiver legível, use null. Não invente dados. Responda somente o JSON (array).
+
+TEXTO DO RELATÓRIO:
+"""
+${String(texto||'').slice(0, 40000)}
+"""`;
+
+  const response = await fetch(`${API_BASE}/analisar-contrato`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-api-key": API_KEY },
+    body: JSON.stringify({ prompt, maxTokens: 6000 })
+  });
+  if(!response.ok){
+    let detalhe = '';
+    try{
+      const errBody = await response.json();
+      if(typeof errBody.error === 'string') detalhe = errBody.error;
+      else if(errBody.error && errBody.error.message) detalhe = errBody.error.message;
+      else if(errBody.message) detalhe = errBody.message;
+    }catch(e){}
+    throw new Error('Falha ao consultar IA (status ' + response.status + ')' + (detalhe ? ': ' + detalhe : ''));
+  }
+  const data = await response.json();
+  const textBlock = (data.content || []).map(b=>b.text||'').join('\n').trim();
+  const clean = textBlock.replace(/^```json/i,'').replace(/^```/,'').replace(/```$/,'').trim();
+  let parsed;
+  try{ parsed = JSON.parse(clean); }
+  catch(e){ throw new Error('A IA não retornou um JSON válido.'); }
+  return parsed;
+}
+function exportarRelatorioCargasPDF(){
+  const lista = state.entregas.filter(e=>e.status!=='rejeitado');
+  const linhas = lista.map(e=>{
+    const v = vendaById(e.vendaId);
+    return `<tr>
+      <td>${v?empresaNome(v.empresaId):'—'}</td><td>${v?produtorNome(v.produtorId):'—'}</td>
+      <td>${v?v.nrNF:'—'}</td><td>${dataBR(e.dataSaida)}</td><td>${e.motorista||'—'}</td><td>${e.placa||'—'}</td>
+      <td>${e.nrRomaneio||'—'}</td><td>${e.status!=='pendente'?fmtInt(e.pesoBruto):'—'}</td>
+      <td>${e.status!=='pendente'?fmtInt(e.pesoLiquidoComDesc):'—'}</td><td>${e.status}</td>
+    </tr>`;
+  }).join('');
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Relatório de Cargas e Romaneios — ${todayISO()}</title>
+    <style>
+      body{ font-family: Arial, Helvetica, sans-serif; padding:24px; color:#111; }
+      h1{ font-size:18px; margin-bottom:4px; }
+      p.sub{ color:#555; font-size:12px; margin-top:0; margin-bottom:18px; }
+      table{ width:100%; border-collapse:collapse; font-size:10.5px; }
+      th, td{ border:1px solid #ccc; padding:5px 7px; text-align:left; }
+      th{ background:#f0f0f0; }
+      #btnImprimir{ margin-top:20px; padding:10px 18px; font-size:14px; cursor:pointer; }
+      @media print{ #btnImprimir{ display:none; } }
+    </style>
+  </head><body>
+    <h1>Relatório de Cargas &amp; Romaneios — BRC Colheita</h1>
+    <p class="sub">Gerado em ${new Date().toLocaleString('pt-BR')} · ${lista.length} carga(s)</p>
+    <table>
+      <thead><tr><th>Empresa</th><th>Produtor</th><th>Nº NF</th><th>Data saída</th><th>Motorista</th><th>Placa</th><th>Romaneio</th><th>Peso bruto (kg)</th><th>Peso líq. final (kg)</th><th>Status</th></tr></thead>
+      <tbody>${linhas || '<tr><td colspan="10" style="text-align:center;">Nenhuma carga cadastrada.</td></tr>'}</tbody>
+    </table>
+    <button id="btnImprimir" onclick="window.print()">🖨️ Salvar como PDF / Imprimir</button>
+  </body></html>`;
+  const win = window.open('', '_blank');
+  if(!win){ toast('Seu navegador bloqueou a nova aba. Permita pop-ups para este site e tente de novo.', true); return; }
+  win.document.write(html);
+  win.document.close();
+}
 function abrirSelecaoColheitaImportacao(file){
   arquivoImportacaoPendente = file;
+  tipoImportacaoPendente = 'xlsx';
   openCadastroModal('selecionarColheitaImportacao', null);
 }
 function confirmarImportacaoComColheita(){
   const sel = document.getElementById('fSelecionarColheitaImportacao');
   const colheitaId = sel && sel.value ? sel.value : null;
   const file = arquivoImportacaoPendente;
+  const tipo = tipoImportacaoPendente;
   arquivoImportacaoPendente = null;
+  tipoImportacaoPendente = 'xlsx';
   closeCadastroModal();
-  if(file) handleImportFile(file, colheitaId);
+  if(!file) return;
+  if(tipo==='pdf') processarRelatorioPDF(file, colheitaId);
+  else handleImportFile(file, colheitaId);
 }
 function handleImportFile(file, colheitaId){
   const reader = new FileReader();
