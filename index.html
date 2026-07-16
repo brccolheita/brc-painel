@@ -37,6 +37,11 @@ body{
 }
 .disp{ font-family:'Space Grotesk',sans-serif; }
 .mono{ font-family:'JetBrains Mono',monospace; }
+body.fonte-pequena{ zoom:0.875; }
+body.fonte-media{ zoom:1.1; }
+body.fonte-grande{ zoom:1.25; }
+.entrada-item{ display:flex; align-items:center; gap:8px; padding:8px 6px; font-size:12.5px; color:var(--ink-dim); cursor:pointer; border-radius:6px; }
+.entrada-item:hover{ background:rgba(127,127,127,.14); color:var(--ink); }
 
 /* ---- HERO / NAV ---- */
 .hero{ padding:28px 5vw 0 5vw; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:50;}
@@ -445,6 +450,7 @@ const PESO_FISCAL_PADRAO = 46000;
 const state = {
   empresas: [],    // {id, nome, cnpj}
   produtores: [],  // {id, nome, cpf}
+  fazendas: [],    // {id, nome}
   contratos: [],   // {id, tipo, empresaId, produtorId, culturaId, doc, volumeKg, valorKg, volumeSacas, valorSaca, alertaPercentual, localEntrega, obs}
   motoristas: [],  // {id, nome, placa, cpf}
   colheitas: [],   // {id, culturaId, variedadeId, area, talhao, produtorId} — cada lançamento é numerado na tela (1,2,3...)
@@ -575,6 +581,7 @@ async function loadState(){
       const c = JSON.parse(r1.value);
       state.empresas = c.empresas || [];
       state.produtores = c.produtores || [];
+      state.fazendas = c.fazendas || [];
       state.contratos = c.contratos || [];
       state.motoristas = c.motoristas || [];
       state.colheitas = c.colheitas || (c.talhoes||[]).map(t=>({id:t.id, culturaId:t.culturaId||null, variedadeId:t.variedadeId||null, area:t.area||0, talhao:t.nome||'', produtorId:t.produtorId||null}));
@@ -612,7 +619,7 @@ async function saveUsuarios(){
 async function saveCadastros(){
   try{
     await window.storage.set(STORE_KEY_CADASTROS, JSON.stringify({
-      empresas: state.empresas, produtores: state.produtores, contratos: state.contratos,
+      empresas: state.empresas, produtores: state.produtores, fazendas: state.fazendas, contratos: state.contratos,
       motoristas: state.motoristas, colheitas: state.colheitas, culturas: state.culturas, config: state.config
     }), true);
   }catch(e){ toast('Não foi possível salvar os cadastros. Tente novamente.', true); }
@@ -1263,6 +1270,16 @@ function renderCadastros(){
       </div>
     </div>
 
+    <div class="section-title">Cadastro de Fazenda</div>
+    <div class="card" style="margin-bottom:24px;">
+      <h2>Fazendas cadastradas <button class="btn sm" onclick="openCadastroModal('fazenda')">➕ Nova fazenda</button></h2>
+      <p class="small-note" style="margin-top:-6px;margin-bottom:12px;">Talhão, variedade e hectares continuam em "Dados da Colheita" — mudam a cada safra, então ficam vinculados à colheita, não à fazenda.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Nome</th><th></th></tr></thead>
+        <tbody id="tbody-fazendas"></tbody>
+      </table></div>
+    </div>
+
     <div class="section-title">Cadastro de Produtor</div>
     <div class="card" style="margin-bottom:24px;">
       <h2>Produtores cadastrados <button class="btn sm" onclick="openCadastroModal('produtor')">➕ Novo produtor</button></h2>
@@ -1325,7 +1342,7 @@ function renderCadastros(){
       </table></div>
     </div>
   `;
-  updateTbodyProdutores(); updateTbodyEmpresas(); updateTbodyContratosCad(); updateTbodyMotoristas(); updateTbodyColheitas();
+  updateTbodyFazendas(); updateTbodyProdutores(); updateTbodyEmpresas(); updateTbodyContratosCad(); updateTbodyMotoristas(); updateTbodyColheitas();
   document.getElementById('btnImportContratoPDF').addEventListener('click', ()=>document.getElementById('importContratoPDFInput').click());
   document.getElementById('importContratoPDFInput').addEventListener('change', (e)=>{
     if(e.target.files[0]) handleImportContratoPDF(e.target.files[0]);
@@ -1360,6 +1377,69 @@ function removerVariedade(culturaId, variedadeId){
   saveCadastros(); renderCadastros();
 }
 
+function updateTbodyFazendas(){
+  const rows = state.fazendas.map(f=>`<tr><td>${f.nome}</td>
+    <td><div class="actions-row"><button class="btn ghost sm" onclick="openCadastroModal('fazenda','${f.id}')">Editar</button>
+    <button class="btn danger sm" onclick="deleteFazenda('${f.id}')">Excluir</button></div></td></tr>`);
+  document.getElementById('tbody-fazendas').innerHTML = rows.length ? rows.join('') : emptyRow(2,'Nenhuma fazenda cadastrada.');
+}
+function salvarFazenda(){
+  const nome = document.getElementById('fFazendaNome').value.trim();
+  if(!nome){ toast('Informe o nome da fazenda.', true); return; }
+  const overlay = document.getElementById('modalCadastro');
+  const id = overlay.dataset.id;
+  if(id){
+    const f = state.fazendas.find(x=>x.id===id);
+    Object.assign(f, {nome});
+  } else {
+    state.fazendas.push({id: uid('faz'), nome, talhoes: []});
+  }
+  saveCadastros(); renderAll(); closeCadastroModal(); toast('Fazenda salva.');
+}
+function renderListaTalhoesFazenda(fazendaId){
+  const f = state.fazendas.find(x=>x.id===fazendaId);
+  const talhoes = f?.talhoes || [];
+  if(!talhoes.length) return '<p class="small-note">Nenhum talhão cadastrado ainda.</p>';
+  return talhoes.map(t=>`
+    <div class="actions-row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);">
+      <span style="font-size:13px;">${t.nome} — ${fmt(t.area,1)} ha</span>
+      <button class="btn danger sm" onclick="removerTalhaoFazenda('${fazendaId}','${t.id}')">🗑️</button>
+    </div>`).join('');
+}
+function adicionarTalhaoFazenda(fazendaId){
+  const nome = document.getElementById('fNovoTalhaoNome').value.trim();
+  const area = num(document.getElementById('fNovoTalhaoArea').value);
+  if(!nome){ toast('Informe o nome do talhão.', true); return; }
+  if(!area){ toast('Informe a área (hectares) do talhão.', true); return; }
+  const f = state.fazendas.find(x=>x.id===fazendaId);
+  if(!f.talhoes) f.talhoes = [];
+  f.talhoes.push({id: uid('tal'), nome, area});
+  saveCadastros();
+  document.getElementById('listaTalhoesFazenda').innerHTML = renderListaTalhoesFazenda(fazendaId);
+  document.getElementById('fNovoTalhaoNome').value = '';
+  document.getElementById('fNovoTalhaoArea').value = '';
+  toast('Talhão adicionado.');
+}
+function removerTalhaoFazenda(fazendaId, talhaoId){
+  const emUso = state.colheitas.some(c=>c.talhaoId===talhaoId);
+  if(emUso){ toast('Este talhão já tem colheita lançada — remova as colheitas dele primeiro.', true); return; }
+  if(!confirm('Remover este talhão?')) return;
+  const f = state.fazendas.find(x=>x.id===fazendaId);
+  f.talhoes = (f.talhoes||[]).filter(t=>t.id!==talhaoId);
+  saveCadastros();
+  document.getElementById('listaTalhoesFazenda').innerHTML = renderListaTalhoesFazenda(fazendaId);
+  toast('Talhão removido.');
+}
+function calcAreaAlocadaTalhao(talhaoId, excluirColheitaId){
+  return state.colheitas
+    .filter(c=>c.talhaoId===talhaoId && c.id!==excluirColheitaId)
+    .reduce((soma,c)=>soma+num(c.area),0);
+}
+function deleteFazenda(id){
+  if(!confirm('Excluir esta fazenda?')) return;
+  state.fazendas = state.fazendas.filter(f=>f.id!==id);
+  saveCadastros(); renderAll(); toast('Fazenda excluída.');
+}
 function updateTbodyProdutores(){
   const filters = getFilterValues('produtores');
   const rows = state.produtores.map(p=>({
@@ -2252,6 +2332,20 @@ function toggleTema(){
   localStorage.setItem('brc_tema', claro ? 'claro' : 'escuro');
   toast(claro ? 'Tema claro ativado.' : 'Tema escuro ativado.');
 }
+function definirTamanhoFonte(tamanho){
+  document.body.classList.remove('fonte-pequena','fonte-media','fonte-grande');
+  if(tamanho==='pequeno') document.body.classList.add('fonte-pequena');
+  else if(tamanho==='medio') document.body.classList.add('fonte-media');
+  else if(tamanho==='grande') document.body.classList.add('fonte-grande');
+  localStorage.setItem('brc_tamanho_fonte', tamanho);
+  toast('Tamanho da fonte ajustado.');
+}
+(function restaurarTamanhoFonte(){
+  const t = localStorage.getItem('brc_tamanho_fonte');
+  if(t==='pequeno') document.body.classList.add('fonte-pequena');
+  else if(t==='medio') document.body.classList.add('fonte-media');
+  else if(t==='grande') document.body.classList.add('fonte-grande');
+})();
 if(localStorage.getItem('brc_tema')==='claro') document.body.classList.add('tema-claro');
 /* ============================================================
    MODAL DE CADASTRO — Empresa / Produtor / Contrato / Motorista / Talhão
@@ -2416,6 +2510,56 @@ function openCadastroModal(kind, id){
       <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
         <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
         <button class="btn" onclick="salvarColheitaDaVenda()">Salvar</button>
+      </div>`;
+  }
+
+  if(kind==='configuracoes'){
+    title.textContent = 'Configurações';
+    const claro = document.body.classList.contains('tema-claro');
+    const tFonte = localStorage.getItem('brc_tamanho_fonte') || 'padrao';
+    body.innerHTML = `
+      <div class="field">
+        <label>Tema de cores</label>
+        <button class="btn ghost sm" style="width:100%;" onclick="toggleTema()">🌗 Alternar para tema ${claro?'escuro':'claro'}</button>
+      </div>
+      <div class="field">
+        <label>Tamanho da fonte</label>
+        <div class="actions-row" style="flex-wrap:wrap;">
+          <button class="btn ${tFonte==='pequeno'?'':'ghost'} sm" onclick="definirTamanhoFonte('pequeno')">Pequeno</button>
+          <button class="btn ${tFonte==='padrao'?'':'ghost'} sm" onclick="definirTamanhoFonte('padrao')">Padrão</button>
+          <button class="btn ${tFonte==='medio'?'':'ghost'} sm" onclick="definirTamanhoFonte('medio')">Médio</button>
+          <button class="btn ${tFonte==='grande'?'':'ghost'} sm" onclick="definirTamanhoFonte('grande')">Grande</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Idioma <span class="small-note">(em breve)</span></label>
+        <select disabled><option>Português (Brasil)</option></select>
+        <p class="small-note" style="margin-top:6px;">Traduzir o sistema todo pra outros idiomas é um projeto grande à parte — por enquanto fica só o espaço reservado aqui.</p>
+      </div>
+      <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
+        <button class="btn" onclick="closeCadastroModal()">Fechar</button>
+      </div>`;
+  }
+
+  if(kind==='fazenda'){
+    const f = id ? state.fazendas.find(x=>x.id===id) : null;
+    title.textContent = f ? 'Editar fazenda' : 'Nova fazenda';
+    body.innerHTML = `
+      <div class="field"><label>Nome da fazenda</label><input id="fFazendaNome" value="${f?f.nome:''}" placeholder="Ex: Fazenda Atacama"></div>
+      <div class="field">
+        <label>Talhões desta fazenda <span class="small-note">(nome e área definitivos — a variedade é escolhida depois, no operacional)</span></label>
+        ${f ? `
+          <div id="listaTalhoesFazenda">${renderListaTalhoesFazenda(f.id)}</div>
+          <div class="actions-row" style="margin-top:8px;gap:6px;">
+            <input id="fNovoTalhaoNome" placeholder="Ex: Talhão 3" style="flex:1;">
+            <input id="fNovoTalhaoArea" type="number" step="0.1" placeholder="Hectares" style="width:110px;">
+            <button type="button" class="btn ghost sm" onclick="adicionarTalhaoFazenda('${f.id}')">➕ Adicionar</button>
+          </div>
+        ` : `<p class="small-note">Salve a fazenda primeiro (botão "Salvar" abaixo) e depois volte em "Editar" pra cadastrar os talhões.</p>`}
+      </div>
+      <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
+        <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
+        <button class="btn" onclick="salvarFazenda()">Salvar</button>
       </div>`;
   }
 
@@ -2638,6 +2782,9 @@ function openCadastroModal(kind, id){
     title.textContent = t ? `Editar colheita nº ${numero}` : `Nova colheita — nº ${numero}`;
     body.innerHTML = `
       <div class="form-grid">
+        <div class="field full"><label>Fazenda</label><select id="fColheitaFazenda" onchange="onColheitaFazendaChange()">${optionsFazendas(t?.fazendaId)}</select></div>
+        <div class="field full"><label>Talhão</label><select id="fColheitaTalhaoSel" onchange="onColheitaTalhaoChange()">${optionsTalhoesFazenda(t?.fazendaId, t?.talhaoId)}</select></div>
+        <div class="field full" id="colheitaAreaInfo" style="margin-top:-8px;"></div>
         <div class="field full"><label>Cultura</label><input value="${culturaAtivaForm?culturaAtivaForm.nome:'defina a cultura ativa acima'}" disabled></div>
         <div class="field full">
           <label>Variedade</label>
@@ -2647,14 +2794,14 @@ function openCadastroModal(kind, id){
             <button type="button" class="btn ghost sm" onclick="adicionarVariedadeNaColheita()">+</button>
           </div>
         </div>
-        <div class="field"><label>Hectares</label><input id="fColheitaArea" type="number" step="0.1" value="${t?.area||''}" placeholder="Ex: 120"></div>
-        <div class="field"><label>Número do talhão</label><input id="fColheitaTalhao" value="${t?.talhao||''}" placeholder="Ex: Talhão 3"></div>
+        <div class="field"><label>Hectares desta variedade neste talhão</label><input id="fColheitaArea" type="number" step="0.1" value="${t?.area||''}" placeholder="Ex: 70" oninput="atualizarInfoAreaColheita()"></div>
         <div class="field full"><label>Produtor <span class="small-note">(opcional)</span></label><select id="fColheitaProdutor">${optionsProdutores(t?.produtorId)}</select></div>
       </div>
       <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
         <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
         <button class="btn" onclick="salvarColheita()">Salvar</button>
       </div>`;
+    atualizarInfoAreaColheita();
   }
 
   overlay.classList.remove('hidden');
@@ -2908,6 +3055,52 @@ async function salvarMotorista(){
 
   renderAll(); closeCadastroModal(); toast('Motorista salvo.');
 }
+function optionsFazendas(selectedId){
+  if(!state.fazendas.length) return `<option value="">Cadastre uma fazenda primeiro</option>`;
+  return `<option value="">— selecionar —</option>` + state.fazendas.map(f=>`<option value="${f.id}" ${f.id===selectedId?'selected':''}>${f.nome}</option>`).join('');
+}
+function optionsTalhoesFazenda(fazendaId, selectedId){
+  const f = state.fazendas.find(x=>x.id===fazendaId);
+  const talhoes = f?.talhoes || [];
+  if(!fazendaId) return `<option value="">Selecione a fazenda primeiro</option>`;
+  if(!talhoes.length) return `<option value="">Nenhum talhão cadastrado nessa fazenda</option>`;
+  return `<option value="">— selecionar —</option>` + talhoes.map(t=>`<option value="${t.id}" ${t.id===selectedId?'selected':''}>${t.nome} (${fmt(t.area,1)} ha)</option>`).join('');
+}
+function onColheitaFazendaChange(){
+  const fazendaId = document.getElementById('fColheitaFazenda').value;
+  document.getElementById('fColheitaTalhaoSel').innerHTML = optionsTalhoesFazenda(fazendaId, null);
+  atualizarInfoAreaColheita();
+}
+function onColheitaTalhaoChange(){
+  atualizarInfoAreaColheita();
+  const overlay = document.getElementById('modalCadastro');
+  const idEditando = overlay.dataset.id;
+  const fazendaId = document.getElementById('fColheitaFazenda').value;
+  const talhaoId = document.getElementById('fColheitaTalhaoSel').value;
+  const f = state.fazendas.find(x=>x.id===fazendaId);
+  const talhao = f?.talhoes.find(t=>t.id===talhaoId);
+  if(talhao){
+    const alocado = calcAreaAlocadaTalhao(talhaoId, idEditando);
+    const restante = talhao.area - alocado;
+    const campoArea = document.getElementById('fColheitaArea');
+    if(campoArea && !campoArea.value) campoArea.value = restante>0 ? restante : '';
+  }
+  atualizarInfoAreaColheita();
+}
+function atualizarInfoAreaColheita(){
+  const info = document.getElementById('colheitaAreaInfo');
+  if(!info) return;
+  const overlay = document.getElementById('modalCadastro');
+  const idEditando = overlay.dataset.id;
+  const fazendaId = document.getElementById('fColheitaFazenda')?.value;
+  const talhaoId = document.getElementById('fColheitaTalhaoSel')?.value;
+  const f = state.fazendas.find(x=>x.id===fazendaId);
+  const talhao = f?.talhoes.find(t=>t.id===talhaoId);
+  if(!talhao){ info.innerHTML = ''; return; }
+  const alocado = calcAreaAlocadaTalhao(talhaoId, idEditando);
+  const restante = talhao.area - alocado;
+  info.innerHTML = `<p class="small-note">Talhão de ${fmt(talhao.area,1)} ha — ${fmt(alocado,1)} ha já alocados em outra(s) variedade(s) · ${fmt(restante,1)} ha ainda disponíveis nesse talhão.</p>`;
+}
 function optionsVariedades(cultura, selectedId){
   if(!cultura || !cultura.variedades.length) return `<option value="">Nenhuma variedade cadastrada para ${cultura?cultura.nome:'a cultura ativa'}</option>`;
   return `<option value="">— sem variedade definida —</option>` + cultura.variedades.map(v=>`<option value="${v.id}" ${v.id===selectedId?'selected':''}>${v.nome}</option>`).join('');
@@ -2924,16 +3117,25 @@ function adicionarVariedadeNaColheita(){
   document.getElementById('fColheitaNovaVariedade').value = '';
 }
 function salvarColheita(){
+  const fazendaId = document.getElementById('fColheitaFazenda').value || null;
+  const talhaoId = document.getElementById('fColheitaTalhaoSel').value || null;
   const variedadeId = document.getElementById('fColheitaVariedade').value || null;
   const area = num(document.getElementById('fColheitaArea').value);
-  const talhao = document.getElementById('fColheitaTalhao').value.trim();
   const produtorId = document.getElementById('fColheitaProdutor').value || null;
   const culturaId = state.culturas.find(c=>c.nome===state.config.cultura)?.id || null;
   if(!culturaId){ toast('Selecione a cultura ativa antes de lançar a colheita.', true); return; }
-  if(!area){ toast('Informe os hectares.', true); return; }
+  if(!fazendaId || !talhaoId){ toast('Selecione a fazenda e o talhão.', true); return; }
+  if(!area){ toast('Informe os hectares desta variedade.', true); return; }
   const overlay = document.getElementById('modalCadastro');
   const id = overlay.dataset.id;
-  const dados = {culturaId, variedadeId, area, talhao, produtorId};
+  const f = state.fazendas.find(x=>x.id===fazendaId);
+  const talhaoCad = f.talhoes.find(t=>t.id===talhaoId);
+  const alocado = calcAreaAlocadaTalhao(talhaoId, id);
+  if(alocado + area > talhaoCad.area + 0.01){
+    toast(`Esse talhão tem ${fmt(talhaoCad.area,1)} ha no total — ${fmt(alocado,1)} ha já estão em outra variedade. Só sobram ${fmt(talhaoCad.area-alocado,1)} ha pra essa.`, true);
+    return;
+  }
+  const dados = {fazendaId, talhaoId, talhao: talhaoCad.nome, culturaId, variedadeId, area, produtorId};
   if(id){ const t = state.colheitas.find(x=>x.id===id); Object.assign(t, dados); }
   else{ state.colheitas.push({id: uid('col'), ...dados}); }
   saveCadastros(); renderAll(); closeCadastroModal(); toast('Colheita salva.');
@@ -5221,13 +5423,8 @@ async function forcarSincronizacao(){
   }
 }
 
-function bootAfterLogin(){
+function entrarNoApp(tabInicial){
   const s = getSessao();
-  if(s.papel==='motorista'){
-    const m = state.motoristas.find(x=>x.id===s.motoristaId);
-    renderModoMotorista(m?.placa||'');
-    return;
-  }
   document.body.innerHTML = APP_SHELL_HTML;
   if(s.papel==='produtor'){
     window.modoSomenteLeitura = true;
@@ -5246,6 +5443,47 @@ function bootAfterLogin(){
     syncGoogleSheet();
     setInterval(syncGoogleSheet, 5*60*1000);
   }
+  if(tabInicial) switchTab(tabInicial);
+}
+function renderTelaEntrada(){
+  const s = getSessao();
+  document.body.innerHTML = `
+    <div style="max-width:460px;margin:0 auto;padding:60px 20px;">
+      <div style="display:flex;flex-direction:column;align-items:center;margin-bottom:26px;">
+        <div style="width:72px;height:72px;border-radius:50%;background:var(--bg-2);border:2px solid var(--gold);display:flex;align-items:center;justify-content:center;margin-bottom:14px;">
+          <svg width="38" height="38" viewBox="0 0 40 40"><path d="M20 6 C20 6 12 12 12 22 C12 28 15.5 32 20 32 C24.5 32 28 28 28 22 C28 12 20 6 20 6 Z" fill="none" stroke="var(--gold)" stroke-width="1.6"/><path d="M20 12 V30" stroke="var(--gold)" stroke-width="1.4"/><path d="M20 16 C17 16 15 18 15 20" fill="none" stroke="var(--gold)" stroke-width="1.2"/><path d="M20 21 C23 21 25 23 25 25" fill="none" stroke="var(--gold)" stroke-width="1.2"/></svg>
+        </div>
+        <h1 class="disp" style="font-size:20px;margin:0;color:var(--gold);letter-spacing:-.3px;">BRC</h1>
+        <p style="font-size:12px;color:var(--ink-dim);margin:2px 0 0;">Colheita e comercialização</p>
+      </div>
+      <p style="font-size:12px;color:var(--ink-dim);text-align:center;margin:0 0 16px;">Usuário: ${s.usuario} · selecione o que deseja fazer</p>
+      <div style="background:var(--bg-2);border:1px solid var(--line);border-radius:10px;padding:6px;margin-bottom:18px;">
+        <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;cursor:pointer;" onclick="document.getElementById('arvoreCadastrosEntrada').style.display = document.getElementById('arvoreCadastrosEntrada').style.display==='none' ? '' : 'none';">
+          <span style="flex:1;font-size:13px;font-weight:700;color:var(--ink);">📁 Cadastros</span>
+          <span style="font-size:12px;color:var(--ink-dim);">▾</span>
+        </div>
+        <div id="arvoreCadastrosEntrada" style="padding:2px 4px 4px 30px;">
+          <div class="entrada-item" onclick="entrarNoApp('cadastros')">🏠 Fazendas</div>
+          <div class="entrada-item" onclick="entrarNoApp('cadastros')">👥 Produtores</div>
+          <div class="entrada-item" onclick="entrarNoApp('cadastros')">🏢 Empresas</div>
+          <div class="entrada-item" onclick="entrarNoApp('cadastros')">🚚 Transporte</div>
+          <div class="entrada-item" onclick="entrarNoApp('usuarios')">👤 Usuários</div>
+          <div class="entrada-item" onclick="entrarNoApp(); setTimeout(()=>openCadastroModal('configuracoes'), 30);">⚙️ Configurações</div>
+        </div>
+      </div>
+      <button class="btn" style="width:100%;padding:14px;font-size:15px;" onclick="entrarNoApp()">Acessar</button>
+      <button class="btn ghost sm" style="width:100%;margin-top:10px;" onclick="logout()">🚪 Sair</button>
+    </div>
+  `;
+}
+function bootAfterLogin(){
+  const s = getSessao();
+  if(s.papel==='motorista'){
+    const m = state.motoristas.find(x=>x.id===s.motoristaId);
+    renderModoMotorista(m?.placa||'');
+    return;
+  }
+  renderTelaEntrada();
 }
 
 (async function init(){
