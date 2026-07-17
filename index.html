@@ -13,18 +13,18 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
 :root{
+  --bg: #F3F6EF; --bg-2: #FFFFFF; --panel: #FFFFFF; --panel-2: #EEF3E8;
+  --line: #E1E8D9; --ink: #1C2418; --ink-dim: #64705A;
+  --gold: #2F8F44; --gold-dim: #A8D5B0; --lime: #8BC34A;
+  --amber-glow: rgba(47,143,68,.10); --red: #D6534B; --red-dim: rgba(214,83,75,.10);
+  --cyan: #2E9E8C; --menu-bg: rgba(255,255,255,.85);
+}
+body.tema-escuro{
   --bg: #0B0E0C; --bg-2: #12160F; --panel: #161C16; --panel-2: #1C231B;
   --line: #2A322A; --ink: #EDEFE9; --ink-dim: #98A092;
   --gold: #FFDD00; --gold-dim: #7A611F; --lime: #C6FF3D;
   --amber-glow: rgba(255,221,0,.16); --red: #FF3D5A; --red-dim: rgba(255,61,90,.16);
   --cyan: #3DFFE8; --menu-bg: rgba(15,18,14,.72);
-}
-body.tema-claro{
-  --bg: #F5F6F0; --bg-2: #FFFFFF; --panel: #FFFFFF; --panel-2: #EEF0E7;
-  --line: #DCE0D4; --ink: #1B1F16; --ink-dim: #5C6353;
-  --gold: #8A6D00; --gold-dim: #C9AE55; --lime: #4F7A12;
-  --amber-glow: rgba(138,109,0,.10); --red: #C6304A; --red-dim: rgba(198,48,74,.10);
-  --cyan: #0E7A6E; --menu-bg: rgba(255,255,255,.78);
 }
 *{box-sizing:border-box;}
 html,body{ margin:0; background:var(--bg); color:var(--ink); }
@@ -144,8 +144,8 @@ input, select, textarea{
   padding:9px 11px; font-size:13.5px; font-family:'Inter',sans-serif;
 }
 input:focus, select:focus, textarea:focus{ outline:none; border-color:var(--gold-dim); }
-input[type="date"]{ color-scheme: dark; }
-body.tema-claro input[type="date"]{ color-scheme: light; }
+input[type="date"]{ color-scheme: light; }
+body.tema-escuro input[type="date"]{ color-scheme: dark; }
 input[type="date"]::-webkit-calendar-picker-indicator{ cursor:pointer; opacity:.85; }
 input[type="date"]::-webkit-calendar-picker-indicator:hover{ opacity:1; }
 .field{ margin-bottom:14px; }
@@ -248,7 +248,6 @@ body.read-only .interacoes-fixed{ display:none; }
 .th-flex{ display:flex; align-items:center; gap:6px; justify-content:space-between; }
 table.table-resizable{ border-collapse:separate; border-spacing:0; }
 table.table-resizable thead th{ color:var(--gold); font-weight:700; }
-body.tema-claro table.table-resizable thead th{ color:#000; }
 .table-wrap.resizable-wrap{ overflow:auto; resize:both; border:1px solid var(--line); border-radius:8px; min-width:320px; min-height:220px; max-width:100%; }
 .sticky-hscroll{ position:sticky; left:0; height:14px; overflow-x:auto; overflow-y:hidden; background:var(--bg-2); z-index:6; }
 .sticky-hscroll-top{ top:0; border-bottom:1px solid var(--line); }
@@ -369,9 +368,14 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
 <div class="hero" id="heroBanner">
   <div class="readonly-banner">👁 Modo visualização — dados em tempo real, sem edição</div>
   <div class="hero-top">
-    <div>
-      <h1 id="pageTitle">BRC - Colheita e Comercialização</h1>
-      <p>Cadastre produtores, contratos e empresas; lance cargas por foto do romaneio ou manualmente; acompanhe saldos e o dashboard em tempo real.</p>
+    <div style="display:flex;align-items:center;gap:14px;">
+      <div style="width:44px;height:44px;flex:0 0 auto;border-radius:50%;background:var(--bg-2);border:2px solid var(--gold);display:flex;align-items:center;justify-content:center;">
+        <svg width="22" height="22" viewBox="0 0 40 40"><path d="M20 6 C20 6 12 12 12 22 C12 28 15.5 32 20 32 C24.5 32 28 28 28 22 C28 12 20 6 20 6 Z" fill="none" stroke="var(--gold)" stroke-width="1.8"/><path d="M20 12 V30" stroke="var(--gold)" stroke-width="1.6"/><path d="M20 16 C17 16 15 18 15 20" fill="none" stroke="var(--gold)" stroke-width="1.4"/><path d="M20 21 C23 21 25 23 25 25" fill="none" stroke="var(--gold)" stroke-width="1.4"/></svg>
+      </div>
+      <div>
+        <h1 id="pageTitle">BRC - Colheita e Comercialização</h1>
+        <p>Cadastre produtores, contratos e empresas; lance cargas por foto do romaneio ou manualmente; acompanhe saldos e o dashboard em tempo real.</p>
+      </div>
     </div>
     <div class="hero-actions" style="align-items:center;gap:10px;">
       <span id="sessaoUsuarioLabel" style="color:var(--ink);font-size:13px;font-weight:600;align-self:center;"></span>
@@ -1271,7 +1275,7 @@ function renderCadastros(){
     </div>
 
     <div class="section-title">Cadastro de Fazenda</div>
-    <div class="card" style="margin-bottom:24px;">
+    <div class="card" id="passo-fazendas" style="margin-bottom:24px;">
       <h2>Fazendas cadastradas <button class="btn sm" onclick="openCadastroModal('fazenda')">➕ Nova fazenda</button></h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:12px;">Talhão, variedade e hectares continuam em "Dados da Colheita" — mudam a cada safra, então ficam vinculados à colheita, não à fazenda.</p>
       <div class="table-wrap"><table>
@@ -1281,7 +1285,7 @@ function renderCadastros(){
     </div>
 
     <div class="section-title">Cadastro de Produtor</div>
-    <div class="card" style="margin-bottom:24px;">
+    <div class="card" id="passo-produtores" style="margin-bottom:24px;">
       <h2>Produtores cadastrados <button class="btn sm" onclick="openCadastroModal('produtor')">➕ Novo produtor</button></h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:12px;">Também são criados automaticamente ao importar o relatório de NFs.</p>
       <div class="table-wrap"><table>
@@ -1291,7 +1295,7 @@ function renderCadastros(){
     </div>
 
     <div class="section-title">Dados da Colheita</div>
-    <div class="card" style="margin-bottom:24px;">
+    <div class="card" id="passo-colheita" style="margin-bottom:24px;">
       <h2>Colheitas lançadas <button class="btn sm" onclick="openCadastroModal('colheita')">➕ Incluir nova colheita</button></h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:12px;">Cada lançamento junta cultura, variedade, hectares e o número do talhão em um só passo — numerado na ordem em que você lança.</p>
       <div class="table-wrap"><table>
@@ -1323,8 +1327,8 @@ function renderCadastros(){
       </div>
     </div>
 
-    <div class="section-title">Venda / Armazenagem</div>
-    <div class="card" style="margin-bottom:24px;">
+    <div class="section-title">Empresas</div>
+    <div class="card" id="passo-empresas" style="margin-bottom:24px;">
       <h2>Empresas / armazéns de destino <button class="btn sm" onclick="openCadastroModal('empresa')">➕ Nova empresa</button></h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:12px;">Também são criadas automaticamente ao importar o relatório de NFs.</p>
       <div class="table-wrap"><table>
@@ -1333,8 +1337,8 @@ function renderCadastros(){
       </table></div>
     </div>
 
-    <div class="section-title">Motoristas</div>
-    <div class="card">
+    <div class="section-title">Transporte</div>
+    <div class="card" id="passo-transporte">
       <h2>Motoristas cadastrados <button class="btn sm" onclick="openCadastroModal('motorista')">➕ Novo motorista</button></h2>
       <div class="table-wrap"><table>
         <thead>${filterHeaderCells('motoristas',[{key:'nome',label:'Nome'},{key:'cpf',label:'CPF'},{key:'placa',label:'Placa'},{key:null,label:'Acesso'},{key:null,label:''}])}</thead>
@@ -2326,11 +2330,67 @@ function inicializarDragReorderInteracoes(){
     });
   });
 }
+const PASSOS_CADASTRO_WIZARD = [
+  {id:'passo-fazendas', label:'Fazendas'},
+  {id:'passo-produtores', label:'Produtores'},
+  {id:'passo-empresas', label:'Empresas'},
+  {id:'passo-transporte', label:'Transporte'},
+  {id:'passo-colheita', label:'Operações (Dados da Colheita)'},
+];
+let assistenteCadastroPasso = 0;
+function entrarNoAssistenteCadastro(passoId){
+  entrarNoApp('cadastros');
+  assistenteCadastroPasso = Math.max(0, PASSOS_CADASTRO_WIZARD.findIndex(p=>p.id===passoId));
+  aplicarPassoAssistenteCadastro();
+}
+function aplicarPassoAssistenteCadastro(){
+  const painel = document.getElementById('tab-cadastros');
+  if(!painel) return;
+  Array.from(painel.children).forEach(el=>{
+    if(el.id!=='barraAssistenteCadastro') el.style.display = 'none';
+  });
+  const passo = PASSOS_CADASTRO_WIZARD[assistenteCadastroPasso];
+  const secao = document.getElementById(passo.id);
+  if(secao){
+    secao.style.display = '';
+    const titulo = secao.previousElementSibling;
+    if(titulo && titulo.classList.contains('section-title')) titulo.style.display = '';
+  }
+  atualizarBarraAssistenteCadastro();
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+function atualizarBarraAssistenteCadastro(){
+  const painel = document.getElementById('tab-cadastros');
+  let barra = document.getElementById('barraAssistenteCadastro');
+  if(!barra){
+    barra = document.createElement('div');
+    barra.id = 'barraAssistenteCadastro';
+    barra.style.cssText = 'position:sticky;top:0;z-index:50;background:var(--bg-2);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;gap:10px;';
+    painel.insertBefore(barra, painel.firstChild);
+  }
+  const passo = PASSOS_CADASTRO_WIZARD[assistenteCadastroPasso];
+  const ultimo = assistenteCadastroPasso === PASSOS_CADASTRO_WIZARD.length-1;
+  barra.innerHTML = `
+    <button class="btn ghost sm" onclick="passoAssistenteCadastro(-1)" ${assistenteCadastroPasso===0?'disabled':''}>← Voltar</button>
+    <span style="font-size:12.5px;color:var(--ink-dim);">Passo ${assistenteCadastroPasso+1} de ${PASSOS_CADASTRO_WIZARD.length} — ${passo.label}</span>
+    <button class="btn sm" onclick="${ultimo?'sairDoAssistenteCadastro()':'passoAssistenteCadastro(1)'}">${ultimo?'Concluir':'Avançar →'}</button>
+  `;
+}
+function passoAssistenteCadastro(delta){
+  assistenteCadastroPasso = Math.min(PASSOS_CADASTRO_WIZARD.length-1, Math.max(0, assistenteCadastroPasso+delta));
+  aplicarPassoAssistenteCadastro();
+}
+function sairDoAssistenteCadastro(){
+  const painel = document.getElementById('tab-cadastros');
+  Array.from(painel.children).forEach(el=>{ el.style.display = ''; });
+  const barra = document.getElementById('barraAssistenteCadastro');
+  if(barra) barra.remove();
+}
 function toggleTema(){
-  document.body.classList.toggle('tema-claro');
-  const claro = document.body.classList.contains('tema-claro');
-  localStorage.setItem('brc_tema', claro ? 'claro' : 'escuro');
-  toast(claro ? 'Tema claro ativado.' : 'Tema escuro ativado.');
+  document.body.classList.toggle('tema-escuro');
+  const escuro = document.body.classList.contains('tema-escuro');
+  localStorage.setItem('brc_tema', escuro ? 'escuro' : 'claro');
+  toast(escuro ? 'Tema escuro ativado.' : 'Tema claro ativado.');
 }
 function definirTamanhoFonte(tamanho){
   document.body.classList.remove('fonte-pequena','fonte-media','fonte-grande');
@@ -2346,7 +2406,7 @@ function definirTamanhoFonte(tamanho){
   else if(t==='medio') document.body.classList.add('fonte-media');
   else if(t==='grande') document.body.classList.add('fonte-grande');
 })();
-if(localStorage.getItem('brc_tema')==='claro') document.body.classList.add('tema-claro');
+if(localStorage.getItem('brc_tema')==='escuro') document.body.classList.add('tema-escuro');
 /* ============================================================
    MODAL DE CADASTRO — Empresa / Produtor / Contrato / Motorista / Talhão
    ============================================================ */
@@ -2515,12 +2575,12 @@ function openCadastroModal(kind, id){
 
   if(kind==='configuracoes'){
     title.textContent = 'Configurações';
-    const claro = document.body.classList.contains('tema-claro');
+    const escuro = document.body.classList.contains('tema-escuro');
     const tFonte = localStorage.getItem('brc_tamanho_fonte') || 'padrao';
     body.innerHTML = `
       <div class="field">
         <label>Tema de cores</label>
-        <button class="btn ghost sm" style="width:100%;" onclick="toggleTema()">🌗 Alternar para tema ${claro?'escuro':'claro'}</button>
+        <button class="btn ghost sm" style="width:100%;" onclick="toggleTema()">🌗 Alternar para tema ${escuro?'claro':'escuro'}</button>
       </div>
       <div class="field">
         <label>Tamanho da fonte</label>
@@ -5447,6 +5507,13 @@ function entrarNoApp(tabInicial){
 }
 function renderTelaEntrada(){
   const s = getSessao();
+  const ic = (path)=>`<svg width="16" height="16" viewBox="0 0 24 24" style="color:var(--ink-dim);flex:0 0 auto;">${path}</svg>`;
+  const icFazenda = ic('<path d="M3 11 L12 4 L21 11 M5 10 V20 H19 V10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>');
+  const icProdutor = ic('<circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="16" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M2 20c0-3 3-5 6-5s6 2 6 5M10 20c0-3 3-5 6-5s6 2 6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>');
+  const icEmpresa = ic('<rect x="5" y="3" width="14" height="18" rx="1" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9 7h2M13 7h2M9 11h2M13 11h2M9 15h2M13 15h2" stroke="currentColor" stroke-width="1.4"/>');
+  const icTransporte = ic('<rect x="2" y="8" width="11" height="8" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M13 11h5l3 3v2h-8z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="7" cy="18" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="17" cy="18" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/>');
+  const icUsuario = ic('<circle cx="12" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4 20c0-4 3.5-6.5 8-6.5s8 2.5 8 6.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>');
+  const icConfig = ic('<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 3v2M12 19v2M4.2 6.2l1.4 1.4M18.4 16.4l1.4 1.4M3 12h2M19 12h2M4.2 17.8l1.4-1.4M18.4 7.6l1.4-1.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>');
   document.body.innerHTML = `
     <div style="max-width:460px;margin:0 auto;padding:60px 20px;">
       <div style="display:flex;flex-direction:column;align-items:center;margin-bottom:26px;">
@@ -5458,17 +5525,17 @@ function renderTelaEntrada(){
       </div>
       <p style="font-size:12px;color:var(--ink-dim);text-align:center;margin:0 0 16px;">Usuário: ${s.usuario} · selecione o que deseja fazer</p>
       <div style="background:var(--bg-2);border:1px solid var(--line);border-radius:10px;padding:6px;margin-bottom:18px;">
-        <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;cursor:pointer;" onclick="document.getElementById('arvoreCadastrosEntrada').style.display = document.getElementById('arvoreCadastrosEntrada').style.display==='none' ? '' : 'none';">
+        <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;cursor:pointer;" onclick="const el=document.getElementById('arvoreCadastrosEntrada'); const abrindo = el.style.display==='none'; el.style.display = abrindo ? '' : 'none'; document.getElementById('setaArvoreEntrada').style.transform = abrindo ? 'rotate(0deg)' : 'rotate(-90deg)';">
           <span style="flex:1;font-size:13px;font-weight:700;color:var(--ink);">📁 Cadastros</span>
-          <span style="font-size:12px;color:var(--ink-dim);">▾</span>
+          <span id="setaArvoreEntrada" style="font-size:12px;color:var(--ink-dim);transition:transform .15s;transform:rotate(-90deg);">▾</span>
         </div>
-        <div id="arvoreCadastrosEntrada" style="padding:2px 4px 4px 30px;">
-          <div class="entrada-item" onclick="entrarNoApp('cadastros')">🏠 Fazendas</div>
-          <div class="entrada-item" onclick="entrarNoApp('cadastros')">👥 Produtores</div>
-          <div class="entrada-item" onclick="entrarNoApp('cadastros')">🏢 Empresas</div>
-          <div class="entrada-item" onclick="entrarNoApp('cadastros')">🚚 Transporte</div>
-          <div class="entrada-item" onclick="entrarNoApp('usuarios')">👤 Usuários</div>
-          <div class="entrada-item" onclick="entrarNoApp(); setTimeout(()=>openCadastroModal('configuracoes'), 30);">⚙️ Configurações</div>
+        <div id="arvoreCadastrosEntrada" style="display:none;padding:2px 4px 4px 30px;">
+          <div class="entrada-item" onclick="entrarNoAssistenteCadastro('passo-fazendas')">${icFazenda}Fazendas</div>
+          <div class="entrada-item" onclick="entrarNoAssistenteCadastro('passo-produtores')">${icProdutor}Produtores</div>
+          <div class="entrada-item" onclick="entrarNoAssistenteCadastro('passo-empresas')">${icEmpresa}Empresas</div>
+          <div class="entrada-item" onclick="entrarNoAssistenteCadastro('passo-transporte')">${icTransporte}Transporte</div>
+          <div class="entrada-item" onclick="entrarNoApp('usuarios')">${icUsuario}Usuários</div>
+          <div class="entrada-item" onclick="entrarNoApp(); setTimeout(()=>openCadastroModal('configuracoes'), 30);">${icConfig}Configurações</div>
         </div>
       </div>
       <button class="btn" style="width:100%;padding:14px;font-size:15px;" onclick="entrarNoApp()">Acessar</button>
