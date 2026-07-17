@@ -2522,6 +2522,7 @@ function openCadastroModal(kind, id){
       </div>
       <div class="aba-transportador-conteudo" data-aba="contato" style="display:none;">
         <div class="field"><label>Telefone</label><input id="fEmpresaTelefone" value="${e.telefone||''}" placeholder="(00) 00000-0000" oninput="this.value=maskTelefone(this.value)"></div>
+        <div class="field"><label>E-mail</label><input id="fEmpresaEmail" type="email" value="${e.email||''}" placeholder="contato@empresa.com"></div>
       </div>
       <div class="aba-transportador-conteudo" data-aba="bancarios" style="display:none;">
         <div class="form-grid">
@@ -2790,7 +2791,6 @@ function openCadastroModal(kind, id){
           <div class="field"><label>CPF</label><input id="fProdutorCpf" value="${p.cpf||''}" placeholder="000.000.000-00" oninput="this.value=maskCpf(this.value)"></div>
           <div class="field"><label>CNPJ <span class="small-note">(se comercializado por empresa do grupo)</span></label><input id="fProdutorCnpj" value="${p.cnpj||''}" placeholder="00.000.000/0000-00" oninput="this.value=maskCnpj(this.value)"></div>
         </div>
-        <div class="field"><label>E-mail <span class="small-note">(opcional — usado pra compartilhar relatórios e contratos)</span></label><input id="fProdutorEmail" type="email" value="${p.email||''}" placeholder="produtor@exemplo.com"></div>
       </div>
       <div class="aba-transportador-conteudo" data-aba="endereco" style="display:none;">
         <div class="field"><label>Endereço</label><input id="fProdutorEndereco" value="${p.endereco||''}" placeholder="Rua, avenida..."></div>
@@ -2809,6 +2809,7 @@ function openCadastroModal(kind, id){
       </div>
       <div class="aba-transportador-conteudo" data-aba="contato" style="display:none;">
         <div class="field"><label>Telefone</label><input id="fProdutorTelefone" value="${p.telefone||''}" placeholder="(00) 00000-0000" oninput="this.value=maskTelefone(this.value)"></div>
+        <div class="field"><label>E-mail <span class="small-note">(usado pra compartilhar relatórios e contratos)</span></label><input id="fProdutorEmail" type="email" value="${p.email||''}" placeholder="produtor@exemplo.com"></div>
       </div>
       <div class="aba-transportador-conteudo" data-aba="bancarios" style="display:none;">
         <div class="form-grid">
@@ -3257,6 +3258,7 @@ function salvarEmpresa(){
       cnpj: onlyDigits(document.getElementById('fEmpresaCnpj').value.trim()),
       cpf: onlyDigits(document.getElementById('fEmpresaCpf').value.trim()),
       telefone: document.getElementById('fEmpresaTelefone').value.trim(),
+      email: document.getElementById('fEmpresaEmail').value.trim(),
       endereco: document.getElementById('fEmpresaEndereco').value.trim(),
       numero: document.getElementById('fEmpresaNumero').value.trim(),
       complemento: document.getElementById('fEmpresaComplemento').value.trim(),
