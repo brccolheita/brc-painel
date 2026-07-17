@@ -1042,7 +1042,7 @@ function renderAllOuAtualizarTelaAcesso(){
   if(document.getElementById('tbody-fazendas')) updateTbodyFazendas();
   if(document.getElementById('tbody-produtores')) updateTbodyProdutores();
   if(document.getElementById('tbody-empresas')) updateTbodyEmpresas();
-  if(document.getElementById('tbody-motoristas')) updateTbodyMotoristas();
+  if(document.getElementById('tbody-motoristas')) updateTbodyMotoristas('cadastro');
 }
 
 function updateBadge(){
@@ -1062,8 +1062,10 @@ function labelPermissoesAdmin(u){
   return restricoes.length ? `<span style="color:var(--ink-dim);font-size:12px;">${restricoes.join(', ')}</span>` : 'acesso completo';
 }
 function usuarioExpirado(u){ return !!(u.expiraEm && u.expiraEm < todayISO()); }
-function renderUsuarios(){
-  const wrap = document.getElementById('tab-usuarios');
+function renderUsuarios(containerId){
+  const id = containerId || (document.getElementById('tab-usuarios') ? 'tab-usuarios' : 'telaUsuariosStandalone');
+  const wrap = document.getElementById(id);
+  if(!wrap) return;
   wrap.innerHTML = `
     <div class="card" style="margin-bottom:24px;">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
@@ -1125,16 +1127,18 @@ async function salvarUsuario(id){
 async function liberarAcessoMotorista(motoristaId){
   const m = state.motoristas.find(x=>x.id===motoristaId);
   if(!m?.placa){ toast('Cadastre a placa deste motorista antes de liberar o acesso.', true); return; }
-  const acessoAtual = state.usuarios.find(u=>u.papel==='motorista' && u.motoristaId===motoristaId);
-  if(!acessoAtual?.senha){ toast('Edite o motorista e defina uma senha de acesso antes de liberar o acesso.', true); return; }
+  const senha = document.getElementById('fAcessoMotoristaSenha').value.trim();
+  if(!senha){ toast('Defina uma senha de acesso.', true); return; }
   const expiraEm = document.getElementById('fAcessoMotoristaExpira').value || null;
   const usuarioPlaca = normalizarPlaca(m.placa);
   const duplicado = state.usuarios.find(u=>u.usuario===usuarioPlaca && u.motoristaId!==motoristaId);
   if(duplicado){ toast('Já existe outro acesso liberado com essa placa.', true); return; }
-  Object.assign(acessoAtual, { usuario: usuarioPlaca, expiraEm });
+  let acessoAtual = state.usuarios.find(u=>u.papel==='motorista' && u.motoristaId===motoristaId);
+  if(acessoAtual){ Object.assign(acessoAtual, { usuario: usuarioPlaca, senha, expiraEm }); }
+  else{ state.usuarios.push({ id: uid('user'), usuario: usuarioPlaca, papel:'motorista', motoristaId, expiraEm, senha }); }
   await saveUsuarios();
   closeCadastroModal();
-  renderCadastros();
+  renderAllOuAtualizarTelaAcesso();
   renderUsuarios();
   toast('Acesso do motorista liberado.');
 }
@@ -1143,7 +1147,7 @@ async function revogarAcessoMotorista(motoristaId){
   state.usuarios = state.usuarios.filter(u=>!(u.papel==='motorista' && u.motoristaId===motoristaId));
   await saveUsuarios();
   closeCadastroModal();
-  renderCadastros();
+  renderAllOuAtualizarTelaAcesso();
   renderUsuarios();
   toast('Acesso revogado.');
 }
@@ -1326,15 +1330,15 @@ function renderCadastros(){
       </table></div>
     </div>
 
-    <div class="section-title">Transporte <span class="small-note" style="text-transform:none;letter-spacing:0;">— réplica do cadastro (edite na tela de acesso)</span></div>
+    <div class="section-title">Transporte <span class="small-note" style="text-transform:none;letter-spacing:0;">— cadastro básico e documentos ficam na tela de acesso; aqui só libera acesso e senha</span></div>
     <div class="card">
       <div class="table-wrap"><table>
-        <thead><tr><th>Nome</th><th>Placa</th></tr></thead>
-        <tbody>${state.motoristas.length ? state.motoristas.map(m=>`<tr><td>${m.nome}</td><td class="mono" style="font-size:11.5px">${m.placa||'—'}</td></tr>`).join('') : emptyRow(2,'Nenhum motorista cadastrado ainda.')}</tbody>
+        <thead><tr><th>Nome</th><th>CPF</th><th>Placa</th><th>Acesso</th><th></th></tr></thead>
+        <tbody id="tbody-motoristas"></tbody>
       </table></div>
     </div>
   `;
-  updateTbodyContratosCad(); updateTbodyColheitas();
+  updateTbodyContratosCad(); updateTbodyColheitas(); updateTbodyMotoristas('acesso');
   document.getElementById('btnImportContratoPDF').addEventListener('click', ()=>document.getElementById('importContratoPDFInput').click());
   document.getElementById('importContratoPDFInput').addEventListener('change', (e)=>{
     if(e.target.files[0]) handleImportContratoPDF(e.target.files[0]);
@@ -1498,7 +1502,8 @@ function updateTbodyContratosCad(){
   }).filter(r=>rowMatches(r.extract, filters));
   document.getElementById('tbody-contratosCad').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(10,'Nenhum contrato encontrado.');
 }
-function updateTbodyMotoristas(){
+function updateTbodyMotoristas(modo){
+  modo = modo || 'cadastro'; // 'cadastro' = Tela 1 (edita/exclui/documentos, sem acesso) · 'acesso' = operação (só liberar/gerenciar acesso)
   const filters = getFilterValues('motoristas');
   const rows = state.motoristas.map(m=>{
     const acesso = state.usuarios.find(u=>u.papel==='motorista' && u.motoristaId===m.id);
@@ -1506,10 +1511,7 @@ function updateTbodyMotoristas(){
     if(!acesso) acessoLabel = '<span class="tag muted">não liberado</span>';
     else if(usuarioExpirado(acesso)) acessoLabel = '<span class="tag pending">expirado</span>';
     else acessoLabel = `<span class="tag ok">ativo${acesso.expiraEm?' até '+dataBR(acesso.expiraEm):''}</span>`;
-    return {
-      extract:{nome:m.nome, cpf:m.cpf||'', placa:m.placa||''},
-      html: `<tr><td>${m.nome}</td><td class="mono" style="font-size:11.5px">${m.cpf||'—'}</td><td class="mono" style="font-size:11.5px">${m.placa||'—'}</td><td>${acessoLabel}</td>
-        <td><div class="actions-row">
+    const botoesAcesso = `
         <button class="btn ghost sm cred-btn-acesso" onclick="openCadastroModal('acessoMotorista','${m.id}')">${acesso?'Gerenciar acesso':'Liberar acesso'}</button>
         <span class="choice-wrap">
           <button class="btn ghost sm" onclick="toggleChoicePopover('popoverAcesso-${m.id}')">📤 Compartilhar dados de acesso</button>
@@ -1517,10 +1519,15 @@ function updateTbodyMotoristas(){
             <button onclick="fecharChoicePopovers(); compartilharAcessoMotorista('${m.id}');">📋 Copiar dados de acesso</button>
             <button onclick="fecharChoicePopovers(); enviarAcessoMotoristaWhatsapp('${m.id}');">📲 Enviar via WhatsApp</button>
           </span>
-        </span>
+        </span>`;
+    const botoesCadastro = `
         <button class="btn ghost sm" onclick="abrirDocumentosMotorista('${m.id}')">📁 Documentos${m.documentos?.length ? ' ('+m.documentos.length+')' : ''}</button>
         <button class="btn ghost sm" onclick="openCadastroModal('motorista','${m.id}')">Editar</button>
-        <button class="btn danger sm" onclick="deleteMotorista('${m.id}')">Excluir</button></div></td></tr>`
+        <button class="btn danger sm" onclick="deleteMotorista('${m.id}')">Excluir</button>`;
+    return {
+      extract:{nome:m.nome, cpf:m.cpf||'', placa:m.placa||''},
+      html: `<tr><td>${m.nome}</td><td class="mono" style="font-size:11.5px">${m.cpf||'—'}</td><td class="mono" style="font-size:11.5px">${m.placa||'—'}</td><td>${acessoLabel}</td>
+        <td><div class="actions-row">${modo==='acesso' ? botoesAcesso : botoesCadastro}</div></td></tr>`
     };
   }).filter(r=>rowMatches(r.extract, filters));
   document.getElementById('tbody-motoristas').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(5,'Nenhum motorista encontrado.');
@@ -2537,10 +2544,9 @@ function openCadastroModal(kind, id){
     }else{
       body.innerHTML = `
         <p class="small-note" style="margin-top:-4px;">
-          O motorista faz login com:<br>
-          <b>Usuário:</b> a placa do caminhão (<span class="mono">${normalizarPlaca(m.placa)}</span>)<br>
-          <b>Senha:</b> ${acesso?.senha ? 'a senha definida no cadastro do motorista (veja/altere em "Editar")' : '<span style="color:var(--red)">ainda não definida — edite o motorista e defina uma senha antes de liberar o acesso</span>'}
+          O motorista faz login com a placa do caminhão como usuário (<span class="mono">${normalizarPlaca(m.placa)}</span>) e a senha definida abaixo.
         </p>
+        <div class="field"><label>Senha de acesso</label><input id="fAcessoMotoristaSenha" value="${acesso?.senha||''}" placeholder="defina uma senha"></div>
         <div class="field"><label>Prazo de validade deste acesso <span class="small-note">(opcional)</span></label><input type="date" id="fAcessoMotoristaExpira" value="${acesso?.expiraEm||''}"></div>
         <span class="choice-wrap" style="display:block;width:100%;margin-bottom:4px;">
           <button class="btn ghost sm" style="width:100%;" onclick="toggleChoicePopover('popoverAcessoModal')">📤 Compartilhar dados de acesso</button>
@@ -2804,37 +2810,39 @@ function openCadastroModal(kind, id){
   }
 
   if(kind==='motorista'){
-    const m = id ? state.motoristas.find(x=>x.id===id) : null;
-    const acesso = id ? state.usuarios.find(u=>u.papel==='motorista' && u.motoristaId===id) : null;
-    title.textContent = m ? 'Editar motorista' : 'Novo motorista';
+    let m = id ? state.motoristas.find(x=>x.id===id) : null;
+    const registroNovo = !m;
+    if(!m){
+      m = {id: uid('mot'), nome:'', cpf:'', cnpj:'', placa:'', documentos:[]};
+      state.motoristas.push(m);
+      overlay.dataset.id = m.id;
+    }
+    title.textContent = registroNovo ? 'Novo motorista' : 'Editar motorista';
     body.innerHTML = `
-      <div class="field"><label>Nome do motorista</label><input id="fMotoristaNome" value="${m?m.nome:''}" placeholder="Ex: Tiago"></div>
-      <div class="field"><label>CPF</label><input id="fMotoristaCpf" value="${m?.cpf||''}" placeholder="000.000.000-00"></div>
-      <div class="field"><label>Placa</label><input id="fMotoristaPlaca" value="${m?.placa||''}" placeholder="Ex: RAN9G24" style="text-transform:uppercase;"></div>
-      <div class="field">
-        <label>Senha de acesso ao sistema</label>
-        <input id="fMotoristaSenha" value="${acesso?.senha||''}" placeholder="defina uma senha">
-        <p class="small-note" style="margin-top:6px;">O motorista faz login com a placa do caminhão como usuário e a senha definida aqui. Depois de salvar, use "📤 Compartilhar dados de acesso" na listagem pra enviar isso pra ele.</p>
+      <div class="field"><label>Nome do motorista / transportadora</label><input id="fMotoristaNome" value="${m.nome||''}" placeholder="Ex: Tiago"></div>
+      <div class="form-grid">
+        <div class="field"><label>CPF</label><input id="fMotoristaCpf" value="${m.cpf||''}" placeholder="000.000.000-00"></div>
+        <div class="field"><label>CNPJ <span class="small-note">(se for transportadora)</span></label><input id="fMotoristaCnpj" value="${m.cnpj||''}" placeholder="00.000.000/0000-00"></div>
       </div>
+      <div class="field"><label>Placa</label><input id="fMotoristaPlaca" value="${m.placa||''}" placeholder="Ex: RAN9G24" style="text-transform:uppercase;"></div>
+      <p class="small-note" style="margin-top:2px;">Senha de acesso e liberação do link do motorista ficam em "Gerenciar acesso", na aba de operações.</p>
       <div class="field" style="margin-top:6px;">
         <button type="button" class="btn ghost sm" onclick="toggleAnexoDocumentos()">📎 Anexar documentos (opcional)</button>
         <div id="anexoDocumentosWrap" style="display:none;margin-top:10px;">
-          ${m ? `
-            <div class="dropzone" id="dropzoneDocMotorista" style="padding:16px;">
-              <input type="file" id="fotoDocMotoristaInput" style="display:none;">
-              <div class="icon">📎</div>
-              <div><b>Toque ou arraste pra anexar um documento</b></div>
-              <small>CNH, ANTT, comprovante etc. — fica salvo só pra este motorista</small>
-            </div>
-            <div id="listaDocumentosMotorista" style="margin-top:10px;">${renderListaDocumentosMotorista(m.id)}</div>
-          ` : `<p class="small-note">Salve o motorista primeiro (botão "Salvar" abaixo) e depois volte em "Editar" pra anexar documentos.</p>`}
+          <div class="dropzone" id="dropzoneDocMotorista" style="padding:16px;">
+            <input type="file" id="fotoDocMotoristaInput" style="display:none;">
+            <div class="icon">📎</div>
+            <div><b>Toque ou arraste pra anexar um documento</b></div>
+            <small>CNH, ANTT, contrato de transportadora etc. — fica salvo só pra este cadastro</small>
+          </div>
+          <div id="listaDocumentosMotorista" style="margin-top:10px;">${renderListaDocumentosMotorista(m.id)}</div>
         </div>
       </div>
       <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
         <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
         <button class="btn" onclick="salvarMotorista()">Salvar</button>
       </div>`;
-    if(m) bindDropzoneDocMotorista(m.id);
+    bindDropzoneDocMotorista(m.id);
     if(motoristaAbrirDocsAoRenderizar){
       motoristaAbrirDocsAoRenderizar = false;
       setTimeout(()=>toggleAnexoDocumentos(true), 30);
@@ -2872,7 +2880,18 @@ function openCadastroModal(kind, id){
 
   overlay.classList.remove('hidden');
 }
-function closeCadastroModal(){ document.getElementById('modalCadastro').classList.add('hidden'); }
+function closeCadastroModal(){
+  const overlay = document.getElementById('modalCadastro');
+  if(overlay.dataset.kind==='motorista'){
+    const id = overlay.dataset.id;
+    const m = state.motoristas.find(x=>x.id===id);
+    if(m && !m.nome){
+      state.motoristas = state.motoristas.filter(x=>x.id!==id);
+      saveCadastros();
+    }
+  }
+  overlay.classList.add('hidden');
+}
 
 function optionsEmpresas(selectedId){
   if(!state.empresas.length) return `<option value="">Cadastre uma empresa primeiro</option>`;
@@ -3096,29 +3115,14 @@ async function removerDocumentoMotorista(motoristaId, docId){
 async function salvarMotorista(){
   const nome = document.getElementById('fMotoristaNome').value.trim();
   const cpf = document.getElementById('fMotoristaCpf').value.trim();
+  const cnpj = document.getElementById('fMotoristaCnpj').value.trim();
   const placa = document.getElementById('fMotoristaPlaca').value.trim().toUpperCase();
-  const senha = document.getElementById('fMotoristaSenha').value.trim();
   if(!nome){ toast('Informe o nome do motorista.', true); return; }
   const overlay = document.getElementById('modalCadastro');
   const id = overlay.dataset.id;
-  let motoristaId = id;
-  if(id){ const m = state.motoristas.find(x=>x.id===id); Object.assign(m, {nome, cpf, placa}); }
-  else{ motoristaId = uid('mot'); state.motoristas.push({id: motoristaId, nome, cpf, placa}); }
+  const m = state.motoristas.find(x=>x.id===id);
+  if(m) Object.assign(m, {nome, cpf, cnpj, placa});
   saveCadastros();
-
-  if(placa && senha){
-    const usuarioPlaca = normalizarPlaca(placa);
-    const duplicado = state.usuarios.find(u=>u.papel==='motorista' && u.usuario===usuarioPlaca && u.motoristaId!==motoristaId);
-    if(duplicado){
-      toast('Motorista salvo, mas já existe outro acesso liberado com essa placa — ajuste antes de definir a senha.', true);
-    }else{
-      let acesso = state.usuarios.find(u=>u.papel==='motorista' && u.motoristaId===motoristaId);
-      if(acesso){ Object.assign(acesso, { usuario: usuarioPlaca, senha }); }
-      else{ state.usuarios.push({ id: uid('user'), usuario: usuarioPlaca, papel:'motorista', motoristaId, expiraEm:null, senha }); }
-      await saveUsuarios();
-    }
-  }
-
   renderAllOuAtualizarTelaAcesso(); closeCadastroModal(); toast('Motorista salvo.');
 }
 function optionsFazendas(selectedId){
@@ -5538,13 +5542,14 @@ function renderTelaEntrada(){
           <div class="entrada-item" onclick="renderTelaCadastroProdutores()">${icProdutor}Produtores</div>
           <div class="entrada-item" onclick="renderTelaCadastroEmpresas()">${icEmpresa}Empresas</div>
           <div class="entrada-item" onclick="renderTelaCadastroTransporte()">${icTransporte}Transporte</div>
-          <div class="entrada-item" onclick="entrarNoApp('usuarios')">${icUsuario}Usuários</div>
-          <div class="entrada-item" onclick="entrarNoApp(); setTimeout(()=>openCadastroModal('configuracoes'), 30);">${icConfig}Configurações</div>
+          <div class="entrada-item" onclick="renderTelaCadastroUsuarios()">${icUsuario}Usuários</div>
+          <div class="entrada-item" onclick="openCadastroModal('configuracoes')">${icConfig}Configurações</div>
         </div>
       </div>
       <button class="btn" style="width:100%;padding:14px;font-size:15px;" onclick="renderTelaFiltroContexto()">Avançar →</button>
       <button class="btn ghost sm" style="width:100%;margin-top:10px;" onclick="logout()">🚪 Sair</button>
     </div>
+    ${modalCadastroHTML()}
   `;
 }
 function modalCadastroHTML(){
@@ -5613,12 +5618,24 @@ function renderTelaCadastroEmpresas(){
   `;
   updateTbodyEmpresas();
 }
+function renderTelaCadastroUsuarios(){
+  document.body.innerHTML = `
+    <div style="max-width:780px;margin:0 auto;padding:60px 20px;">
+      <button class="btn ghost sm" onclick="renderTelaEntrada()" style="margin-bottom:18px;">← Voltar</button>
+      <h2 style="margin:0 0 4px;">Cadastro de Usuários</h2>
+      <p class="small-note" style="margin:0 0 16px;">Contas de Admin e Produtor. O acesso do motorista fica na tela de Transporte.</p>
+      <div id="telaUsuariosStandalone"></div>
+    </div>
+    ${modalCadastroHTML()}
+  `;
+  renderUsuarios('telaUsuariosStandalone');
+}
 function renderTelaCadastroTransporte(){
   document.body.innerHTML = `
     <div style="max-width:760px;margin:0 auto;padding:60px 20px;">
       <button class="btn ghost sm" onclick="renderTelaEntrada()" style="margin-bottom:18px;">← Voltar</button>
       <h2 style="margin:0 0 4px;">Cadastro de Transporte</h2>
-      <p class="small-note" style="margin:0 0 16px;">Motoristas, acesso deles ao link de romaneio e documentos. Dentro do sistema, isso aparece só como consulta.</p>
+      <p class="small-note" style="margin:0 0 16px;">Cadastro básico e documentos do motorista/transportadora. Liberar acesso e gerar senha ficam na aba de operações.</p>
       <div class="card">
         <h2>Motoristas cadastrados <button class="btn sm" onclick="openCadastroModal('motorista')">➕ Novo motorista</button></h2>
         <div class="table-wrap"><table>
@@ -5629,7 +5646,7 @@ function renderTelaCadastroTransporte(){
     </div>
     ${modalCadastroHTML()}
   `;
-  updateTbodyMotoristas();
+  updateTbodyMotoristas('cadastro');
 }
 function renderTelaFiltroContexto(){
   const s = getSessao();
