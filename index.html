@@ -42,6 +42,7 @@ body.fonte-media{ zoom:1.1; }
 body.fonte-grande{ zoom:1.25; }
 .entrada-item{ display:flex; align-items:center; gap:8px; padding:8px 6px; font-size:12.5px; color:var(--ink-dim); cursor:pointer; border-radius:6px; }
 .entrada-item:hover{ background:rgba(127,127,127,.14); color:var(--ink); }
+.aba-transportador-btn.active{ background:var(--gold); color:var(--bg); border-color:var(--gold); font-weight:700; }
 
 /* ---- HERO / NAV ---- */
 .hero{ padding:28px 5vw 0 5vw; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:50;}
@@ -1322,10 +1323,10 @@ function renderCadastros(){
       </div>
     </div>
 
-    <div class="section-title">Transporte <span class="small-note" style="text-transform:none;letter-spacing:0;">— cadastro básico e documentos ficam na tela de acesso; aqui só libera acesso e senha</span></div>
+    <div class="section-title">Transportadores <span class="small-note" style="text-transform:none;letter-spacing:0;">— cadastro básico e documentos ficam na tela de acesso; aqui só libera acesso e senha</span></div>
     <div class="card">
       <div class="table-wrap"><table>
-        <thead><tr><th>Nome</th><th>CPF</th><th>Placa</th><th>Acesso</th><th></th></tr></thead>
+        <thead><tr><th>Nome</th><th>CPF/CNPJ</th><th>Placa</th><th>Acesso</th><th></th></tr></thead>
         <tbody id="tbody-motoristas"></tbody>
       </table></div>
     </div>
@@ -1503,6 +1504,7 @@ function updateTbodyMotoristas(modo){
     if(!acesso) acessoLabel = '<span class="tag muted">não liberado</span>';
     else if(usuarioExpirado(acesso)) acessoLabel = '<span class="tag pending">expirado</span>';
     else acessoLabel = `<span class="tag ok">ativo${acesso.expiraEm?' até '+dataBR(acesso.expiraEm):''}</span>`;
+    const docCpfCnpj = m.tipo==='juridica' ? (m.cnpj||'—') : (m.cpf||'—');
     const botoesAcesso = `
         <button class="btn ghost sm cred-btn-acesso" onclick="openCadastroModal('acessoMotorista','${m.id}')">${acesso?'Gerenciar acesso':'Liberar acesso'}</button>
         <span class="choice-wrap">
@@ -1517,12 +1519,12 @@ function updateTbodyMotoristas(modo){
         <button class="btn ghost sm" onclick="openCadastroModal('motorista','${m.id}')">Editar</button>
         <button class="btn danger sm" onclick="deleteMotorista('${m.id}')">Excluir</button>`;
     return {
-      extract:{nome:m.nome, cpf:m.cpf||'', placa:m.placa||''},
-      html: `<tr><td>${m.nome}</td><td class="mono" style="font-size:11.5px">${m.cpf||'—'}</td><td class="mono" style="font-size:11.5px">${m.placa||'—'}</td><td>${acessoLabel}</td>
+      extract:{nome:m.nome, cpf:(m.cpf||'')+(m.cnpj||''), placa:m.placa||''},
+      html: `<tr><td>${m.nome}</td><td class="mono" style="font-size:11.5px">${docCpfCnpj}</td><td class="mono" style="font-size:11.5px">${m.placa||'—'}</td><td>${acessoLabel}</td>
         <td><div class="actions-row">${modo==='acesso' ? botoesAcesso : botoesCadastro}</div></td></tr>`
     };
   }).filter(r=>rowMatches(r.extract, filters));
-  document.getElementById('tbody-motoristas').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(5,'Nenhum motorista encontrado.');
+  document.getElementById('tbody-motoristas').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(5,'Nenhum transportador encontrado.');
 }
 function updateTbodyColheitas(){
   const rows = state.colheitas.map((t,i)=>{
@@ -1561,11 +1563,12 @@ function deleteContrato(id){
   if(c?.temPdf){ window.storage.delete('contrato-pdf:'+id, true).catch(()=>{}); }
 }
 function deleteMotorista(id){
-  if(!confirm('Excluir este motorista?')) return;
+  if(!confirm('Excluir este transportador?')) return;
   const m = state.motoristas.find(x=>x.id===id);
   state.motoristas = state.motoristas.filter(m=>m.id!==id);
-  saveCadastros(); renderAllOuAtualizarTelaAcesso(); toast('Motorista excluído.');
+  saveCadastros(); renderAllOuAtualizarTelaAcesso(); toast('Transportador excluído.');
   (m?.documentos||[]).forEach(d=>{ window.storage.delete('motorista-doc:'+id+':'+d.id, true).catch(()=>{}); });
+  (m?.vinculados||[]).forEach(v=>{ (v.documentos||[]).forEach(d=>{ window.storage.delete('motorista-doc-vinc:'+v.id+':'+d.id, true).catch(()=>{}); }); });
 }
 function deleteColheita(id){
   if(!confirm('Excluir esta colheita? Os números das outras colheitas se reorganizam automaticamente.')) return;
@@ -2805,39 +2808,121 @@ function openCadastroModal(kind, id){
     let m = id ? state.motoristas.find(x=>x.id===id) : null;
     const registroNovo = !m;
     if(!m){
-      m = {id: uid('mot'), nome:'', cpf:'', cnpj:'', placa:'', documentos:[]};
+      m = {id: uid('mot'), tipo:'fisica', nome:'', cpf:'', cnpj:'', motoristaResponsavel:'', placa:'',
+        telefone:'', email:'', endereco:'', numero:'', complemento:'', bairro:'', cep:'', cidade:'', uf:'',
+        banco:'', agencia:'', conta:'', tipoConta:'corrente', pix:'', documentos:[], vinculados:[]};
       state.motoristas.push(m);
       overlay.dataset.id = m.id;
     }
-    title.textContent = registroNovo ? 'Novo motorista' : 'Editar motorista';
+    if(!m.vinculados) m.vinculados = [];
+    if(!m.documentos) m.documentos = [];
+    title.textContent = registroNovo ? 'Novo transportador' : 'Editar transportador';
     body.innerHTML = `
-      <div class="field"><label>Nome do motorista / transportadora</label><input id="fMotoristaNome" value="${m.nome||''}" placeholder="Ex: Tiago"></div>
-      <div class="form-grid">
-        <div class="field"><label>CPF</label><input id="fMotoristaCpf" value="${m.cpf||''}" placeholder="000.000.000-00"></div>
-        <div class="field"><label>CNPJ <span class="small-note">(se for transportadora)</span></label><input id="fMotoristaCnpj" value="${m.cnpj||''}" placeholder="00.000.000/0000-00"></div>
+      <div class="actions-row" style="gap:4px;margin-bottom:14px;border-bottom:1px solid var(--line);padding-bottom:8px;flex-wrap:wrap;">
+        <button type="button" class="btn ghost sm aba-transportador-btn active" data-aba="principal" onclick="mostrarAbaTransportador('principal')">Principal</button>
+        <button type="button" class="btn ghost sm aba-transportador-btn" data-aba="endereco" onclick="mostrarAbaTransportador('endereco')">Endereço</button>
+        <button type="button" class="btn ghost sm aba-transportador-btn" data-aba="contato" onclick="mostrarAbaTransportador('contato')">Contato</button>
+        <button type="button" class="btn ghost sm aba-transportador-btn" data-aba="bancarios" onclick="mostrarAbaTransportador('bancarios')">Dados Bancários</button>
+        <button type="button" class="btn ghost sm aba-transportador-btn" data-aba="documentos" onclick="mostrarAbaTransportador('documentos')">Documentos</button>
       </div>
-      <div class="field"><label>Placa</label><input id="fMotoristaPlaca" value="${m.placa||''}" placeholder="Ex: RAN9G24" style="text-transform:uppercase;"></div>
-      <p class="small-note" style="margin-top:2px;">Senha de acesso e liberação do link do motorista ficam em "Gerenciar acesso", na aba de operações.</p>
-      <div class="field" style="margin-top:6px;">
-        <button type="button" class="btn ghost sm" onclick="toggleAnexoDocumentos()">📎 Anexar documentos (opcional)</button>
-        <div id="anexoDocumentosWrap" style="display:none;margin-top:10px;">
+
+      <div class="aba-transportador-conteudo" data-aba="principal">
+        <div class="field"><label>Tipo</label>
+          <select id="fMotoristaTipo" onchange="onTipoTransportadorChange()">
+            <option value="fisica" ${m.tipo!=='juridica'?'selected':''}>Pessoa física (motorista autônomo)</option>
+            <option value="juridica" ${m.tipo==='juridica'?'selected':''}>Pessoa jurídica (transportadora)</option>
+          </select>
+        </div>
+        <div class="field"><label id="labelNomeTransportador">Nome</label><input id="fMotoristaNome" value="${m.nome||''}" placeholder="Ex: Tiago"></div>
+        <div class="form-grid">
+          <div class="field" id="campoCpfTransportador"><label>CPF</label>
+            <div class="actions-row" style="gap:6px;">
+              <input id="fMotoristaCpf" value="${m.cpf||''}" placeholder="000.000.000-00" oninput="this.value=maskCpf(this.value)" style="flex:1;">
+              <button type="button" class="btn ghost sm" onclick="window.open('https://servicos.receita.fazenda.gov.br/servicos/cpf/consultasituacao/ConsultaPublica.asp','_blank')">🔍 Consultar</button>
+            </div>
+          </div>
+          <div class="field" id="campoCnpjTransportador" style="display:none;"><label>CNPJ</label>
+            <div class="actions-row" style="gap:6px;">
+              <input id="fMotoristaCnpj" value="${m.cnpj||''}" placeholder="00.000.000/0000-00" oninput="this.value=maskCnpj(this.value)" style="flex:1;">
+              <button type="button" class="btn ghost sm" onclick="window.open('https://solucoes.receita.fazenda.gov.br/Servicos/cnpjreva/Cnpjreva_Solicitacao.asp','_blank')">🔍 Consultar</button>
+            </div>
+          </div>
+        </div>
+        <p class="small-note" id="notaConsultaTransportador" style="margin-top:-6px;">O link abre o site oficial da Receita Federal pra você conferir manualmente — o sistema não valida automaticamente.</p>
+        <div class="field" id="campoMotoristaResponsavel" style="display:none;"><label>Motorista responsável (pessoa física)</label><input id="fMotoristaResponsavel" value="${m.motoristaResponsavel||''}" placeholder="Nome de quem dirige"></div>
+        <div class="field"><label>Placa</label><input id="fMotoristaPlaca" value="${m.placa||''}" placeholder="Ex: RAN9G24" style="text-transform:uppercase;"></div>
+        <p class="small-note">Senha de acesso e liberação do link do motorista ficam em "Gerenciar acesso", na aba de operações.</p>
+      </div>
+
+      <div class="aba-transportador-conteudo" data-aba="endereco" style="display:none;">
+        <div class="field"><label>Endereço</label><input id="fMotoristaEndereco" value="${m.endereco||''}" placeholder="Rua, avenida..."></div>
+        <div class="form-grid">
+          <div class="field"><label>Número</label><input id="fMotoristaNumero" value="${m.numero||''}"></div>
+          <div class="field"><label>Complemento</label><input id="fMotoristaComplemento" value="${m.complemento||''}"></div>
+        </div>
+        <div class="form-grid">
+          <div class="field"><label>Bairro</label><input id="fMotoristaBairro" value="${m.bairro||''}"></div>
+          <div class="field"><label>CEP</label><input id="fMotoristaCep" value="${m.cep||''}" placeholder="00000-000" oninput="this.value=maskCep(this.value)"></div>
+        </div>
+        <div class="form-grid">
+          <div class="field"><label>Cidade</label><input id="fMotoristaCidade" value="${m.cidade||''}"></div>
+          <div class="field"><label>UF</label><input id="fMotoristaUf" value="${m.uf||''}" maxlength="2" style="text-transform:uppercase;"></div>
+        </div>
+      </div>
+
+      <div class="aba-transportador-conteudo" data-aba="contato" style="display:none;">
+        <div class="field"><label>Telefone</label><input id="fMotoristaTelefone" value="${m.telefone||''}" placeholder="(00) 00000-0000" oninput="this.value=maskTelefone(this.value)"></div>
+        <div class="field"><label>E-mail</label><input id="fMotoristaEmail" type="email" value="${m.email||''}" placeholder="contato@exemplo.com"></div>
+      </div>
+
+      <div class="aba-transportador-conteudo" data-aba="bancarios" style="display:none;">
+        <div class="form-grid">
+          <div class="field"><label>Banco</label><input id="fMotoristaBanco" value="${m.banco||''}" placeholder="Ex: 001 — Banco do Brasil"></div>
+          <div class="field"><label>Agência</label><input id="fMotoristaAgencia" value="${m.agencia||''}"></div>
+        </div>
+        <div class="form-grid">
+          <div class="field"><label>Conta</label><input id="fMotoristaConta" value="${m.conta||''}"></div>
+          <div class="field"><label>Tipo de conta</label>
+            <select id="fMotoristaTipoConta">
+              <option value="corrente" ${m.tipoConta!=='poupanca'?'selected':''}>Corrente</option>
+              <option value="poupanca" ${m.tipoConta==='poupanca'?'selected':''}>Poupança</option>
+            </select>
+          </div>
+        </div>
+        <div class="field"><label>Chave PIX</label><input id="fMotoristaPix" value="${m.pix||''}" placeholder="CPF/CNPJ, e-mail, telefone ou aleatória"></div>
+      </div>
+
+      <div class="aba-transportador-conteudo" data-aba="documentos" style="display:none;">
+        <div class="field">
+          <label>Documentos ${m.tipo==='juridica' ? 'da transportadora' : 'do motorista'}</label>
           <div class="dropzone" id="dropzoneDocMotorista" style="padding:16px;">
             <input type="file" id="fotoDocMotoristaInput" style="display:none;">
             <div class="icon">📎</div>
             <div><b>Toque ou arraste pra anexar um documento</b></div>
-            <small>CNH, ANTT, contrato de transportadora etc. — fica salvo só pra este cadastro</small>
+            <small>CNH, ANTT, contrato social etc.</small>
           </div>
           <div id="listaDocumentosMotorista" style="margin-top:10px;">${renderListaDocumentosMotorista(m.id)}</div>
         </div>
+        <div class="field" id="secaoVinculadosTransportador" style="${m.tipo==='juridica'?'':'display:none;'}margin-top:18px;padding-top:14px;border-top:1px solid var(--line);">
+          <label>Motoristas desta transportadora <span class="small-note">(cada um com sua própria pasta de documentos)</span></label>
+          <div id="listaVinculadosTransportador">${renderListaVinculadosTransportador(m.id)}</div>
+          <div class="actions-row" style="margin-top:8px;gap:6px;">
+            <input id="fNovoVinculadoNome" placeholder="Nome do motorista" style="flex:1;">
+            <input id="fNovoVinculadoCpf" placeholder="CPF (opcional)" style="width:150px;" oninput="this.value=maskCpf(this.value)">
+            <button type="button" class="btn ghost sm" onclick="adicionarVinculadoTransportador('${m.id}')">➕ Adicionar</button>
+          </div>
+        </div>
       </div>
-      <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
+
+      <div class="actions-row" style="justify-content:flex-end;margin-top:14px;">
         <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
         <button class="btn" onclick="salvarMotorista()">Salvar</button>
       </div>`;
+    onTipoTransportadorChange();
     bindDropzoneDocMotorista(m.id);
-    if(motoristaAbrirDocsAoRenderizar){
-      motoristaAbrirDocsAoRenderizar = false;
-      setTimeout(()=>toggleAnexoDocumentos(true), 30);
+    if(abrirTransportadorNaAbaDocumentos){
+      abrirTransportadorNaAbaDocumentos = false;
+      mostrarAbaTransportador('documentos');
     }
   }
 
@@ -3038,17 +3123,168 @@ function salvarContrato(){
   }
   saveCadastros(); renderAll(); closeCadastroModal(); toast('Contrato salvo.');
 }
-let motoristaAbrirDocsAoRenderizar = false;
 function abrirDocumentosMotorista(motoristaId){
-  motoristaAbrirDocsAoRenderizar = true;
+  abrirTransportadorNaAbaDocumentos = true;
   openCadastroModal('motorista', motoristaId);
 }
-function toggleAnexoDocumentos(forcarAberto){
-  const wrap = document.getElementById('anexoDocumentosWrap');
+let abrirTransportadorNaAbaDocumentos = false;
+function mostrarAbaTransportador(aba){
+  document.querySelectorAll('.aba-transportador-conteudo').forEach(el=>{ el.style.display = el.dataset.aba===aba ? '' : 'none'; });
+  document.querySelectorAll('.aba-transportador-btn').forEach(el=>{ el.classList.toggle('active', el.dataset.aba===aba); });
+}
+function onTipoTransportadorChange(){
+  const tipo = document.getElementById('fMotoristaTipo').value;
+  document.getElementById('campoCpfTransportador').style.display = tipo==='fisica' ? '' : 'none';
+  document.getElementById('campoCnpjTransportador').style.display = tipo==='juridica' ? '' : 'none';
+  document.getElementById('campoMotoristaResponsavel').style.display = tipo==='juridica' ? '' : 'none';
+  document.getElementById('labelNomeTransportador').textContent = tipo==='juridica' ? 'Razão social / Nome da transportadora' : 'Nome';
+  const secaoVinc = document.getElementById('secaoVinculadosTransportador');
+  if(secaoVinc) secaoVinc.style.display = tipo==='juridica' ? '' : 'none';
+}
+function maskCpf(v){
+  v = v.replace(/\D/g,'').slice(0,11);
+  v = v.replace(/(\d{3})(\d)/,'$1.$2');
+  v = v.replace(/(\d{3})(\d)/,'$1.$2');
+  v = v.replace(/(\d{3})(\d{1,2})$/,'$1-$2');
+  return v;
+}
+function maskCnpj(v){
+  v = v.replace(/\D/g,'').slice(0,14);
+  v = v.replace(/(\d{2})(\d)/,'$1.$2');
+  v = v.replace(/(\d{3})(\d)/,'$1.$2');
+  v = v.replace(/(\d{3})(\d)/,'$1/$2');
+  v = v.replace(/(\d{4})(\d{1,2})$/,'$1-$2');
+  return v;
+}
+function maskCep(v){
+  v = v.replace(/\D/g,'').slice(0,8);
+  v = v.replace(/(\d{5})(\d)/,'$1-$2');
+  return v;
+}
+function maskTelefone(v){
+  v = v.replace(/\D/g,'').slice(0,11);
+  if(v.length>10) v = v.replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
+  else v = v.replace(/(\d{2})(\d{4})(\d{0,4})/,'($1) $2-$3');
+  return v;
+}
+function renderListaVinculadosTransportador(transportadorId){
+  const t = state.motoristas.find(x=>x.id===transportadorId);
+  const vinc = t?.vinculados || [];
+  if(!vinc.length) return '<p class="small-note">Nenhum motorista vinculado ainda.</p>';
+  return vinc.map(v=>`
+    <div style="border-bottom:1px solid var(--line);padding:8px 0;">
+      <div class="actions-row" style="justify-content:space-between;">
+        <span style="font-size:13px;">${v.nome}${v.cpf?' — '+v.cpf:''}</span>
+        <div class="actions-row">
+          <button class="btn ghost sm" onclick="toggleDocsVinculado('${v.id}')">📁 Documentos${v.documentos?.length?' ('+v.documentos.length+')':''}</button>
+          <button class="btn danger sm" onclick="removerVinculadoTransportador('${transportadorId}','${v.id}')">🗑️</button>
+        </div>
+      </div>
+      <div id="docsVinculado-${v.id}" style="display:none;margin-top:8px;">
+        <div class="dropzone" id="dropzoneVinculado-${v.id}" style="padding:12px;">
+          <input type="file" id="inputVinculado-${v.id}" style="display:none;">
+          <div class="icon">📎</div>
+          <div style="font-size:12.5px;"><b>Anexar documento deste motorista</b></div>
+        </div>
+        <div id="listaDocsVinculado-${v.id}" style="margin-top:8px;">${renderListaDocumentosVinculado(transportadorId, v.id)}</div>
+      </div>
+    </div>`).join('');
+}
+function adicionarVinculadoTransportador(transportadorId){
+  const nome = document.getElementById('fNovoVinculadoNome').value.trim();
+  const cpf = document.getElementById('fNovoVinculadoCpf').value.trim();
+  if(!nome){ toast('Informe o nome do motorista.', true); return; }
+  const t = state.motoristas.find(x=>x.id===transportadorId);
+  if(!t.vinculados) t.vinculados = [];
+  t.vinculados.push({id: uid('vinc'), nome, cpf, documentos:[]});
+  saveCadastros();
+  document.getElementById('listaVinculadosTransportador').innerHTML = renderListaVinculadosTransportador(transportadorId);
+  document.getElementById('fNovoVinculadoNome').value = '';
+  document.getElementById('fNovoVinculadoCpf').value = '';
+  toast('Motorista vinculado adicionado.');
+}
+function removerVinculadoTransportador(transportadorId, vinculadoId){
+  if(!confirm('Remover este motorista vinculado?')) return;
+  const t = state.motoristas.find(x=>x.id===transportadorId);
+  t.vinculados = (t.vinculados||[]).filter(v=>v.id!==vinculadoId);
+  saveCadastros();
+  document.getElementById('listaVinculadosTransportador').innerHTML = renderListaVinculadosTransportador(transportadorId);
+  toast('Motorista vinculado removido.');
+}
+function toggleDocsVinculado(vinculadoId){
+  const wrap = document.getElementById('docsVinculado-'+vinculadoId);
   if(!wrap) return;
-  const abrir = forcarAberto===true || wrap.style.display==='none';
+  const abrir = wrap.style.display==='none';
   wrap.style.display = abrir ? '' : 'none';
-  if(abrir) wrap.scrollIntoView({behavior:'smooth', block:'center'});
+  if(abrir && !wrap.dataset.ligado){
+    wrap.dataset.ligado = '1';
+    const dz = document.getElementById('dropzoneVinculado-'+vinculadoId);
+    const input = document.getElementById('inputVinculado-'+vinculadoId);
+    dz.addEventListener('click', ()=>input.click());
+    ['dragover','dragenter'].forEach(evt=>dz.addEventListener(evt, e=>{ e.preventDefault(); dz.classList.add('drag'); }));
+    ['dragleave','drop'].forEach(evt=>dz.addEventListener(evt, e=>{ e.preventDefault(); dz.classList.remove('drag'); }));
+    dz.addEventListener('drop', e=>{ if(e.dataTransfer.files.length) handleAnexarDocumentoVinculado(e.dataTransfer.files[0], vinculadoId); });
+    input.addEventListener('change', e=>{ if(e.target.files.length) handleAnexarDocumentoVinculado(e.target.files[0], vinculadoId); e.target.value=''; });
+  }
+}
+function renderListaDocumentosVinculado(transportadorId, vinculadoId){
+  const t = state.motoristas.find(x=>x.id===transportadorId);
+  const v = t?.vinculados.find(x=>x.id===vinculadoId);
+  const docs = v?.documentos || [];
+  if(!docs.length) return '<p class="small-note">Nenhum documento anexado ainda.</p>';
+  return docs.map(d=>`
+    <div class="actions-row" style="justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line);">
+      <span style="font-size:12.5px;">📄 ${d.nome}</span>
+      <div class="actions-row">
+        <button class="btn ghost sm" onclick="visualizarDocumentoVinculado('${vinculadoId}','${d.id}')">👁️ Ver</button>
+        <button class="btn danger sm" onclick="removerDocumentoVinculado('${transportadorId}','${vinculadoId}','${d.id}')">🗑️</button>
+      </div>
+    </div>`).join('');
+}
+async function handleAnexarDocumentoVinculado(file, vinculadoId){
+  const overlay = document.getElementById('modalCadastro');
+  const transportadorId = overlay.dataset.id;
+  toast('Anexando documento...');
+  try{
+    const dataUrl = await arquivoParaDataUrl(file);
+    const docId = uid('doc');
+    await window.storage.set('motorista-doc-vinc:'+vinculadoId+':'+docId, dataUrl, true);
+    const t = state.motoristas.find(x=>x.id===transportadorId);
+    const v = t.vinculados.find(x=>x.id===vinculadoId);
+    if(!v.documentos) v.documentos = [];
+    v.documentos.push({id: docId, nome: file.name, tipo: file.type||'', tamanho: file.size||0, uploadedAt: new Date().toISOString()});
+    await saveCadastros();
+    document.getElementById('listaDocsVinculado-'+vinculadoId).innerHTML = renderListaDocumentosVinculado(transportadorId, vinculadoId);
+    document.getElementById('listaVinculadosTransportador').innerHTML = renderListaVinculadosTransportador(transportadorId);
+    toast('Documento anexado.');
+  }catch(e){
+    console.error(e);
+    toast('Não consegui anexar esse documento: ' + (e.message||'pode ser grande demais'), true);
+  }
+}
+async function visualizarDocumentoVinculado(vinculadoId, docId){
+  const win = window.open('', '_blank');
+  try{
+    const res = await window.storage.get('motorista-doc-vinc:'+vinculadoId+':'+docId, true);
+    if(!res || !res.value){ if(win) win.close(); toast('Documento não encontrado.', true); return; }
+    if(win) win.location.href = res.value;
+    else toast('Seu navegador bloqueou a nova aba. Permita pop-ups para este site e tente de novo.', true);
+  }catch(e){
+    console.error(e);
+    if(win) win.close();
+    toast('Não consegui carregar esse documento: ' + (e.message||'erro desconhecido'), true);
+  }
+}
+async function removerDocumentoVinculado(transportadorId, vinculadoId, docId){
+  if(!confirm('Remover este documento?')) return;
+  const t = state.motoristas.find(x=>x.id===transportadorId);
+  const v = t.vinculados.find(x=>x.id===vinculadoId);
+  v.documentos = (v.documentos||[]).filter(d=>d.id!==docId);
+  await saveCadastros();
+  try{ await window.storage.delete('motorista-doc-vinc:'+vinculadoId+':'+docId, true); }catch(e){}
+  document.getElementById('listaDocsVinculado-'+vinculadoId).innerHTML = renderListaDocumentosVinculado(transportadorId, vinculadoId);
+  document.getElementById('listaVinculadosTransportador').innerHTML = renderListaVinculadosTransportador(transportadorId);
+  toast('Documento removido.');
 }
 function renderListaDocumentosMotorista(motoristaId){
   const m = state.motoristas.find(x=>x.id===motoristaId);
@@ -3121,16 +3357,36 @@ async function removerDocumentoMotorista(motoristaId, docId){
 }
 async function salvarMotorista(){
   const nome = document.getElementById('fMotoristaNome').value.trim();
+  const tipo = document.getElementById('fMotoristaTipo').value;
   const cpf = document.getElementById('fMotoristaCpf').value.trim();
   const cnpj = document.getElementById('fMotoristaCnpj').value.trim();
+  const motoristaResponsavel = document.getElementById('fMotoristaResponsavel').value.trim();
   const placa = document.getElementById('fMotoristaPlaca').value.trim().toUpperCase();
-  if(!nome){ toast('Informe o nome do motorista.', true); return; }
+  if(!nome){ toast('Informe o nome.', true); return; }
   const overlay = document.getElementById('modalCadastro');
   const id = overlay.dataset.id;
   const m = state.motoristas.find(x=>x.id===id);
-  if(m) Object.assign(m, {nome, cpf, cnpj, placa});
+  if(m){
+    Object.assign(m, {
+      nome, tipo, cpf, cnpj, motoristaResponsavel, placa,
+      telefone: document.getElementById('fMotoristaTelefone').value.trim(),
+      email: document.getElementById('fMotoristaEmail').value.trim(),
+      endereco: document.getElementById('fMotoristaEndereco').value.trim(),
+      numero: document.getElementById('fMotoristaNumero').value.trim(),
+      complemento: document.getElementById('fMotoristaComplemento').value.trim(),
+      bairro: document.getElementById('fMotoristaBairro').value.trim(),
+      cep: document.getElementById('fMotoristaCep').value.trim(),
+      cidade: document.getElementById('fMotoristaCidade').value.trim(),
+      uf: document.getElementById('fMotoristaUf').value.trim().toUpperCase(),
+      banco: document.getElementById('fMotoristaBanco').value.trim(),
+      agencia: document.getElementById('fMotoristaAgencia').value.trim(),
+      conta: document.getElementById('fMotoristaConta').value.trim(),
+      tipoConta: document.getElementById('fMotoristaTipoConta').value,
+      pix: document.getElementById('fMotoristaPix').value.trim(),
+    });
+  }
   saveCadastros();
-  renderAllOuAtualizarTelaAcesso(); closeCadastroModal(); toast('Motorista salvo.');
+  renderAllOuAtualizarTelaAcesso(); closeCadastroModal(); toast('Transportador salvo.');
 }
 function optionsFazendas(selectedId){
   if(!state.fazendas.length) return `<option value="">Cadastre uma fazenda primeiro</option>`;
@@ -5694,12 +5950,12 @@ function renderTelaCadastroTransporte(){
   document.body.innerHTML = `
     <div style="max-width:760px;margin:0 auto;padding:60px 20px;">
       <button class="btn ghost sm" onclick="renderTelaEntrada()" style="margin-bottom:18px;">← Voltar</button>
-      <h2 style="margin:0 0 4px;">Cadastro de Transporte</h2>
+      <h2 style="margin:0 0 4px;">Cadastro de Transportadores</h2>
       <p class="small-note" style="margin:0 0 16px;">Cadastro básico e documentos do motorista/transportadora. Liberar acesso e gerar senha ficam na aba de operações.</p>
       <div class="card">
-        <h2>Motoristas cadastrados <button class="btn sm" onclick="openCadastroModal('motorista')">➕ Novo motorista</button></h2>
+        <h2>Transportadores cadastrados <button class="btn sm" onclick="openCadastroModal('motorista')">➕ Novo transportador</button></h2>
         <div class="table-wrap"><table>
-          <thead>${filterHeaderCells('motoristas',[{key:'nome',label:'Nome'},{key:'cpf',label:'CPF'},{key:'placa',label:'Placa'},{key:null,label:'Acesso'},{key:null,label:''}])}</thead>
+          <thead>${filterHeaderCells('motoristas',[{key:'nome',label:'Nome'},{key:'cpf',label:'CPF/CNPJ'},{key:'placa',label:'Placa'},{key:null,label:'Acesso'},{key:null,label:''}])}</thead>
           <tbody id="tbody-motoristas"></tbody>
         </table></div>
       </div>
