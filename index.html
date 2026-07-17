@@ -1322,14 +1322,6 @@ function renderCadastros(){
       </div>
     </div>
 
-    <div class="section-title">Empresas <span class="small-note" style="text-transform:none;letter-spacing:0;">— réplica do cadastro (edite na tela de acesso)</span></div>
-    <div class="card" style="margin-bottom:24px;">
-      <div class="table-wrap"><table>
-        <thead><tr><th>Nome</th><th>CNPJ</th></tr></thead>
-        <tbody>${state.empresas.length ? state.empresas.map(e=>`<tr><td>${e.nome}</td><td class="mono" style="font-size:11.5px">${e.cnpj||e.cpf||'—'}</td></tr>`).join('') : emptyRow(2,'Nenhuma empresa cadastrada ainda.')}</tbody>
-      </table></div>
-    </div>
-
     <div class="section-title">Transporte <span class="small-note" style="text-transform:none;letter-spacing:0;">— cadastro básico e documentos ficam na tela de acesso; aqui só libera acesso e senha</span></div>
     <div class="card">
       <div class="table-wrap"><table>
@@ -1537,7 +1529,7 @@ function updateTbodyColheitas(){
     const cultura = t.culturaId ? culturaById(t.culturaId) : null;
     const variedade = cultura ? cultura.variedades.find(v=>v.id===t.variedadeId) : null;
     return `<tr><td><b>${i+1}</b></td><td>${cultura?cultura.nome:'—'}</td><td>${variedade?variedade.nome:'—'}</td>
-      <td>${fmt(t.area,1)} ha</td><td class="mono" style="font-size:11.5px">${t.talhao||'—'}</td><td>${t.produtorId?produtorNome(t.produtorId):'—'}</td>
+      <td>${fmt(t.area,1)} ha</td><td class="mono" style="font-size:11.5px">${t.talhao||'—'}</td><td>${nomesProdutoresColheita(t)}</td>
       <td><div class="actions-row"><button class="btn ghost sm" onclick="openCadastroModal('colheita','${t.id}')">Editar</button>
       <button class="btn danger sm" onclick="deleteColheita('${t.id}')">Excluir</button></div></td></tr>`;
   });
@@ -2854,22 +2846,28 @@ function openCadastroModal(kind, id){
     const culturaAtivaForm = state.culturas.find(c=>c.nome===state.config.cultura);
     const numero = t ? (state.colheitas.findIndex(x=>x.id===t.id)+1) : (state.colheitas.length+1);
     title.textContent = t ? `Editar colheita nº ${numero}` : `Nova colheita — nº ${numero}`;
+    contadorLinhaVariedadeColheita = 0;
+    const produtoresSelecionados = t ? (t.produtorIds || (t.produtorId ? [t.produtorId] : [])) : [];
     body.innerHTML = `
       <div class="form-grid">
         <div class="field full"><label>Fazenda</label><select id="fColheitaFazenda" onchange="onColheitaFazendaChange()">${optionsFazendas(t?.fazendaId)}</select></div>
         <div class="field full"><label>Talhão</label><select id="fColheitaTalhaoSel" onchange="onColheitaTalhaoChange()">${optionsTalhoesFazenda(t?.fazendaId, t?.talhaoId)}</select></div>
         <div class="field full" id="colheitaAreaInfo" style="margin-top:-8px;"></div>
         <div class="field full"><label>Cultura</label><input value="${culturaAtivaForm?culturaAtivaForm.nome:'defina a cultura ativa acima'}" disabled></div>
-        <div class="field full">
-          <label>Variedade</label>
-          <div class="actions-row" style="gap:6px;">
-            <select id="fColheitaVariedade" style="flex:1;">${optionsVariedades(culturaAtivaForm, t?.variedadeId)}</select>
-            <input type="text" id="fColheitaNovaVariedade" placeholder="nova variedade" class="mini-input" style="width:110px;">
-            <button type="button" class="btn ghost sm" onclick="adicionarVariedadeNaColheita()">+</button>
-          </div>
+      </div>
+      <div class="field full">
+        <label>Variedades e área neste talhão <span class="small-note">(some quantas variedades precisar — a área de cada uma desconta da área total do talhão automaticamente)</span></label>
+        <div id="linhasVariedadesColheita">${renderLinhaVariedadeColheita(contadorLinhaVariedadeColheita++, culturaAtivaForm, t?.variedadeId, t?.area)}</div>
+        ${!t ? `<button type="button" class="btn ghost sm" style="margin-top:8px;" onclick="adicionarLinhaVariedadeColheita()">➕ Incluir variedade</button>` : ''}
+      </div>
+      <div class="field full"><label>Produtor(es) <span class="small-note">(opcional — lista vem da seleção da tela de acesso)</span></label>
+        <div class="actions-row" style="margin-bottom:4px;">
+          <button type="button" class="btn ghost sm" onclick="marcarTodosCheckList('listaProdutoresColheita', true)">Marcar todos</button>
+          <button type="button" class="btn ghost sm" onclick="marcarTodosCheckList('listaProdutoresColheita', false)">Desmarcar todos</button>
         </div>
-        <div class="field"><label>Hectares desta variedade neste talhão</label><input id="fColheitaArea" type="number" step="0.1" value="${t?.area||''}" placeholder="Ex: 70" oninput="atualizarInfoAreaColheita()"></div>
-        <div class="field full"><label>Produtor <span class="small-note">(opcional)</span></label><select id="fColheitaProdutor">${optionsProdutores(t?.produtorId)}</select></div>
+        <div class="col-filter-lista" id="listaProdutoresColheita" style="max-height:150px;border:1px solid var(--line);border-radius:8px;padding:6px;">
+          ${optionsProdutoresContextoChecklist(produtoresSelecionados)}
+        </div>
       </div>
       <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
         <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
@@ -2896,6 +2894,15 @@ function closeCadastroModal(){
 function optionsEmpresas(selectedId){
   if(!state.empresas.length) return `<option value="">Cadastre uma empresa primeiro</option>`;
   return state.empresas.map(e=>`<option value="${e.id}" ${e.id===selectedId?'selected':''}>${e.nome}</option>`).join('');
+}
+function nomesProdutoresColheita(t){
+  const ids = t.produtorIds || (t.produtorId ? [t.produtorId] : []);
+  if(!ids.length) return '—';
+  return ids.map(id=>produtorNome(id)).join(', ');
+}
+function colheitaTemProdutor(t, produtorId){
+  const ids = t.produtorIds || (t.produtorId ? [t.produtorId] : []);
+  return ids.includes(produtorId);
 }
 function optionsProdutores(selectedId){
   if(!state.produtores.length) return `<option value="">Cadastre um produtor primeiro</option>`;
@@ -3152,10 +3159,47 @@ function onColheitaTalhaoChange(){
   if(talhao){
     const alocado = calcAreaAlocadaTalhao(talhaoId, idEditando);
     const restante = talhao.area - alocado;
-    const campoArea = document.getElementById('fColheitaArea');
+    const campoArea = document.getElementById('fColheitaArea-0');
     if(campoArea && !campoArea.value) campoArea.value = restante>0 ? restante : '';
   }
   atualizarInfoAreaColheita();
+}
+let contadorLinhaVariedadeColheita = 0;
+function renderLinhaVariedadeColheita(idx, cultura, variedadeId, area){
+  return `
+    <div class="linha-variedade-colheita actions-row" data-idx="${idx}" style="gap:6px;align-items:flex-end;margin-bottom:8px;">
+      <div style="flex:1;">
+        <label class="small-note" style="display:block;margin-bottom:2px;">Variedade</label>
+        <div class="actions-row" style="gap:6px;">
+          <select id="fColheitaVariedade-${idx}" style="flex:1;">${optionsVariedades(cultura, variedadeId)}</select>
+          <input type="text" id="fColheitaNovaVariedade-${idx}" placeholder="nova variedade" class="mini-input" style="width:110px;">
+          <button type="button" class="btn ghost sm" onclick="adicionarVariedadeNaColheita(${idx})">+</button>
+        </div>
+      </div>
+      <div style="width:130px;">
+        <label class="small-note" style="display:block;margin-bottom:2px;">Hectares</label>
+        <input id="fColheitaArea-${idx}" class="fColheitaArea-linha" type="number" step="0.1" value="${area||''}" placeholder="Ex: 70" oninput="atualizarInfoAreaColheita()">
+      </div>
+      <button type="button" class="btn danger sm" style="height:38px;" onclick="removerLinhaVariedadeColheita(${idx})" title="Remover esta variedade">🗑️</button>
+    </div>`;
+}
+function adicionarLinhaVariedadeColheita(){
+  const culturaAtivaForm = state.culturas.find(c=>c.nome===state.config.cultura);
+  const idx = contadorLinhaVariedadeColheita++;
+  document.getElementById('linhasVariedadesColheita').insertAdjacentHTML('beforeend', renderLinhaVariedadeColheita(idx, culturaAtivaForm, null, ''));
+  atualizarInfoAreaColheita();
+}
+function removerLinhaVariedadeColheita(idx){
+  const linhas = document.querySelectorAll('.linha-variedade-colheita');
+  if(linhas.length<=1){ toast('Deixe pelo menos uma variedade.', true); return; }
+  document.querySelector(`.linha-variedade-colheita[data-idx="${idx}"]`)?.remove();
+  atualizarInfoAreaColheita();
+}
+function optionsProdutoresContextoChecklist(selecionados){
+  const idsContexto = state.config.contextoProdutores || [];
+  const lista = idsContexto.length ? state.produtores.filter(p=>idsContexto.includes(p.id)) : state.produtores;
+  if(!lista.length) return '<p class="small-note">Nenhum produtor disponível.</p>';
+  return lista.map(p=>`<label class="col-filter-item"><input type="checkbox" value="${p.id}" ${selecionados.includes(p.id)?'checked':''}><span>${p.nome}</span></label>`).join('');
 }
 function atualizarInfoAreaColheita(){
   const info = document.getElementById('colheitaAreaInfo');
@@ -3167,48 +3211,64 @@ function atualizarInfoAreaColheita(){
   const f = state.fazendas.find(x=>x.id===fazendaId);
   const talhao = f?.talhoes.find(t=>t.id===talhaoId);
   if(!talhao){ info.innerHTML = ''; return; }
-  const alocado = calcAreaAlocadaTalhao(talhaoId, idEditando);
-  const restante = talhao.area - alocado;
-  info.innerHTML = `<p class="small-note">Talhão de ${fmt(talhao.area,1)} ha — ${fmt(alocado,1)} ha já alocados em outra(s) variedade(s) · ${fmt(restante,1)} ha ainda disponíveis nesse talhão.</p>`;
+  const alocadoOutrasColheitas = calcAreaAlocadaTalhao(talhaoId, idEditando);
+  const somaLinhasAtuais = Array.from(document.querySelectorAll('.fColheitaArea-linha')).reduce((soma,inp)=>soma+num(inp.value),0);
+  const restante = talhao.area - alocadoOutrasColheitas - somaLinhasAtuais;
+  info.innerHTML = `<p class="small-note">Talhão de ${fmt(talhao.area,1)} ha — ${fmt(alocadoOutrasColheitas,1)} ha já em outra(s) colheita(s) · ${fmt(somaLinhasAtuais,1)} ha alocados agora nas variedades acima · <b>${fmt(restante,1)} ha ainda disponíveis</b>.</p>`;
 }
 function optionsVariedades(cultura, selectedId){
   if(!cultura || !cultura.variedades.length) return `<option value="">Nenhuma variedade cadastrada para ${cultura?cultura.nome:'a cultura ativa'}</option>`;
   return `<option value="">— sem variedade definida —</option>` + cultura.variedades.map(v=>`<option value="${v.id}" ${v.id===selectedId?'selected':''}>${v.nome}</option>`).join('');
 }
-function adicionarVariedadeNaColheita(){
-  const nome = document.getElementById('fColheitaNovaVariedade').value.trim();
+function adicionarVariedadeNaColheita(idx){
+  const nome = document.getElementById(`fColheitaNovaVariedade-${idx}`).value.trim();
   if(!nome) return;
   const cultura = state.culturas.find(c=>c.nome===state.config.cultura);
   if(!cultura){ toast('Selecione a cultura ativa primeiro.', true); return; }
   const nova = {id: uid('var'), nome};
   cultura.variedades.push(nova);
   saveCadastros();
-  document.getElementById('fColheitaVariedade').innerHTML = optionsVariedades(cultura, nova.id);
-  document.getElementById('fColheitaNovaVariedade').value = '';
+  document.getElementById(`fColheitaVariedade-${idx}`).innerHTML = optionsVariedades(cultura, nova.id);
+  document.getElementById(`fColheitaNovaVariedade-${idx}`).value = '';
 }
 function salvarColheita(){
   const fazendaId = document.getElementById('fColheitaFazenda').value || null;
   const talhaoId = document.getElementById('fColheitaTalhaoSel').value || null;
-  const variedadeId = document.getElementById('fColheitaVariedade').value || null;
-  const area = num(document.getElementById('fColheitaArea').value);
-  const produtorId = document.getElementById('fColheitaProdutor').value || null;
   const culturaId = state.culturas.find(c=>c.nome===state.config.cultura)?.id || null;
+  const produtorIds = coletarValoresMarcados('listaProdutoresColheita');
   if(!culturaId){ toast('Selecione a cultura ativa antes de lançar a colheita.', true); return; }
   if(!fazendaId || !talhaoId){ toast('Selecione a fazenda e o talhão.', true); return; }
-  if(!area){ toast('Informe os hectares desta variedade.', true); return; }
   const overlay = document.getElementById('modalCadastro');
   const id = overlay.dataset.id;
   const f = state.fazendas.find(x=>x.id===fazendaId);
   const talhaoCad = f.talhoes.find(t=>t.id===talhaoId);
+
+  const linhas = Array.from(document.querySelectorAll('.linha-variedade-colheita')).map(linha=>{
+    const idx = linha.dataset.idx;
+    return {
+      variedadeId: document.getElementById(`fColheitaVariedade-${idx}`).value || null,
+      area: num(document.getElementById(`fColheitaArea-${idx}`).value),
+    };
+  }).filter(l=>l.area>0);
+  if(!linhas.length){ toast('Informe os hectares de ao menos uma variedade.', true); return; }
+
+  const somaNova = linhas.reduce((s,l)=>s+l.area,0);
   const alocado = calcAreaAlocadaTalhao(talhaoId, id);
-  if(alocado + area > talhaoCad.area + 0.01){
-    toast(`Esse talhão tem ${fmt(talhaoCad.area,1)} ha no total — ${fmt(alocado,1)} ha já estão em outra variedade. Só sobram ${fmt(talhaoCad.area-alocado,1)} ha pra essa.`, true);
+  if(alocado + somaNova > talhaoCad.area + 0.01){
+    toast(`Esse talhão tem ${fmt(talhaoCad.area,1)} ha no total — ${fmt(alocado,1)} ha já estão em outra(s) colheita(s). Só sobram ${fmt(talhaoCad.area-alocado,1)} ha, e você está lançando ${fmt(somaNova,1)} ha.`, true);
     return;
   }
-  const dados = {fazendaId, talhaoId, talhao: talhaoCad.nome, culturaId, variedadeId, area, produtorId};
-  if(id){ const t = state.colheitas.find(x=>x.id===id); Object.assign(t, dados); }
-  else{ state.colheitas.push({id: uid('col'), ...dados}); }
-  saveCadastros(); renderAll(); closeCadastroModal(); toast('Colheita salva.');
+
+  if(id){
+    // edição: só existe uma linha, atualiza o registro existente
+    const t = state.colheitas.find(x=>x.id===id);
+    Object.assign(t, {fazendaId, talhaoId, talhao: talhaoCad.nome, culturaId, variedadeId: linhas[0].variedadeId, area: linhas[0].area, produtorIds});
+  } else {
+    linhas.forEach(l=>{
+      state.colheitas.push({id: uid('col'), fazendaId, talhaoId, talhao: talhaoCad.nome, culturaId, variedadeId: l.variedadeId, area: l.area, produtorIds});
+    });
+  }
+  saveCadastros(); renderAll(); closeCadastroModal(); toast(linhas.length>1 ? `${linhas.length} variedades lançadas.` : 'Colheita salva.');
 }
 
 
@@ -4028,7 +4088,7 @@ function renderProdutoresCompromissosHTML(){
     <tbody>
       ${state.produtores.map(p=>{
         const contratosP = state.contratos.filter(c=>c.produtorId===p.id);
-        const talhoesP = state.colheitas.filter(t=>t.produtorId===p.id);
+        const talhoesP = state.colheitas.filter(t=>colheitaTemProdutor(t, p.id));
         const areaTotal = talhoesP.reduce((a,t)=>a+num(t.area),0);
         const variedadesP = [...new Set(talhoesP.map(t=>{
           const cultura = t.culturaId ? culturaById(t.culturaId) : null;
@@ -5392,7 +5452,7 @@ function exportToXlsx(){
     ...state.colheitas.map((t,i)=>{
       const cultura = t.culturaId ? culturaById(t.culturaId) : null;
       const variedade = cultura ? cultura.variedades.find(v=>v.id===t.variedadeId) : null;
-      return [i+1, cultura?cultura.nome:'', variedade?variedade.nome:'', t.area||0, t.talhao||'', t.produtorId?produtorNome(t.produtorId):''];
+      return [i+1, cultura?cultura.nome:'', variedade?variedade.nome:'', t.area||0, t.talhao||'', nomesProdutoresColheita(t)];
     })
   ]);
   XLSX.utils.book_append_sheet(wb, wsTalhoes, 'COLHEITAS');
