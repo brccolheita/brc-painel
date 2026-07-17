@@ -28,8 +28,10 @@ body.tema-escuro{
 }
 *{box-sizing:border-box;}
 html,body{ margin:0; background:var(--bg); color:var(--ink); }
+body{ visibility:hidden; }
+html{ min-height:100%; }
 body{
-  font-family:'Inter',system-ui,sans-serif; padding-bottom:70px;
+  font-family:'Inter',system-ui,sans-serif; padding-bottom:70px; min-height:100vh;
   background:
     radial-gradient(1100px 500px at 85% -10%, rgba(242,183,5,.08), transparent 60%),
     radial-gradient(900px 400px at 5% 0%, rgba(159,232,112,.06), transparent 55%),
@@ -1380,16 +1382,31 @@ function updateTbodyFazendas(){
     <button class="btn danger sm" onclick="deleteFazenda('${f.id}')">Excluir</button></div></td></tr>`);
   document.getElementById('tbody-fazendas').innerHTML = rows.length ? rows.join('') : emptyRow(2,'Nenhuma fazenda cadastrada.');
 }
+function atualizarConversaoArmazem(){
+  const info = document.getElementById('conversaoArmazemInfo');
+  if(!info) return;
+  const kg = num(document.getElementById('fFazendaArmazemKg').value);
+  info.textContent = kg ? fmt(kg/60,1)+' sacas (60 kg)' : '';
+}
+function converterArmazemParaSacas(){
+  const sacas = prompt('Quantas sacas de 60 kg cabem no armazém?');
+  if(sacas===null) return;
+  const n = num(sacas);
+  if(!n){ toast('Informe um número válido de sacas.', true); return; }
+  document.getElementById('fFazendaArmazemKg').value = Math.round(n*60);
+  atualizarConversaoArmazem();
+}
 function salvarFazenda(){
   const nome = document.getElementById('fFazendaNome').value.trim();
+  const armazemKg = num(document.getElementById('fFazendaArmazemKg').value);
   if(!nome){ toast('Informe o nome da fazenda.', true); return; }
   const overlay = document.getElementById('modalCadastro');
   const id = overlay.dataset.id;
   if(id){
     const f = state.fazendas.find(x=>x.id===id);
-    Object.assign(f, {nome});
+    Object.assign(f, {nome, armazemKg});
   } else {
-    state.fazendas.push({id: uid('faz'), nome, talhoes: novaFazendaTalhoesTemp});
+    state.fazendas.push({id: uid('faz'), nome, armazemKg, talhoes: novaFazendaTalhoesTemp});
     novaFazendaTalhoesTemp = [];
   }
   saveCadastros(); renderAllOuAtualizarTelaAcesso(); closeCadastroModal(); toast('Fazenda salva.');
@@ -1543,15 +1560,19 @@ function deleteEmpresa(id){
   const emUso = state.contratos.some(c=>c.empresaId===id) || state.vendas.some(v=>v.empresaId===id) || state.entregas.some(e=>e.empresaDestinoId===id);
   if(emUso){ toast('Esta empresa está em uso (contrato, venda ou entrega) e não pode ser excluída.', true); return; }
   if(!confirm('Excluir esta empresa?')) return;
+  const emp = state.empresas.find(x=>x.id===id);
   state.empresas = state.empresas.filter(e=>e.id!==id);
   saveCadastros(); renderAllOuAtualizarTelaAcesso(); toast('Empresa excluída.');
+  (emp?.documentos||[]).forEach(d=>{ window.storage.delete('empresa-doc:'+id+':'+d.id, true).catch(()=>{}); });
 }
 function deleteProdutor(id){
   const emUso = state.contratos.some(c=>c.produtorId===id) || state.vendas.some(v=>v.produtorId===id);
   if(emUso){ toast('Este produtor tem contratos ou vendas vinculadas e não pode ser excluído.', true); return; }
   if(!confirm('Excluir este produtor?')) return;
+  const p = state.produtores.find(x=>x.id===id);
   state.produtores = state.produtores.filter(p=>p.id!==id);
   saveCadastros(); renderAllOuAtualizarTelaAcesso(); toast('Produtor excluído.');
+  (p?.documentos||[]).forEach(d=>{ window.storage.delete('produtor-doc:'+id+':'+d.id, true).catch(()=>{}); });
 }
 function deleteContrato(id){
   const emUso = state.vendas.some(v=>v.contratoId===id);
@@ -2395,27 +2416,46 @@ function sairDoAssistenteCadastro(){
   const barra = document.getElementById('barraAssistenteCadastro');
   if(barra) barra.remove();
 }
-function toggleTema(){
-  document.body.classList.toggle('tema-escuro');
-  const escuro = document.body.classList.contains('tema-escuro');
-  localStorage.setItem('brc_tema', escuro ? 'escuro' : 'claro');
-  toast(escuro ? 'Tema escuro ativado.' : 'Tema claro ativado.');
+function preferenciasUsuarioAtual(){
+  const s = getSessao();
+  const u = s ? state.usuarios.find(x=>x.id===s.usuarioId) : null;
+  return (u && u.preferencias) ? u.preferencias : {tema:'padrao', fonte:'padrao', idioma:'pt'};
+}
+async function salvarPreferenciaUsuario(campo, valor){
+  const s = getSessao();
+  const u = s ? state.usuarios.find(x=>x.id===s.usuarioId) : null;
+  if(!u) return;
+  if(!u.preferencias) u.preferencias = {tema:'padrao', fonte:'padrao', idioma:'pt'};
+  u.preferencias[campo] = valor;
+  await saveUsuarios();
+}
+function aplicarPreferenciasUsuario(){
+  const p = preferenciasUsuarioAtual();
+  document.body.classList.toggle('tema-escuro', p.tema==='black');
+  document.body.classList.remove('fonte-pequena','fonte-media','fonte-grande');
+  if(p.fonte==='pequeno') document.body.classList.add('fonte-pequena');
+  else if(p.fonte==='medio') document.body.classList.add('fonte-media');
+  else if(p.fonte==='grande') document.body.classList.add('fonte-grande');
+}
+function definirTema(valor){
+  document.body.classList.toggle('tema-escuro', valor==='black');
+  salvarPreferenciaUsuario('tema', valor);
+  toast(valor==='black' ? 'Tema black ativado.' : 'Tema padrão ativado.');
+  if(document.getElementById('modalCadastro')?.dataset.kind==='configuracoes') openCadastroModal('configuracoes');
 }
 function definirTamanhoFonte(tamanho){
   document.body.classList.remove('fonte-pequena','fonte-media','fonte-grande');
   if(tamanho==='pequeno') document.body.classList.add('fonte-pequena');
   else if(tamanho==='medio') document.body.classList.add('fonte-media');
   else if(tamanho==='grande') document.body.classList.add('fonte-grande');
-  localStorage.setItem('brc_tamanho_fonte', tamanho);
+  salvarPreferenciaUsuario('fonte', tamanho);
   toast('Tamanho da fonte ajustado.');
+  if(document.getElementById('modalCadastro')?.dataset.kind==='configuracoes') openCadastroModal('configuracoes');
 }
-(function restaurarTamanhoFonte(){
-  const t = localStorage.getItem('brc_tamanho_fonte');
-  if(t==='pequeno') document.body.classList.add('fonte-pequena');
-  else if(t==='medio') document.body.classList.add('fonte-media');
-  else if(t==='grande') document.body.classList.add('fonte-grande');
-})();
-if(localStorage.getItem('brc_tema')==='escuro') document.body.classList.add('tema-escuro');
+function definirIdioma(idioma){
+  salvarPreferenciaUsuario('idioma', idioma);
+  toast('Idioma salvo na sua conta.');
+}
 /* ============================================================
    MODAL DE CADASTRO — Empresa / Produtor / Contrato / Motorista / Talhão
    ============================================================ */
@@ -2428,18 +2468,92 @@ function openCadastroModal(kind, id){
   overlay.dataset.id = id || '';
 
   if(kind==='empresa'){
-    const e = id ? state.empresas.find(x=>x.id===id) : null;
-    title.textContent = e ? 'Editar empresa' : 'Nova empresa';
+    let e = id ? state.empresas.find(x=>x.id===id) : null;
+    const registroNovo = !e;
+    if(!e){
+      e = {id: uid('emp'), nome:'', cnpj:'', cpf:'', telefone:'', endereco:'', numero:'', complemento:'',
+        bairro:'', cep:'', cidade:'', uf:'', banco:'', agencia:'', conta:'', tipoConta:'corrente', pix:'', documentos:[], observacoes:''};
+      state.empresas.push(e);
+      overlay.dataset.id = e.id;
+    }
+    if(!e.documentos) e.documentos = [];
+    title.textContent = registroNovo ? 'Nova empresa' : 'Editar empresa';
     body.innerHTML = `
-      <div class="form-grid">
-        <div class="field full"><label>Nome da empresa</label><input id="fEmpresaNome" value="${e?e.nome:''}" placeholder="Ex: C.VALE"></div>
-        <div class="field"><label>CNPJ</label><input id="fEmpresaCnpj" value="${e?.cnpj||''}" placeholder="00.000.000/0000-00"></div>
-        <div class="field"><label>CPF <span class="small-note">(se pagamento a pessoa física em grãos)</span></label><input id="fEmpresaCpf" value="${e?.cpf||''}" placeholder="000.000.000-00"></div>
+      <div class="actions-row" style="gap:4px;margin-bottom:14px;border-bottom:1px solid var(--line);padding-bottom:8px;flex-wrap:wrap;">
+        <button type="button" class="btn ghost sm aba-transportador-btn active" data-aba="principal" onclick="mostrarAbaTransportador('principal')">Principal</button>
+        <button type="button" class="btn ghost sm aba-transportador-btn" data-aba="endereco" onclick="mostrarAbaTransportador('endereco')">Endereço</button>
+        <button type="button" class="btn ghost sm aba-transportador-btn" data-aba="contato" onclick="mostrarAbaTransportador('contato')">Contato</button>
+        <button type="button" class="btn ghost sm aba-transportador-btn" data-aba="bancarios" onclick="mostrarAbaTransportador('bancarios')">Dados Bancários</button>
+        <button type="button" class="btn ghost sm aba-transportador-btn" data-aba="documentos" onclick="mostrarAbaTransportador('documentos')">Documentos</button>
+        <button type="button" class="btn ghost sm aba-transportador-btn" data-aba="observacoes" onclick="mostrarAbaTransportador('observacoes')">Observações</button>
       </div>
-      <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
+      <div class="aba-transportador-conteudo" data-aba="principal">
+        <div class="field"><label>Nome da empresa</label><input id="fEmpresaNome" value="${e.nome||''}" placeholder="Ex: C.VALE"></div>
+        <div class="form-grid">
+          <div class="field"><label>CNPJ</label>
+            <div class="actions-row" style="gap:6px;">
+              <input id="fEmpresaCnpj" value="${e.cnpj||''}" placeholder="00.000.000/0000-00" oninput="this.value=maskCnpj(this.value)" style="flex:1;">
+              <button type="button" class="btn ghost sm" onclick="window.open('https://solucoes.receita.fazenda.gov.br/Servicos/cnpjreva/Cnpjreva_Solicitacao.asp','_blank')">🔍 Consultar</button>
+            </div>
+          </div>
+          <div class="field"><label>CPF <span class="small-note">(se pagamento a pessoa física em grãos)</span></label><input id="fEmpresaCpf" value="${e.cpf||''}" placeholder="000.000.000-00" oninput="this.value=maskCpf(this.value)"></div>
+        </div>
+      </div>
+      <div class="aba-transportador-conteudo" data-aba="endereco" style="display:none;">
+        <div class="field"><label>Endereço</label><input id="fEmpresaEndereco" value="${e.endereco||''}" placeholder="Rua, avenida..."></div>
+        <div class="form-grid">
+          <div class="field"><label>Número</label><input id="fEmpresaNumero" value="${e.numero||''}"></div>
+          <div class="field"><label>Complemento</label><input id="fEmpresaComplemento" value="${e.complemento||''}"></div>
+        </div>
+        <div class="form-grid">
+          <div class="field"><label>Bairro</label><input id="fEmpresaBairro" value="${e.bairro||''}"></div>
+          <div class="field"><label>CEP</label><input id="fEmpresaCep" value="${e.cep||''}" placeholder="00000-000" oninput="this.value=maskCep(this.value)"></div>
+        </div>
+        <div class="form-grid">
+          <div class="field"><label>Cidade</label><input id="fEmpresaCidade" value="${e.cidade||''}"></div>
+          <div class="field"><label>UF</label><input id="fEmpresaUf" value="${e.uf||''}" maxlength="2" style="text-transform:uppercase;"></div>
+        </div>
+      </div>
+      <div class="aba-transportador-conteudo" data-aba="contato" style="display:none;">
+        <div class="field"><label>Telefone</label><input id="fEmpresaTelefone" value="${e.telefone||''}" placeholder="(00) 00000-0000" oninput="this.value=maskTelefone(this.value)"></div>
+      </div>
+      <div class="aba-transportador-conteudo" data-aba="bancarios" style="display:none;">
+        <div class="form-grid">
+          <div class="field"><label>Banco</label>
+            <input id="fEmpresaBanco" value="${e.banco||''}" placeholder="Digite pra buscar" list="listaBancosBrasil">
+            <datalist id="listaBancosBrasil">${optionsBancosBrasil()}</datalist>
+          </div>
+          <div class="field"><label>Agência</label><input id="fEmpresaAgencia" value="${e.agencia||''}"></div>
+        </div>
+        <div class="form-grid">
+          <div class="field"><label>Conta</label><input id="fEmpresaConta" value="${e.conta||''}"></div>
+          <div class="field"><label>Tipo de conta</label>
+            <select id="fEmpresaTipoConta">
+              <option value="corrente" ${e.tipoConta!=='poupanca'?'selected':''}>Corrente</option>
+              <option value="poupanca" ${e.tipoConta==='poupanca'?'selected':''}>Poupança</option>
+            </select>
+          </div>
+        </div>
+        <div class="field"><label>Chave PIX</label><input id="fEmpresaPix" value="${e.pix||''}" placeholder="CPF/CNPJ, e-mail, telefone ou aleatória"></div>
+        <button type="button" class="btn ghost sm" onclick="copiarDadosBancariosEmpresa('${e.id}')">📋 Copiar dados bancários</button>
+      </div>
+      <div class="aba-transportador-conteudo" data-aba="documentos" style="display:none;">
+        <div class="dropzone" id="dropzoneDocEmpresa" style="padding:16px;">
+          <input type="file" id="fotoDocEmpresaInput" style="display:none;">
+          <div class="icon">📎</div>
+          <div><b>Toque ou arraste pra anexar um documento</b></div>
+          <small>Contrato social, cartão CNPJ etc.</small>
+        </div>
+        <div id="listaDocumentosEmpresa" style="margin-top:10px;">${renderListaDocumentosEmpresa(e.id)}</div>
+      </div>
+      <div class="aba-transportador-conteudo" data-aba="observacoes" style="display:none;">
+        <div class="field"><label>Observações</label><textarea id="fEmpresaObservacoes" rows="6" placeholder="Anotações gerais sobre esta empresa...">${e.observacoes||''}</textarea></div>
+      </div>
+      <div class="actions-row" style="justify-content:flex-end;margin-top:14px;">
         <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
         <button class="btn" onclick="salvarEmpresa()">Salvar</button>
       </div>`;
+    bindDropzoneDocEmpresa(e.id);
   }
 
   if(kind==='completarVenda'){
@@ -2583,26 +2697,32 @@ function openCadastroModal(kind, id){
 
   if(kind==='configuracoes'){
     title.textContent = 'Configurações';
-    const escuro = document.body.classList.contains('tema-escuro');
-    const tFonte = localStorage.getItem('brc_tamanho_fonte') || 'padrao';
+    const prefs = preferenciasUsuarioAtual();
     body.innerHTML = `
       <div class="field">
-        <label>Tema de cores</label>
-        <button class="btn ghost sm" style="width:100%;" onclick="toggleTema()">🌗 Alternar para tema ${escuro?'claro':'escuro'}</button>
+        <label>Tema de cores <span class="small-note">(fica salvo na sua conta — entra assim em qualquer aparelho)</span></label>
+        <div class="actions-row">
+          <button class="btn ${prefs.tema!=='black'?'':'ghost'} sm" onclick="definirTema('padrao')">Tema padrão</button>
+          <button class="btn ${prefs.tema==='black'?'':'ghost'} sm" onclick="definirTema('black')">Tema black</button>
+        </div>
       </div>
       <div class="field">
         <label>Tamanho da fonte</label>
         <div class="actions-row" style="flex-wrap:wrap;">
-          <button class="btn ${tFonte==='pequeno'?'':'ghost'} sm" onclick="definirTamanhoFonte('pequeno')">Pequeno</button>
-          <button class="btn ${tFonte==='padrao'?'':'ghost'} sm" onclick="definirTamanhoFonte('padrao')">Padrão</button>
-          <button class="btn ${tFonte==='medio'?'':'ghost'} sm" onclick="definirTamanhoFonte('medio')">Médio</button>
-          <button class="btn ${tFonte==='grande'?'':'ghost'} sm" onclick="definirTamanhoFonte('grande')">Grande</button>
+          <button class="btn ${prefs.fonte==='pequeno'?'':'ghost'} sm" onclick="definirTamanhoFonte('pequeno')">Pequeno</button>
+          <button class="btn ${prefs.fonte==='padrao'?'':'ghost'} sm" onclick="definirTamanhoFonte('padrao')">Padrão</button>
+          <button class="btn ${prefs.fonte==='medio'?'':'ghost'} sm" onclick="definirTamanhoFonte('medio')">Médio</button>
+          <button class="btn ${prefs.fonte==='grande'?'':'ghost'} sm" onclick="definirTamanhoFonte('grande')">Grande</button>
         </div>
       </div>
       <div class="field">
-        <label>Idioma <span class="small-note">(em breve)</span></label>
-        <select disabled><option>Português (Brasil)</option></select>
-        <p class="small-note" style="margin-top:6px;">Traduzir o sistema todo pra outros idiomas é um projeto grande à parte — por enquanto fica só o espaço reservado aqui.</p>
+        <label>Idioma</label>
+        <select id="fConfigIdioma" onchange="definirIdioma(this.value)">
+          <option value="pt" ${prefs.idioma!=='en' && prefs.idioma!=='es' ?'selected':''}>Português (Brasil)</option>
+          <option value="en" ${prefs.idioma==='en'?'selected':''}>English</option>
+          <option value="es" ${prefs.idioma==='es'?'selected':''}>Español</option>
+        </select>
+        <p class="small-note" style="margin-top:6px;">A escolha já fica salva na sua conta. Mas sendo honesto: traduzir todo o texto do sistema é um projeto grande à parte, que ainda não fizemos — por enquanto a interface continua em português mesmo quando você escolhe outro idioma aqui.</p>
       </div>
       <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
         <button class="btn" onclick="closeCadastroModal()">Fechar</button>
@@ -2615,6 +2735,14 @@ function openCadastroModal(kind, id){
     if(!f) novaFazendaTalhoesTemp = [];
     body.innerHTML = `
       <div class="field"><label>Nome da fazenda</label><input id="fFazendaNome" value="${f?f.nome:''}" placeholder="Ex: Fazenda Atacama"></div>
+      <div class="field">
+        <label>Armazém — capacidade de armazenagem</label>
+        <div class="actions-row" style="gap:6px;">
+          <input id="fFazendaArmazemKg" type="number" step="1" value="${f?.armazemKg||''}" placeholder="Em kg" oninput="atualizarConversaoArmazem()" style="flex:1;">
+          <button type="button" class="btn ghost sm" onclick="converterArmazemParaSacas()">⇄ Converter em sacas</button>
+        </div>
+        <p class="small-note" id="conversaoArmazemInfo" style="margin-top:6px;">${f?.armazemKg ? fmt(f.armazemKg/60,1)+' sacas (60 kg)' : ''}</p>
+      </div>
       <div class="field">
         <label>Talhões desta fazenda <span class="small-note">(nome e área definitivos — a variedade é escolhida depois, no operacional)</span></label>
         <div id="listaTalhoesFazenda">${renderListaTalhoesFazenda(f?f.id:null)}</div>
@@ -2631,19 +2759,88 @@ function openCadastroModal(kind, id){
   }
 
   if(kind==='produtor'){
-    const p = id ? state.produtores.find(x=>x.id===id) : null;
-    title.textContent = p ? 'Editar produtor' : 'Novo produtor';
+    let p = id ? state.produtores.find(x=>x.id===id) : null;
+    const registroNovo = !p;
+    if(!p){
+      p = {id: uid('prod'), nome:'', cpf:'', cnpj:'', email:'', telefone:'', endereco:'', numero:'', complemento:'',
+        bairro:'', cep:'', cidade:'', uf:'', banco:'', agencia:'', conta:'', tipoConta:'corrente', pix:'', documentos:[], observacoes:''};
+      state.produtores.push(p);
+      overlay.dataset.id = p.id;
+    }
+    if(!p.documentos) p.documentos = [];
+    title.textContent = registroNovo ? 'Novo produtor' : 'Editar produtor';
     body.innerHTML = `
-      <div class="form-grid">
-        <div class="field full"><label>Nome do produtor</label><input id="fProdutorNome" value="${p?p.nome:''}" placeholder="Ex: Vilmar JR"></div>
-        <div class="field"><label>CPF</label><input id="fProdutorCpf" value="${p?.cpf||''}" placeholder="000.000.000-00"></div>
-        <div class="field"><label>CNPJ <span class="small-note">(se comercializado por empresa do grupo)</span></label><input id="fProdutorCnpj" value="${p?.cnpj||''}" placeholder="00.000.000/0000-00"></div>
-        <div class="field full"><label>E-mail <span class="small-note">(opcional — usado pra compartilhar relatórios e contratos)</span></label><input id="fProdutorEmail" type="email" value="${p?.email||''}" placeholder="produtor@exemplo.com"></div>
+      <div class="actions-row" style="gap:4px;margin-bottom:14px;border-bottom:1px solid var(--line);padding-bottom:8px;flex-wrap:wrap;">
+        <button type="button" class="btn ghost sm aba-transportador-btn active" data-aba="principal" onclick="mostrarAbaTransportador('principal')">Principal</button>
+        <button type="button" class="btn ghost sm aba-transportador-btn" data-aba="endereco" onclick="mostrarAbaTransportador('endereco')">Endereço</button>
+        <button type="button" class="btn ghost sm aba-transportador-btn" data-aba="contato" onclick="mostrarAbaTransportador('contato')">Contato</button>
+        <button type="button" class="btn ghost sm aba-transportador-btn" data-aba="bancarios" onclick="mostrarAbaTransportador('bancarios')">Dados Bancários</button>
+        <button type="button" class="btn ghost sm aba-transportador-btn" data-aba="documentos" onclick="mostrarAbaTransportador('documentos')">Documentos</button>
+        <button type="button" class="btn ghost sm aba-transportador-btn" data-aba="observacoes" onclick="mostrarAbaTransportador('observacoes')">Observações</button>
       </div>
-      <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
+      <div class="aba-transportador-conteudo" data-aba="principal">
+        <div class="field"><label>Nome do produtor</label><input id="fProdutorNome" value="${p.nome||''}" placeholder="Ex: Vilmar JR"></div>
+        <div class="form-grid">
+          <div class="field"><label>CPF</label><input id="fProdutorCpf" value="${p.cpf||''}" placeholder="000.000.000-00" oninput="this.value=maskCpf(this.value)"></div>
+          <div class="field"><label>CNPJ <span class="small-note">(se comercializado por empresa do grupo)</span></label><input id="fProdutorCnpj" value="${p.cnpj||''}" placeholder="00.000.000/0000-00" oninput="this.value=maskCnpj(this.value)"></div>
+        </div>
+        <div class="field"><label>E-mail <span class="small-note">(opcional — usado pra compartilhar relatórios e contratos)</span></label><input id="fProdutorEmail" type="email" value="${p.email||''}" placeholder="produtor@exemplo.com"></div>
+      </div>
+      <div class="aba-transportador-conteudo" data-aba="endereco" style="display:none;">
+        <div class="field"><label>Endereço</label><input id="fProdutorEndereco" value="${p.endereco||''}" placeholder="Rua, avenida..."></div>
+        <div class="form-grid">
+          <div class="field"><label>Número</label><input id="fProdutorNumero" value="${p.numero||''}"></div>
+          <div class="field"><label>Complemento</label><input id="fProdutorComplemento" value="${p.complemento||''}"></div>
+        </div>
+        <div class="form-grid">
+          <div class="field"><label>Bairro</label><input id="fProdutorBairro" value="${p.bairro||''}"></div>
+          <div class="field"><label>CEP</label><input id="fProdutorCep" value="${p.cep||''}" placeholder="00000-000" oninput="this.value=maskCep(this.value)"></div>
+        </div>
+        <div class="form-grid">
+          <div class="field"><label>Cidade</label><input id="fProdutorCidade" value="${p.cidade||''}"></div>
+          <div class="field"><label>UF</label><input id="fProdutorUf" value="${p.uf||''}" maxlength="2" style="text-transform:uppercase;"></div>
+        </div>
+      </div>
+      <div class="aba-transportador-conteudo" data-aba="contato" style="display:none;">
+        <div class="field"><label>Telefone</label><input id="fProdutorTelefone" value="${p.telefone||''}" placeholder="(00) 00000-0000" oninput="this.value=maskTelefone(this.value)"></div>
+      </div>
+      <div class="aba-transportador-conteudo" data-aba="bancarios" style="display:none;">
+        <div class="form-grid">
+          <div class="field"><label>Banco</label>
+            <input id="fProdutorBanco" value="${p.banco||''}" placeholder="Digite pra buscar" list="listaBancosBrasil">
+            <datalist id="listaBancosBrasil">${optionsBancosBrasil()}</datalist>
+          </div>
+          <div class="field"><label>Agência</label><input id="fProdutorAgencia" value="${p.agencia||''}"></div>
+        </div>
+        <div class="form-grid">
+          <div class="field"><label>Conta</label><input id="fProdutorConta" value="${p.conta||''}"></div>
+          <div class="field"><label>Tipo de conta</label>
+            <select id="fProdutorTipoConta">
+              <option value="corrente" ${p.tipoConta!=='poupanca'?'selected':''}>Corrente</option>
+              <option value="poupanca" ${p.tipoConta==='poupanca'?'selected':''}>Poupança</option>
+            </select>
+          </div>
+        </div>
+        <div class="field"><label>Chave PIX</label><input id="fProdutorPix" value="${p.pix||''}" placeholder="CPF/CNPJ, e-mail, telefone ou aleatória"></div>
+        <button type="button" class="btn ghost sm" onclick="copiarDadosBancariosProdutor('${p.id}')">📋 Copiar dados bancários</button>
+      </div>
+      <div class="aba-transportador-conteudo" data-aba="documentos" style="display:none;">
+        <div class="dropzone" id="dropzoneDocProdutor" style="padding:16px;">
+          <input type="file" id="fotoDocProdutorInput" style="display:none;">
+          <div class="icon">📎</div>
+          <div><b>Toque ou arraste pra anexar um documento</b></div>
+          <small>Contrato, CCIR, ITR etc.</small>
+        </div>
+        <div id="listaDocumentosProdutor" style="margin-top:10px;">${renderListaDocumentosProdutor(p.id)}</div>
+      </div>
+      <div class="aba-transportador-conteudo" data-aba="observacoes" style="display:none;">
+        <div class="field"><label>Observações</label><textarea id="fProdutorObservacoes" rows="6" placeholder="Anotações gerais sobre este produtor...">${p.observacoes||''}</textarea></div>
+      </div>
+      <div class="actions-row" style="justify-content:flex-end;margin-top:14px;">
         <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
         <button class="btn" onclick="salvarProdutor()">Salvar</button>
       </div>`;
+    bindDropzoneDocProdutor(p.id);
   }
 
   if(kind==='contrato'){
@@ -2975,11 +3172,16 @@ function openCadastroModal(kind, id){
 }
 function closeCadastroModal(){
   const overlay = document.getElementById('modalCadastro');
-  if(overlay.dataset.kind==='motorista'){
+  const mapaListas = { motorista: state.motoristas, produtor: state.produtores, empresa: state.empresas };
+  const lista = mapaListas[overlay.dataset.kind];
+  if(lista){
     const id = overlay.dataset.id;
-    const m = state.motoristas.find(x=>x.id===id);
-    if(m && !m.nome){
-      state.motoristas = state.motoristas.filter(x=>x.id!==id);
+    const r = lista.find(x=>x.id===id);
+    if(r && !r.nome){
+      mapaListas[overlay.dataset.kind] = lista.filter(x=>x.id!==id);
+      if(overlay.dataset.kind==='motorista') state.motoristas = mapaListas.motorista;
+      if(overlay.dataset.kind==='produtor') state.produtores = mapaListas.produtor;
+      if(overlay.dataset.kind==='empresa') state.empresas = mapaListas.empresa;
       saveCadastros();
     }
   }
@@ -3039,28 +3241,60 @@ function refreshProdutoresSelect(){
 
 function salvarEmpresa(){
   const nome = document.getElementById('fEmpresaNome').value.trim();
-  const cnpj = onlyDigits(document.getElementById('fEmpresaCnpj').value.trim());
-  const cpf = onlyDigits(document.getElementById('fEmpresaCpf').value.trim());
   if(!nome){ toast('Informe o nome da empresa.', true); return; }
   const overlay = document.getElementById('modalCadastro');
   const id = overlay.dataset.id;
-  if(id){ const e = state.empresas.find(x=>x.id===id); Object.assign(e, {nome, cnpj, cpf}); }
-  else{ state.empresas.push({id: uid('emp'), nome, cnpj, cpf}); }
+  const e = state.empresas.find(x=>x.id===id);
+  if(e){
+    Object.assign(e, {
+      nome,
+      cnpj: onlyDigits(document.getElementById('fEmpresaCnpj').value.trim()),
+      cpf: onlyDigits(document.getElementById('fEmpresaCpf').value.trim()),
+      telefone: document.getElementById('fEmpresaTelefone').value.trim(),
+      endereco: document.getElementById('fEmpresaEndereco').value.trim(),
+      numero: document.getElementById('fEmpresaNumero').value.trim(),
+      complemento: document.getElementById('fEmpresaComplemento').value.trim(),
+      bairro: document.getElementById('fEmpresaBairro').value.trim(),
+      cep: document.getElementById('fEmpresaCep').value.trim(),
+      cidade: document.getElementById('fEmpresaCidade').value.trim(),
+      uf: document.getElementById('fEmpresaUf').value.trim().toUpperCase(),
+      banco: document.getElementById('fEmpresaBanco').value.trim(),
+      agencia: document.getElementById('fEmpresaAgencia').value.trim(),
+      conta: document.getElementById('fEmpresaConta').value.trim(),
+      tipoConta: document.getElementById('fEmpresaTipoConta').value,
+      pix: document.getElementById('fEmpresaPix').value.trim(),
+      observacoes: document.getElementById('fEmpresaObservacoes').value.trim(),
+    });
+  }
   saveCadastros(); renderAllOuAtualizarTelaAcesso(); closeCadastroModal(); toast('Empresa salva.');
 }
 function salvarProdutor(){
   const nome = document.getElementById('fProdutorNome').value.trim();
-  const cpf = onlyDigits(document.getElementById('fProdutorCpf').value.trim());
-  const cnpj = onlyDigits(document.getElementById('fProdutorCnpj').value.trim());
-  const email = document.getElementById('fProdutorEmail').value.trim();
   if(!nome){ toast('Informe o nome do produtor.', true); return; }
   const overlay = document.getElementById('modalCadastro');
   const id = overlay.dataset.id;
-  if(id){
-    const p = state.produtores.find(x=>x.id===id);
-    Object.assign(p, {nome, cpf, cnpj, email});
-  } else {
-    state.produtores.push({id: uid('prod'), nome, cpf, cnpj, email});
+  const p = state.produtores.find(x=>x.id===id);
+  if(p){
+    Object.assign(p, {
+      nome,
+      cpf: onlyDigits(document.getElementById('fProdutorCpf').value.trim()),
+      cnpj: onlyDigits(document.getElementById('fProdutorCnpj').value.trim()),
+      email: document.getElementById('fProdutorEmail').value.trim(),
+      telefone: document.getElementById('fProdutorTelefone').value.trim(),
+      endereco: document.getElementById('fProdutorEndereco').value.trim(),
+      numero: document.getElementById('fProdutorNumero').value.trim(),
+      complemento: document.getElementById('fProdutorComplemento').value.trim(),
+      bairro: document.getElementById('fProdutorBairro').value.trim(),
+      cep: document.getElementById('fProdutorCep').value.trim(),
+      cidade: document.getElementById('fProdutorCidade').value.trim(),
+      uf: document.getElementById('fProdutorUf').value.trim().toUpperCase(),
+      banco: document.getElementById('fProdutorBanco').value.trim(),
+      agencia: document.getElementById('fProdutorAgencia').value.trim(),
+      conta: document.getElementById('fProdutorConta').value.trim(),
+      tipoConta: document.getElementById('fProdutorTipoConta').value,
+      pix: document.getElementById('fProdutorPix').value.trim(),
+      observacoes: document.getElementById('fProdutorObservacoes').value.trim(),
+    });
   }
   saveCadastros(); renderAllOuAtualizarTelaAcesso(); closeCadastroModal(); toast('Produtor salvo.');
 }
@@ -3461,6 +3695,182 @@ async function copiarDadosBancariosTransportador(id){
   }catch(e){
     toast('Não consegui copiar automaticamente. Selecione e copie manualmente.', true);
   }
+}
+function renderListaDocumentosProdutor(produtorId){
+  const p = state.produtores.find(x=>x.id===produtorId);
+  const docs = p?.documentos || [];
+  if(!docs.length) return '<p class="small-note">Nenhum documento anexado ainda.</p>';
+  return docs.map(d=>`
+    <div class="actions-row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);">
+      <span style="font-size:13px;">📄 ${d.nome}</span>
+      <div class="actions-row">
+        <button class="btn ghost sm" onclick="visualizarDocumentoProdutor('${produtorId}','${d.id}')">👁️ Ver</button>
+        <button class="btn ghost sm" onclick="renomearDocumentoProdutor('${produtorId}','${d.id}')">✏️ Renomear</button>
+        <button class="btn danger sm" onclick="removerDocumentoProdutor('${produtorId}','${d.id}')">🗑️</button>
+      </div>
+    </div>`).join('');
+}
+function bindDropzoneDocProdutor(produtorId){
+  const dz = document.getElementById('dropzoneDocProdutor');
+  if(!dz) return;
+  const input = document.getElementById('fotoDocProdutorInput');
+  dz.addEventListener('click', ()=>input.click());
+  ['dragover','dragenter'].forEach(evt=>dz.addEventListener(evt, e=>{ e.preventDefault(); dz.classList.add('drag'); }));
+  ['dragleave','drop'].forEach(evt=>dz.addEventListener(evt, e=>{ e.preventDefault(); dz.classList.remove('drag'); }));
+  dz.addEventListener('drop', e=>{ if(e.dataTransfer.files.length) handleAnexarDocumentoProdutor(e.dataTransfer.files[0], produtorId); });
+  input.addEventListener('change', e=>{ if(e.target.files.length) handleAnexarDocumentoProdutor(e.target.files[0], produtorId); e.target.value=''; });
+}
+async function handleAnexarDocumentoProdutor(file, produtorId){
+  toast('Anexando documento...');
+  try{
+    const dataUrl = await arquivoParaDataUrl(file);
+    const docId = uid('doc');
+    await window.storage.set('produtor-doc:'+produtorId+':'+docId, dataUrl, true);
+    const p = state.produtores.find(x=>x.id===produtorId);
+    if(!p.documentos) p.documentos = [];
+    p.documentos.push({id: docId, nome: file.name, tipo: file.type||'', tamanho: file.size||0, uploadedAt: new Date().toISOString()});
+    await saveCadastros();
+    document.getElementById('listaDocumentosProdutor').innerHTML = renderListaDocumentosProdutor(produtorId);
+    toast('Documento anexado.');
+  }catch(e){
+    console.error(e);
+    toast('Não consegui anexar esse documento: ' + (e.message||'pode ser grande demais'), true);
+  }
+}
+async function visualizarDocumentoProdutor(produtorId, docId){
+  const win = window.open('', '_blank');
+  try{
+    const res = await window.storage.get('produtor-doc:'+produtorId+':'+docId, true);
+    if(!res || !res.value){ if(win) win.close(); toast('Documento não encontrado.', true); return; }
+    if(win) win.location.href = dataUrlParaBlobUrl(res.value);
+    else toast('Seu navegador bloqueou a nova aba. Permita pop-ups para este site e tente de novo.', true);
+  }catch(e){
+    console.error(e);
+    if(win) win.close();
+    toast('Não consegui carregar esse documento: ' + (e.message||'erro desconhecido'), true);
+  }
+}
+async function removerDocumentoProdutor(produtorId, docId){
+  if(!confirm('Remover este documento?')) return;
+  const p = state.produtores.find(x=>x.id===produtorId);
+  p.documentos = (p.documentos||[]).filter(d=>d.id!==docId);
+  await saveCadastros();
+  try{ await window.storage.delete('produtor-doc:'+produtorId+':'+docId, true); }catch(e){}
+  document.getElementById('listaDocumentosProdutor').innerHTML = renderListaDocumentosProdutor(produtorId);
+  toast('Documento removido.');
+}
+function renomearDocumentoProdutor(produtorId, docId){
+  const p = state.produtores.find(x=>x.id===produtorId);
+  const d = p?.documentos.find(x=>x.id===docId);
+  if(!d) return;
+  const novoNome = prompt('Novo nome do documento:', d.nome);
+  if(!novoNome || !novoNome.trim()) return;
+  d.nome = novoNome.trim();
+  saveCadastros();
+  document.getElementById('listaDocumentosProdutor').innerHTML = renderListaDocumentosProdutor(produtorId);
+  toast('Documento renomeado.');
+}
+async function copiarDadosBancariosProdutor(id){
+  const p = state.produtores.find(x=>x.id===id);
+  if(!p) return;
+  const texto = [
+    `Titular: ${p.nome||'—'}`,
+    `CPF/CNPJ: ${p.cpf||p.cnpj||'—'}`,
+    `Banco: ${p.banco||'—'}`,
+    `Agência: ${p.agencia||'—'}`,
+    `Conta: ${p.conta||'—'} (${p.tipoConta==='poupanca'?'Poupança':'Corrente'})`,
+    `Chave PIX: ${p.pix||'—'}`,
+  ].join('\n');
+  try{ await navigator.clipboard.writeText(texto); toast('Dados bancários copiados — já pode colar em qualquer lugar.'); }
+  catch(e){ toast('Não consegui copiar automaticamente. Selecione e copie manualmente.', true); }
+}
+function renderListaDocumentosEmpresa(empresaId){
+  const emp = state.empresas.find(x=>x.id===empresaId);
+  const docs = emp?.documentos || [];
+  if(!docs.length) return '<p class="small-note">Nenhum documento anexado ainda.</p>';
+  return docs.map(d=>`
+    <div class="actions-row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);">
+      <span style="font-size:13px;">📄 ${d.nome}</span>
+      <div class="actions-row">
+        <button class="btn ghost sm" onclick="visualizarDocumentoEmpresa('${empresaId}','${d.id}')">👁️ Ver</button>
+        <button class="btn ghost sm" onclick="renomearDocumentoEmpresa('${empresaId}','${d.id}')">✏️ Renomear</button>
+        <button class="btn danger sm" onclick="removerDocumentoEmpresa('${empresaId}','${d.id}')">🗑️</button>
+      </div>
+    </div>`).join('');
+}
+function bindDropzoneDocEmpresa(empresaId){
+  const dz = document.getElementById('dropzoneDocEmpresa');
+  if(!dz) return;
+  const input = document.getElementById('fotoDocEmpresaInput');
+  dz.addEventListener('click', ()=>input.click());
+  ['dragover','dragenter'].forEach(evt=>dz.addEventListener(evt, e=>{ e.preventDefault(); dz.classList.add('drag'); }));
+  ['dragleave','drop'].forEach(evt=>dz.addEventListener(evt, e=>{ e.preventDefault(); dz.classList.remove('drag'); }));
+  dz.addEventListener('drop', e=>{ if(e.dataTransfer.files.length) handleAnexarDocumentoEmpresa(e.dataTransfer.files[0], empresaId); });
+  input.addEventListener('change', e=>{ if(e.target.files.length) handleAnexarDocumentoEmpresa(e.target.files[0], empresaId); e.target.value=''; });
+}
+async function handleAnexarDocumentoEmpresa(file, empresaId){
+  toast('Anexando documento...');
+  try{
+    const dataUrl = await arquivoParaDataUrl(file);
+    const docId = uid('doc');
+    await window.storage.set('empresa-doc:'+empresaId+':'+docId, dataUrl, true);
+    const emp = state.empresas.find(x=>x.id===empresaId);
+    if(!emp.documentos) emp.documentos = [];
+    emp.documentos.push({id: docId, nome: file.name, tipo: file.type||'', tamanho: file.size||0, uploadedAt: new Date().toISOString()});
+    await saveCadastros();
+    document.getElementById('listaDocumentosEmpresa').innerHTML = renderListaDocumentosEmpresa(empresaId);
+    toast('Documento anexado.');
+  }catch(e){
+    console.error(e);
+    toast('Não consegui anexar esse documento: ' + (e.message||'pode ser grande demais'), true);
+  }
+}
+async function visualizarDocumentoEmpresa(empresaId, docId){
+  const win = window.open('', '_blank');
+  try{
+    const res = await window.storage.get('empresa-doc:'+empresaId+':'+docId, true);
+    if(!res || !res.value){ if(win) win.close(); toast('Documento não encontrado.', true); return; }
+    if(win) win.location.href = dataUrlParaBlobUrl(res.value);
+    else toast('Seu navegador bloqueou a nova aba. Permita pop-ups para este site e tente de novo.', true);
+  }catch(e){
+    console.error(e);
+    if(win) win.close();
+    toast('Não consegui carregar esse documento: ' + (e.message||'erro desconhecido'), true);
+  }
+}
+async function removerDocumentoEmpresa(empresaId, docId){
+  if(!confirm('Remover este documento?')) return;
+  const emp = state.empresas.find(x=>x.id===empresaId);
+  emp.documentos = (emp.documentos||[]).filter(d=>d.id!==docId);
+  await saveCadastros();
+  try{ await window.storage.delete('empresa-doc:'+empresaId+':'+docId, true); }catch(e){}
+  document.getElementById('listaDocumentosEmpresa').innerHTML = renderListaDocumentosEmpresa(empresaId);
+  toast('Documento removido.');
+}
+function renomearDocumentoEmpresa(empresaId, docId){
+  const emp = state.empresas.find(x=>x.id===empresaId);
+  const d = emp?.documentos.find(x=>x.id===docId);
+  if(!d) return;
+  const novoNome = prompt('Novo nome do documento:', d.nome);
+  if(!novoNome || !novoNome.trim()) return;
+  d.nome = novoNome.trim();
+  saveCadastros();
+  document.getElementById('listaDocumentosEmpresa').innerHTML = renderListaDocumentosEmpresa(empresaId);
+  toast('Documento renomeado.');
+}
+async function copiarDadosBancariosEmpresa(id){
+  const emp = state.empresas.find(x=>x.id===id);
+  if(!emp) return;
+  const texto = [
+    `Titular: ${emp.nome||'—'}`,
+    `CNPJ/CPF: ${emp.cnpj||emp.cpf||'—'}`,
+    `Banco: ${emp.banco||'—'}`,
+    `Agência: ${emp.agencia||'—'}`,
+    `Conta: ${emp.conta||'—'} (${emp.tipoConta==='poupanca'?'Poupança':'Corrente'})`,
+    `Chave PIX: ${emp.pix||'—'}`,
+  ].join('\n');
+  try{ await navigator.clipboard.writeText(texto); toast('Dados bancários copiados — já pode colar em qualquer lugar.'); }
+  catch(e){ toast('Não consegui copiar automaticamente. Selecione e copie manualmente.', true); }
 }
 function optionsFazendas(selectedId){
   if(!state.fazendas.length) return `<option value="">Cadastre uma fazenda primeiro</option>`;
@@ -5884,6 +6294,7 @@ async function forcarSincronizacao(){
 function entrarNoApp(tabInicial){
   const s = getSessao();
   document.body.innerHTML = APP_SHELL_HTML;
+  aplicarPreferenciasUsuario();
   if(s.papel==='produtor'){
     window.modoSomenteLeitura = true;
     document.body.classList.add('read-only');
@@ -6099,6 +6510,7 @@ function confirmarContextoEEntrar(){
 }
 function bootAfterLogin(){
   const s = getSessao();
+  aplicarPreferenciasUsuario();
   if(s.papel==='motorista'){
     const m = state.motoristas.find(x=>x.id===s.motoristaId);
     renderModoMotorista(m?.placa||'');
@@ -6108,7 +6520,6 @@ function bootAfterLogin(){
 }
 
 (async function init(){
-  document.getElementById('tab-cadastros').innerHTML = `<div class="empty-state"><div class="icon">⏳</div>Carregando dados...</div>`;
   await loadState();
 
   const sessao = getSessao();
@@ -6119,14 +6530,17 @@ function bootAfterLogin(){
     // o link com #motorista sempre deve levar à tela de envio de romaneio — nunca deve reaproveitar
     // uma sessão de admin/produtor que porventura já esteja ativa nesse mesmo navegador/aparelho.
     renderLoginScreen();
+    document.body.style.visibility = 'visible';
     return;
   }
 
   if(!sessaoValida){
     renderLoginScreen();
+    document.body.style.visibility = 'visible';
     return;
   }
   bootAfterLogin();
+  document.body.style.visibility = 'visible';
 })();
 
 </script>
