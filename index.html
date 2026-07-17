@@ -1383,18 +1383,19 @@ function salvarFazenda(){
     const f = state.fazendas.find(x=>x.id===id);
     Object.assign(f, {nome});
   } else {
-    state.fazendas.push({id: uid('faz'), nome, talhoes: []});
+    state.fazendas.push({id: uid('faz'), nome, talhoes: novaFazendaTalhoesTemp});
+    novaFazendaTalhoesTemp = [];
   }
   saveCadastros(); renderAll(); closeCadastroModal(); toast('Fazenda salva.');
 }
+let novaFazendaTalhoesTemp = [];
 function renderListaTalhoesFazenda(fazendaId){
-  const f = state.fazendas.find(x=>x.id===fazendaId);
-  const talhoes = f?.talhoes || [];
+  const talhoes = fazendaId ? (state.fazendas.find(x=>x.id===fazendaId)?.talhoes || []) : novaFazendaTalhoesTemp;
   if(!talhoes.length) return '<p class="small-note">Nenhum talhão cadastrado ainda.</p>';
   return talhoes.map(t=>`
     <div class="actions-row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);">
       <span style="font-size:13px;">${t.nome} — ${fmt(t.area,1)} ha</span>
-      <button class="btn danger sm" onclick="removerTalhaoFazenda('${fazendaId}','${t.id}')">🗑️</button>
+      <button class="btn danger sm" onclick="removerTalhaoFazenda('${fazendaId||''}','${t.id}')">🗑️</button>
     </div>`).join('');
 }
 function adicionarTalhaoFazenda(fazendaId){
@@ -1402,22 +1403,33 @@ function adicionarTalhaoFazenda(fazendaId){
   const area = num(document.getElementById('fNovoTalhaoArea').value);
   if(!nome){ toast('Informe o nome do talhão.', true); return; }
   if(!area){ toast('Informe a área (hectares) do talhão.', true); return; }
-  const f = state.fazendas.find(x=>x.id===fazendaId);
-  if(!f.talhoes) f.talhoes = [];
-  f.talhoes.push({id: uid('tal'), nome, area});
-  saveCadastros();
+  const novoTalhao = {id: uid('tal'), nome, area};
+  if(fazendaId){
+    const f = state.fazendas.find(x=>x.id===fazendaId);
+    if(!f.talhoes) f.talhoes = [];
+    f.talhoes.push(novoTalhao);
+    saveCadastros();
+  } else {
+    novaFazendaTalhoesTemp.push(novoTalhao);
+  }
   document.getElementById('listaTalhoesFazenda').innerHTML = renderListaTalhoesFazenda(fazendaId);
   document.getElementById('fNovoTalhaoNome').value = '';
   document.getElementById('fNovoTalhaoArea').value = '';
   toast('Talhão adicionado.');
 }
 function removerTalhaoFazenda(fazendaId, talhaoId){
-  const emUso = state.colheitas.some(c=>c.talhaoId===talhaoId);
-  if(emUso){ toast('Este talhão já tem colheita lançada — remova as colheitas dele primeiro.', true); return; }
+  if(fazendaId){
+    const emUso = state.colheitas.some(c=>c.talhaoId===talhaoId);
+    if(emUso){ toast('Este talhão já tem colheita lançada — remova as colheitas dele primeiro.', true); return; }
+  }
   if(!confirm('Remover este talhão?')) return;
-  const f = state.fazendas.find(x=>x.id===fazendaId);
-  f.talhoes = (f.talhoes||[]).filter(t=>t.id!==talhaoId);
-  saveCadastros();
+  if(fazendaId){
+    const f = state.fazendas.find(x=>x.id===fazendaId);
+    f.talhoes = (f.talhoes||[]).filter(t=>t.id!==talhaoId);
+    saveCadastros();
+  } else {
+    novaFazendaTalhoesTemp = novaFazendaTalhoesTemp.filter(t=>t.id!==talhaoId);
+  }
   document.getElementById('listaTalhoesFazenda').innerHTML = renderListaTalhoesFazenda(fazendaId);
   toast('Talhão removido.');
 }
@@ -2590,18 +2602,17 @@ function openCadastroModal(kind, id){
   if(kind==='fazenda'){
     const f = id ? state.fazendas.find(x=>x.id===id) : null;
     title.textContent = f ? 'Editar fazenda' : 'Nova fazenda';
+    if(!f) novaFazendaTalhoesTemp = [];
     body.innerHTML = `
       <div class="field"><label>Nome da fazenda</label><input id="fFazendaNome" value="${f?f.nome:''}" placeholder="Ex: Fazenda Atacama"></div>
       <div class="field">
         <label>Talhões desta fazenda <span class="small-note">(nome e área definitivos — a variedade é escolhida depois, no operacional)</span></label>
-        ${f ? `
-          <div id="listaTalhoesFazenda">${renderListaTalhoesFazenda(f.id)}</div>
-          <div class="actions-row" style="margin-top:8px;gap:6px;">
-            <input id="fNovoTalhaoNome" placeholder="Ex: Talhão 3" style="flex:1;">
-            <input id="fNovoTalhaoArea" type="number" step="0.1" placeholder="Hectares" style="width:110px;">
-            <button type="button" class="btn ghost sm" onclick="adicionarTalhaoFazenda('${f.id}')">➕ Adicionar</button>
-          </div>
-        ` : `<p class="small-note">Salve a fazenda primeiro (botão "Salvar" abaixo) e depois volte em "Editar" pra cadastrar os talhões.</p>`}
+        <div id="listaTalhoesFazenda">${renderListaTalhoesFazenda(f?f.id:null)}</div>
+        <div class="actions-row" style="margin-top:8px;gap:6px;">
+          <input id="fNovoTalhaoNome" placeholder="Ex: Talhão 3" style="flex:1;">
+          <input id="fNovoTalhaoArea" type="number" step="0.1" placeholder="Hectares" style="width:110px;">
+          <button type="button" class="btn ghost sm" onclick="adicionarTalhaoFazenda('${f?f.id:''}')">➕ Adicionar</button>
+        </div>
       </div>
       <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
         <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
