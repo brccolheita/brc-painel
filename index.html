@@ -1035,6 +1035,15 @@ function renderAll(){
   renderUsuarios();
   updateBadge();
 }
+function renderAllOuAtualizarTelaAcesso(){
+  // Se o app estiver montado, atualiza tudo normalmente. Se estivermos numa tela de
+  // pré-acesso (Fazendas/Produtores/Empresas/Transporte), só atualiza a tabela local.
+  if(document.getElementById('tab-cadastros')){ renderAll(); return; }
+  if(document.getElementById('tbody-fazendas')) updateTbodyFazendas();
+  if(document.getElementById('tbody-produtores')) updateTbodyProdutores();
+  if(document.getElementById('tbody-empresas')) updateTbodyEmpresas();
+  if(document.getElementById('tbody-motoristas')) updateTbodyMotoristas();
+}
 
 function updateBadge(){
   const nc = state.entregas.filter(e=>e.status==='aguardando_conferencia').length;
@@ -1386,7 +1395,7 @@ function salvarFazenda(){
     state.fazendas.push({id: uid('faz'), nome, talhoes: novaFazendaTalhoesTemp});
     novaFazendaTalhoesTemp = [];
   }
-  saveCadastros(); renderAll(); closeCadastroModal(); toast('Fazenda salva.');
+  saveCadastros(); renderAllOuAtualizarTelaAcesso(); closeCadastroModal(); toast('Fazenda salva.');
 }
 let novaFazendaTalhoesTemp = [];
 function renderListaTalhoesFazenda(fazendaId){
@@ -1441,7 +1450,7 @@ function calcAreaAlocadaTalhao(talhaoId, excluirColheitaId){
 function deleteFazenda(id){
   if(!confirm('Excluir esta fazenda?')) return;
   state.fazendas = state.fazendas.filter(f=>f.id!==id);
-  saveCadastros(); renderAll(); toast('Fazenda excluída.');
+  saveCadastros(); renderAllOuAtualizarTelaAcesso(); toast('Fazenda excluída.');
 }
 function updateTbodyProdutores(){
   const filters = getFilterValues('produtores');
@@ -1534,14 +1543,14 @@ function deleteEmpresa(id){
   if(emUso){ toast('Esta empresa está em uso (contrato, venda ou entrega) e não pode ser excluída.', true); return; }
   if(!confirm('Excluir esta empresa?')) return;
   state.empresas = state.empresas.filter(e=>e.id!==id);
-  saveCadastros(); renderAll(); toast('Empresa excluída.');
+  saveCadastros(); renderAllOuAtualizarTelaAcesso(); toast('Empresa excluída.');
 }
 function deleteProdutor(id){
   const emUso = state.contratos.some(c=>c.produtorId===id) || state.vendas.some(v=>v.produtorId===id);
   if(emUso){ toast('Este produtor tem contratos ou vendas vinculadas e não pode ser excluído.', true); return; }
   if(!confirm('Excluir este produtor?')) return;
   state.produtores = state.produtores.filter(p=>p.id!==id);
-  saveCadastros(); renderAll(); toast('Produtor excluído.');
+  saveCadastros(); renderAllOuAtualizarTelaAcesso(); toast('Produtor excluído.');
 }
 function deleteContrato(id){
   const emUso = state.vendas.some(v=>v.contratoId===id);
@@ -1556,7 +1565,7 @@ function deleteMotorista(id){
   if(!confirm('Excluir este motorista?')) return;
   const m = state.motoristas.find(x=>x.id===id);
   state.motoristas = state.motoristas.filter(m=>m.id!==id);
-  saveCadastros(); renderAll(); toast('Motorista excluído.');
+  saveCadastros(); renderAllOuAtualizarTelaAcesso(); toast('Motorista excluído.');
   (m?.documentos||[]).forEach(d=>{ window.storage.delete('motorista-doc:'+id+':'+d.id, true).catch(()=>{}); });
 }
 function deleteColheita(id){
@@ -2916,7 +2925,7 @@ function salvarEmpresa(){
   const id = overlay.dataset.id;
   if(id){ const e = state.empresas.find(x=>x.id===id); Object.assign(e, {nome, cnpj, cpf}); }
   else{ state.empresas.push({id: uid('emp'), nome, cnpj, cpf}); }
-  saveCadastros(); renderAll(); closeCadastroModal(); toast('Empresa salva.');
+  saveCadastros(); renderAllOuAtualizarTelaAcesso(); closeCadastroModal(); toast('Empresa salva.');
 }
 function salvarProdutor(){
   const nome = document.getElementById('fProdutorNome').value.trim();
@@ -2932,7 +2941,7 @@ function salvarProdutor(){
   } else {
     state.produtores.push({id: uid('prod'), nome, cpf, cnpj, email});
   }
-  saveCadastros(); renderAll(); closeCadastroModal(); toast('Produtor salvo.');
+  saveCadastros(); renderAllOuAtualizarTelaAcesso(); closeCadastroModal(); toast('Produtor salvo.');
 }
 function onCompletarEmpresaChange(){
   document.getElementById('fCompletarProdutor').innerHTML = optionsProdutores();
@@ -3110,7 +3119,7 @@ async function salvarMotorista(){
     }
   }
 
-  renderAll(); closeCadastroModal(); toast('Motorista salvo.');
+  renderAllOuAtualizarTelaAcesso(); closeCadastroModal(); toast('Motorista salvo.');
 }
 function optionsFazendas(selectedId){
   if(!state.fazendas.length) return `<option value="">Cadastre uma fazenda primeiro</option>`;
