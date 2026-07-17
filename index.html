@@ -2824,6 +2824,7 @@ function openCadastroModal(kind, id){
         <button type="button" class="btn ghost sm aba-transportador-btn" data-aba="contato" onclick="mostrarAbaTransportador('contato')">Contato</button>
         <button type="button" class="btn ghost sm aba-transportador-btn" data-aba="bancarios" onclick="mostrarAbaTransportador('bancarios')">Dados Bancários</button>
         <button type="button" class="btn ghost sm aba-transportador-btn" data-aba="documentos" onclick="mostrarAbaTransportador('documentos')">Documentos</button>
+        <button type="button" class="btn ghost sm aba-transportador-btn" data-aba="observacoes" onclick="mostrarAbaTransportador('observacoes')">Observações</button>
       </div>
 
       <div class="aba-transportador-conteudo" data-aba="principal">
@@ -2877,7 +2878,10 @@ function openCadastroModal(kind, id){
 
       <div class="aba-transportador-conteudo" data-aba="bancarios" style="display:none;">
         <div class="form-grid">
-          <div class="field"><label>Banco</label><input id="fMotoristaBanco" value="${m.banco||''}" placeholder="Ex: 001 — Banco do Brasil"></div>
+          <div class="field"><label>Banco</label>
+            <input id="fMotoristaBanco" value="${m.banco||''}" placeholder="Digite pra buscar (ex: Banco do Brasil)" list="listaBancosBrasil">
+            <datalist id="listaBancosBrasil">${optionsBancosBrasil()}</datalist>
+          </div>
           <div class="field"><label>Agência</label><input id="fMotoristaAgencia" value="${m.agencia||''}"></div>
         </div>
         <div class="form-grid">
@@ -2890,6 +2894,8 @@ function openCadastroModal(kind, id){
           </div>
         </div>
         <div class="field"><label>Chave PIX</label><input id="fMotoristaPix" value="${m.pix||''}" placeholder="CPF/CNPJ, e-mail, telefone ou aleatória"></div>
+        <p class="small-note">Não temos uma base ao vivo do Banco Central aqui dentro — a lista acima cobre os bancos mais usados no Brasil. Se não encontrar o seu, <a href="https://www.bcb.gov.br/estabilidadefinanceira/buscaparticipantes" target="_blank" rel="noopener">consulte a lista completa no Banco Central</a> e digite manualmente.</p>
+        <button type="button" class="btn ghost sm" onclick="copiarDadosBancariosTransportador('${m.id}')">📋 Copiar dados bancários</button>
       </div>
 
       <div class="aba-transportador-conteudo" data-aba="documentos" style="display:none;">
@@ -2912,6 +2918,10 @@ function openCadastroModal(kind, id){
             <button type="button" class="btn ghost sm" onclick="adicionarVinculadoTransportador('${m.id}')">➕ Adicionar</button>
           </div>
         </div>
+      </div>
+
+      <div class="aba-transportador-conteudo" data-aba="observacoes" style="display:none;">
+        <div class="field"><label>Observações</label><textarea id="fMotoristaObservacoes" rows="6" placeholder="Anotações gerais sobre este transportador...">${m.observacoes||''}</textarea></div>
       </div>
 
       <div class="actions-row" style="justify-content:flex-end;margin-top:14px;">
@@ -3237,9 +3247,22 @@ function renderListaDocumentosVinculado(transportadorId, vinculadoId){
       <span style="font-size:12.5px;">📄 ${d.nome}</span>
       <div class="actions-row">
         <button class="btn ghost sm" onclick="visualizarDocumentoVinculado('${vinculadoId}','${d.id}')">👁️ Ver</button>
+        <button class="btn ghost sm" onclick="renomearDocumentoVinculado('${transportadorId}','${vinculadoId}','${d.id}')">✏️ Renomear</button>
         <button class="btn danger sm" onclick="removerDocumentoVinculado('${transportadorId}','${vinculadoId}','${d.id}')">🗑️</button>
       </div>
     </div>`).join('');
+}
+function renomearDocumentoVinculado(transportadorId, vinculadoId, docId){
+  const t = state.motoristas.find(x=>x.id===transportadorId);
+  const v = t?.vinculados.find(x=>x.id===vinculadoId);
+  const d = v?.documentos.find(x=>x.id===docId);
+  if(!d) return;
+  const novoNome = prompt('Novo nome do documento:', d.nome);
+  if(!novoNome || !novoNome.trim()) return;
+  d.nome = novoNome.trim();
+  saveCadastros();
+  document.getElementById('listaDocsVinculado-'+vinculadoId).innerHTML = renderListaDocumentosVinculado(transportadorId, vinculadoId);
+  toast('Documento renomeado.');
 }
 async function handleAnexarDocumentoVinculado(file, vinculadoId){
   const overlay = document.getElementById('modalCadastro');
@@ -3262,12 +3285,21 @@ async function handleAnexarDocumentoVinculado(file, vinculadoId){
     toast('Não consegui anexar esse documento: ' + (e.message||'pode ser grande demais'), true);
   }
 }
+function dataUrlParaBlobUrl(dataUrl){
+  const [cabecalho, base64] = dataUrl.split(',');
+  const mimeMatch = cabecalho.match(/data:(.*?);base64/);
+  const mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+  const binario = atob(base64);
+  const bytes = new Uint8Array(binario.length);
+  for(let i=0;i<binario.length;i++) bytes[i] = binario.charCodeAt(i);
+  return URL.createObjectURL(new Blob([bytes], {type: mime}));
+}
 async function visualizarDocumentoVinculado(vinculadoId, docId){
   const win = window.open('', '_blank');
   try{
     const res = await window.storage.get('motorista-doc-vinc:'+vinculadoId+':'+docId, true);
     if(!res || !res.value){ if(win) win.close(); toast('Documento não encontrado.', true); return; }
-    if(win) win.location.href = res.value;
+    if(win) win.location.href = dataUrlParaBlobUrl(res.value);
     else toast('Seu navegador bloqueou a nova aba. Permita pop-ups para este site e tente de novo.', true);
   }catch(e){
     console.error(e);
@@ -3295,9 +3327,21 @@ function renderListaDocumentosMotorista(motoristaId){
       <span style="font-size:13px;">📄 ${d.nome}</span>
       <div class="actions-row">
         <button class="btn ghost sm" onclick="visualizarDocumentoMotorista('${motoristaId}','${d.id}')">👁️ Ver</button>
+        <button class="btn ghost sm" onclick="renomearDocumentoMotorista('${motoristaId}','${d.id}')">✏️ Renomear</button>
         <button class="btn danger sm" onclick="removerDocumentoMotorista('${motoristaId}','${d.id}')">🗑️</button>
       </div>
     </div>`).join('');
+}
+function renomearDocumentoMotorista(motoristaId, docId){
+  const m = state.motoristas.find(x=>x.id===motoristaId);
+  const d = m?.documentos.find(x=>x.id===docId);
+  if(!d) return;
+  const novoNome = prompt('Novo nome do documento:', d.nome);
+  if(!novoNome || !novoNome.trim()) return;
+  d.nome = novoNome.trim();
+  saveCadastros();
+  document.getElementById('listaDocumentosMotorista').innerHTML = renderListaDocumentosMotorista(motoristaId);
+  toast('Documento renomeado.');
 }
 function bindDropzoneDocMotorista(motoristaId){
   const dz = document.getElementById('dropzoneDocMotorista');
@@ -3337,7 +3381,7 @@ async function visualizarDocumentoMotorista(motoristaId, docId){
       toast('Documento não encontrado — pode não ter sido salvo com sucesso ao anexar (arquivo grande demais, por exemplo).', true);
       return;
     }
-    if(win){ win.location.href = res.value; }
+    if(win){ win.location.href = dataUrlParaBlobUrl(res.value); }
     else{ toast('Seu navegador bloqueou a nova aba. Permita pop-ups para este site e tente de novo.', true); }
   }catch(e){
     console.error(e);
@@ -3383,10 +3427,40 @@ async function salvarMotorista(){
       conta: document.getElementById('fMotoristaConta').value.trim(),
       tipoConta: document.getElementById('fMotoristaTipoConta').value,
       pix: document.getElementById('fMotoristaPix').value.trim(),
+      observacoes: document.getElementById('fMotoristaObservacoes').value.trim(),
     });
   }
   saveCadastros();
   renderAllOuAtualizarTelaAcesso(); closeCadastroModal(); toast('Transportador salvo.');
+}
+function optionsBancosBrasil(){
+  const bancos = [
+    '001 — Banco do Brasil','033 — Santander','104 — Caixa Econômica Federal','237 — Bradesco',
+    '341 — Itaú Unibanco','260 — Nu Pagamentos (Nubank)','077 — Banco Inter','212 — Banco Original',
+    '336 — Banco C6','290 — PagSeguro (PagBank)','323 — Mercado Pago','380 — PicPay',
+    '070 — BRB — Banco de Brasília','041 — Banrisul','085 — Cooperativa Sicoob','756 — Sicoob',
+    '748 — Sicredi','422 — Banco Safra','655 — Banco Votorantim (BV)','389 — Banco Mercantil do Brasil',
+    '021 — Banestes','004 — Banco do Nordeste','037 — Banco do Estado do Pará (Banpará)','003 — Banco da Amazônia',
+  ];
+  return bancos.map(b=>`<option value="${b}"></option>`).join('');
+}
+async function copiarDadosBancariosTransportador(id){
+  const m = state.motoristas.find(x=>x.id===id);
+  if(!m) return;
+  const texto = [
+    `Titular: ${m.nome||'—'}`,
+    m.tipo==='juridica' ? `CNPJ: ${m.cnpj||'—'}` : `CPF: ${m.cpf||'—'}`,
+    `Banco: ${m.banco||'—'}`,
+    `Agência: ${m.agencia||'—'}`,
+    `Conta: ${m.conta||'—'} (${m.tipoConta==='poupanca'?'Poupança':'Corrente'})`,
+    `Chave PIX: ${m.pix||'—'}`,
+  ].join('\n');
+  try{
+    await navigator.clipboard.writeText(texto);
+    toast('Dados bancários copiados — já pode colar em qualquer lugar.');
+  }catch(e){
+    toast('Não consegui copiar automaticamente. Selecione e copie manualmente.', true);
+  }
 }
 function optionsFazendas(selectedId){
   if(!state.fazendas.length) return `<option value="">Cadastre uma fazenda primeiro</option>`;
@@ -4798,7 +4872,7 @@ async function visualizarPdfContrato(contratoId){
       toast('PDF não encontrado para este contrato — pode não ter sido arquivado com sucesso ao importar.', true);
       return;
     }
-    if(win) win.location.href = res.value;
+    if(win) win.location.href = dataUrlParaBlobUrl(res.value);
     else toast('Seu navegador bloqueou a nova aba. Permita pop-ups para este site e tente de novo.', true);
   }catch(e){
     if(win) win.close();
@@ -5948,7 +6022,7 @@ function renderTelaCadastroUsuarios(){
 }
 function renderTelaCadastroTransporte(){
   document.body.innerHTML = `
-    <div style="max-width:760px;margin:0 auto;padding:60px 20px;">
+    <div style="max-width:980px;margin:0 auto;padding:60px 20px;">
       <button class="btn ghost sm" onclick="renderTelaEntrada()" style="margin-bottom:18px;">← Voltar</button>
       <h2 style="margin:0 0 4px;">Cadastro de Transportadores</h2>
       <p class="small-note" style="margin:0 0 16px;">Cadastro básico e documentos do motorista/transportadora. Liberar acesso e gerar senha ficam na aba de operações.</p>
