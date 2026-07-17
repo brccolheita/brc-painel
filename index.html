@@ -1276,16 +1276,6 @@ function renderCadastros(){
       </div>
     </div>
 
-    <div class="section-title">Cadastro de Produtor</div>
-    <div class="card" id="passo-produtores" style="margin-bottom:24px;">
-      <h2>Produtores cadastrados <button class="btn sm" onclick="openCadastroModal('produtor')">➕ Novo produtor</button></h2>
-      <p class="small-note" style="margin-top:-6px;margin-bottom:12px;">Também são criados automaticamente ao importar o relatório de NFs.</p>
-      <div class="table-wrap"><table>
-        <thead>${filterHeaderCells('produtores',[{key:'nome',label:'Nome'},{key:'cpf',label:'CPF'},{key:'cnpj',label:'CNPJ'},{key:null,label:''}])}</thead>
-        <tbody id="tbody-produtores"></tbody>
-      </table></div>
-    </div>
-
     <div class="section-title">Dados da Colheita</div>
     <div class="card" id="passo-colheita" style="margin-bottom:24px;">
       <h2>Colheitas lançadas <button class="btn sm" onclick="openCadastroModal('colheita')">➕ Incluir nova colheita</button></h2>
@@ -1319,26 +1309,23 @@ function renderCadastros(){
       </div>
     </div>
 
-    <div class="section-title">Empresas</div>
-    <div class="card" id="passo-empresas" style="margin-bottom:24px;">
-      <h2>Empresas / armazéns de destino <button class="btn sm" onclick="openCadastroModal('empresa')">➕ Nova empresa</button></h2>
-      <p class="small-note" style="margin-top:-6px;margin-bottom:12px;">Também são criadas automaticamente ao importar o relatório de NFs.</p>
+    <div class="section-title">Empresas <span class="small-note" style="text-transform:none;letter-spacing:0;">— réplica do cadastro (edite na tela de acesso)</span></div>
+    <div class="card" style="margin-bottom:24px;">
       <div class="table-wrap"><table>
-        <thead>${filterHeaderCells('empresas',[{key:'nome',label:'Nome'},{key:'cnpj',label:'CNPJ'},{key:'cpf',label:'CPF'},{key:null,label:''}])}</thead>
-        <tbody id="tbody-empresas"></tbody>
+        <thead><tr><th>Nome</th><th>CNPJ</th></tr></thead>
+        <tbody>${state.empresas.length ? state.empresas.map(e=>`<tr><td>${e.nome}</td><td class="mono" style="font-size:11.5px">${e.cnpj||e.cpf||'—'}</td></tr>`).join('') : emptyRow(2,'Nenhuma empresa cadastrada ainda.')}</tbody>
       </table></div>
     </div>
 
-    <div class="section-title">Transporte</div>
-    <div class="card" id="passo-transporte">
-      <h2>Motoristas cadastrados <button class="btn sm" onclick="openCadastroModal('motorista')">➕ Novo motorista</button></h2>
+    <div class="section-title">Transporte <span class="small-note" style="text-transform:none;letter-spacing:0;">— réplica do cadastro (edite na tela de acesso)</span></div>
+    <div class="card">
       <div class="table-wrap"><table>
-        <thead>${filterHeaderCells('motoristas',[{key:'nome',label:'Nome'},{key:'cpf',label:'CPF'},{key:'placa',label:'Placa'},{key:null,label:'Acesso'},{key:null,label:''}])}</thead>
-        <tbody id="tbody-motoristas"></tbody>
+        <thead><tr><th>Nome</th><th>Placa</th></tr></thead>
+        <tbody>${state.motoristas.length ? state.motoristas.map(m=>`<tr><td>${m.nome}</td><td class="mono" style="font-size:11.5px">${m.placa||'—'}</td></tr>`).join('') : emptyRow(2,'Nenhum motorista cadastrado ainda.')}</tbody>
       </table></div>
     </div>
   `;
-  updateTbodyProdutores(); updateTbodyEmpresas(); updateTbodyContratosCad(); updateTbodyMotoristas(); updateTbodyColheitas();
+  updateTbodyContratosCad(); updateTbodyColheitas();
   document.getElementById('btnImportContratoPDF').addEventListener('click', ()=>document.getElementById('importContratoPDFInput').click());
   document.getElementById('importContratoPDFInput').addEventListener('change', (e)=>{
     if(e.target.files[0]) handleImportContratoPDF(e.target.files[0]);
@@ -5528,9 +5515,9 @@ function renderTelaEntrada(){
         </div>
         <div id="arvoreCadastrosEntrada" style="display:none;padding:2px 4px 4px 30px;">
           <div class="entrada-item" onclick="renderTelaCadastroFazendas()">${icFazenda}Fazendas</div>
-          <div class="entrada-item" onclick="entrarNoAssistenteCadastro('passo-produtores')">${icProdutor}Produtores</div>
-          <div class="entrada-item" onclick="entrarNoAssistenteCadastro('passo-empresas')">${icEmpresa}Empresas</div>
-          <div class="entrada-item" onclick="entrarNoAssistenteCadastro('passo-transporte')">${icTransporte}Transporte</div>
+          <div class="entrada-item" onclick="renderTelaCadastroProdutores()">${icProdutor}Produtores</div>
+          <div class="entrada-item" onclick="renderTelaCadastroEmpresas()">${icEmpresa}Empresas</div>
+          <div class="entrada-item" onclick="renderTelaCadastroTransporte()">${icTransporte}Transporte</div>
           <div class="entrada-item" onclick="entrarNoApp('usuarios')">${icUsuario}Usuários</div>
           <div class="entrada-item" onclick="entrarNoApp(); setTimeout(()=>openCadastroModal('configuracoes'), 30);">${icConfig}Configurações</div>
         </div>
@@ -5540,13 +5527,24 @@ function renderTelaEntrada(){
     </div>
   `;
 }
+function modalCadastroHTML(){
+  return `<div class="modal-overlay hidden" id="modalCadastro">
+    <div class="modal">
+      <div class="modal-head">
+        <h3 id="modalCadastroTitle">Cadastro</h3>
+        <button class="modal-close" id="modalCadastroClose" onclick="closeCadastroModal()">✕</button>
+      </div>
+      <div id="modalCadastroBody"></div>
+    </div>
+  </div>`;
+}
 function renderTelaCadastroFazendas(){
   const s = getSessao();
   document.body.innerHTML = `
     <div style="max-width:520px;margin:0 auto;padding:60px 20px;">
       <button class="btn ghost sm" onclick="renderTelaEntrada()" style="margin-bottom:18px;">← Voltar</button>
       <h2 style="margin:0 0 4px;">Cadastro de Fazenda</h2>
-      <p class="small-note" style="margin:0 0 16px;">Talhão, variedade e hectares ficam em "Dados da Colheita", dentro do sistema — mudam a cada safra.</p>
+      <p class="small-note" style="margin:0 0 16px;">Cada fazenda já leva junto o cadastro de talhões e área — clique em "Editar" numa fazenda pra abrir isso.</p>
       <div class="card">
         <h2>Fazendas cadastradas <button class="btn sm" onclick="openCadastroModal('fazenda')">➕ Nova fazenda</button></h2>
         <div class="table-wrap"><table>
@@ -5555,8 +5553,63 @@ function renderTelaCadastroFazendas(){
         </table></div>
       </div>
     </div>
+    ${modalCadastroHTML()}
   `;
   updateTbodyFazendas();
+}
+function renderTelaCadastroProdutores(){
+  document.body.innerHTML = `
+    <div style="max-width:640px;margin:0 auto;padding:60px 20px;">
+      <button class="btn ghost sm" onclick="renderTelaEntrada()" style="margin-bottom:18px;">← Voltar</button>
+      <h2 style="margin:0 0 4px;">Cadastro de Produtor</h2>
+      <p class="small-note" style="margin:0 0 16px;">Também são criados automaticamente ao importar o relatório de NFs. Dentro do sistema, isso aparece só como consulta.</p>
+      <div class="card">
+        <h2>Produtores cadastrados <button class="btn sm" onclick="openCadastroModal('produtor')">➕ Novo produtor</button></h2>
+        <div class="table-wrap"><table>
+          <thead>${filterHeaderCells('produtores',[{key:'nome',label:'Nome'},{key:'cpf',label:'CPF'},{key:'cnpj',label:'CNPJ'},{key:null,label:''}])}</thead>
+          <tbody id="tbody-produtores"></tbody>
+        </table></div>
+      </div>
+    </div>
+    ${modalCadastroHTML()}
+  `;
+  updateTbodyProdutores();
+}
+function renderTelaCadastroEmpresas(){
+  document.body.innerHTML = `
+    <div style="max-width:640px;margin:0 auto;padding:60px 20px;">
+      <button class="btn ghost sm" onclick="renderTelaEntrada()" style="margin-bottom:18px;">← Voltar</button>
+      <h2 style="margin:0 0 4px;">Cadastro de Empresas</h2>
+      <p class="small-note" style="margin:0 0 16px;">Também são criadas automaticamente ao importar o relatório de NFs. Dentro do sistema, isso aparece só como consulta.</p>
+      <div class="card">
+        <h2>Empresas / armazéns de destino <button class="btn sm" onclick="openCadastroModal('empresa')">➕ Nova empresa</button></h2>
+        <div class="table-wrap"><table>
+          <thead>${filterHeaderCells('empresas',[{key:'nome',label:'Nome'},{key:'cnpj',label:'CNPJ'},{key:'cpf',label:'CPF'},{key:null,label:''}])}</thead>
+          <tbody id="tbody-empresas"></tbody>
+        </table></div>
+      </div>
+    </div>
+    ${modalCadastroHTML()}
+  `;
+  updateTbodyEmpresas();
+}
+function renderTelaCadastroTransporte(){
+  document.body.innerHTML = `
+    <div style="max-width:760px;margin:0 auto;padding:60px 20px;">
+      <button class="btn ghost sm" onclick="renderTelaEntrada()" style="margin-bottom:18px;">← Voltar</button>
+      <h2 style="margin:0 0 4px;">Cadastro de Transporte</h2>
+      <p class="small-note" style="margin:0 0 16px;">Motoristas, acesso deles ao link de romaneio e documentos. Dentro do sistema, isso aparece só como consulta.</p>
+      <div class="card">
+        <h2>Motoristas cadastrados <button class="btn sm" onclick="openCadastroModal('motorista')">➕ Novo motorista</button></h2>
+        <div class="table-wrap"><table>
+          <thead>${filterHeaderCells('motoristas',[{key:'nome',label:'Nome'},{key:'cpf',label:'CPF'},{key:'placa',label:'Placa'},{key:null,label:'Acesso'},{key:null,label:''}])}</thead>
+          <tbody id="tbody-motoristas"></tbody>
+        </table></div>
+      </div>
+    </div>
+    ${modalCadastroHTML()}
+  `;
+  updateTbodyMotoristas();
 }
 function renderTelaFiltroContexto(){
   const s = getSessao();
