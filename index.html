@@ -393,7 +393,10 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
           <button class="interacoes-item" id="btnToggleTema" data-item-id="tema">🌗 Tema claro / escuro</button>
         </div>
       </div>
-      <button class="btn danger" onclick="logout()">🚪 Sair</button>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <button class="btn danger" onclick="logout()">🚪 Sair</button>
+        <button class="btn ghost sm" onclick="renderTelaFiltroContexto()">← Voltar</button>
+      </div>
     </div>
   </div>
   <input type="file" id="importInput" accept=".xlsx,.xls" style="display:none">
@@ -462,7 +465,7 @@ const state = {
   vendas: [],      // ver schema abaixo
   entregas: [],    // ver schema abaixo
   usuarios: [],    // {id, usuario, senha, papel:'admin'|'produtor'|'motorista', produtorId, expiraEm}
-  config: { fazenda:'', safra:'2026/2027', cultura:'Milho', descontoModo:'fatores' },
+  config: { fazenda:'', safra:'2026/2027', cultura:'Milho', descontoModo:'fatores', contextoProdutores:[], contextoFazendas:[] },
   loaded: false,
 };
 
@@ -590,7 +593,7 @@ async function loadState(){
       state.motoristas = c.motoristas || [];
       state.colheitas = c.colheitas || (c.talhoes||[]).map(t=>({id:t.id, culturaId:t.culturaId||null, variedadeId:t.variedadeId||null, area:t.area||0, talhao:t.nome||'', produtorId:t.produtorId||null}));
       state.culturas = c.culturas || [];
-      state.config = Object.assign({fazenda:'', safra:'2026/2027', cultura:'Milho', descontoModo:'fatores'}, c.config || {});
+      state.config = Object.assign({fazenda:'', safra:'2026/2027', cultura:'Milho', descontoModo:'fatores', contextoProdutores:[], contextoFazendas:[]}, c.config || {});
     }
   }catch(e){}
   try{
@@ -1250,38 +1253,27 @@ function renderCadastros(){
 
     <div class="section-title">Dados da Safra</div>
     <div class="card" style="margin-bottom:24px;">
-      <p class="small-note" style="margin-top:-2px;margin-bottom:14px;">Preenchido aqui, esses dados aparecem automaticamente no Dashboard (e no PDF exportado) — a fazenda opera uma cultura por vez.</p>
+      <p class="small-note" style="margin-top:-2px;margin-bottom:14px;">Definido na tela de acesso (fazenda, safra e cultura) — pra mudar, use "← Voltar" no cabeçalho.</p>
       <div class="dash-scope">
         <div class="editable-header">
           <div class="editfield">
             <label>Fazenda</label>
-            <input type="text" id="fieldFazenda" value="${state.config.fazenda||''}" placeholder="Nome da fazenda" oninput="updateHeaderConfig()">
+            <input type="text" id="fieldFazenda" value="${state.config.fazenda||''}" placeholder="definido no acesso" disabled>
           </div>
           <div class="editfield">
             <label>Safra</label>
-            <select id="fieldSafra" onchange="updateHeaderConfig()">
-              <option value="">Selecione a safra</option>
-              ${['2023/2024','2024/2025','2025/2026','2026/2027','2027/2028','2028/2029'].map(s=>`<option value="${s}" ${state.config.safra===s?'selected':''}>${s}</option>`).join('')}
-            </select>
+            <input type="text" value="${state.config.safra||''}" disabled>
           </div>
           <div class="editfield">
             <label>Cultura</label>
-            <select id="fieldCultura" onchange="updateHeaderConfig()">
-              ${state.culturas.map(c=>`<option value="${c.nome}" ${c.nome===state.config.cultura?'selected':''}>${c.nome}</option>`).join('')}
-            </select>
+            <input type="text" value="${state.config.cultura||''}" disabled>
           </div>
         </div>
       </div>
-    </div>
-
-    <div class="section-title">Cadastro de Fazenda</div>
-    <div class="card" id="passo-fazendas" style="margin-bottom:24px;">
-      <h2>Fazendas cadastradas <button class="btn sm" onclick="openCadastroModal('fazenda')">➕ Nova fazenda</button></h2>
-      <p class="small-note" style="margin-top:-6px;margin-bottom:12px;">Talhão, variedade e hectares continuam em "Dados da Colheita" — mudam a cada safra, então ficam vinculados à colheita, não à fazenda.</p>
-      <div class="table-wrap"><table>
-        <thead><tr><th>Nome</th><th></th></tr></thead>
-        <tbody id="tbody-fazendas"></tbody>
-      </table></div>
+      <div style="margin-top:14px;">
+        <label class="small-note" style="display:block;margin-bottom:6px;"><b>Produtores nesta safra</b></label>
+        <p style="font-size:13px;margin:0;">${resumoProdutoresContexto()}</p>
+      </div>
     </div>
 
     <div class="section-title">Cadastro de Produtor</div>
@@ -1346,7 +1338,7 @@ function renderCadastros(){
       </table></div>
     </div>
   `;
-  updateTbodyFazendas(); updateTbodyProdutores(); updateTbodyEmpresas(); updateTbodyContratosCad(); updateTbodyMotoristas(); updateTbodyColheitas();
+  updateTbodyProdutores(); updateTbodyEmpresas(); updateTbodyContratosCad(); updateTbodyMotoristas(); updateTbodyColheitas();
   document.getElementById('btnImportContratoPDF').addEventListener('click', ()=>document.getElementById('importContratoPDFInput').click());
   document.getElementById('importContratoPDFInput').addEventListener('change', (e)=>{
     if(e.target.files[0]) handleImportContratoPDF(e.target.files[0]);
@@ -1381,6 +1373,14 @@ function removerVariedade(culturaId, variedadeId){
   saveCadastros(); renderCadastros();
 }
 
+function resumoProdutoresContexto(){
+  const ids = state.config.contextoProdutores || [];
+  const lista = ids.length
+    ? state.produtores.filter(p=>ids.includes(p.id))
+    : state.produtores;
+  if(!lista.length) return 'Nenhum produtor cadastrado ainda.';
+  return lista.map(p=>p.nome).join(', ');
+}
 function updateTbodyFazendas(){
   const rows = state.fazendas.map(f=>`<tr><td>${f.nome}</td>
     <td><div class="actions-row"><button class="btn ghost sm" onclick="openCadastroModal('fazenda','${f.id}')">Editar</button>
@@ -2331,7 +2331,6 @@ function inicializarDragReorderInteracoes(){
   });
 }
 const PASSOS_CADASTRO_WIZARD = [
-  {id:'passo-fazendas', label:'Fazendas'},
   {id:'passo-produtores', label:'Produtores'},
   {id:'passo-empresas', label:'Empresas'},
   {id:'passo-transporte', label:'Transporte'},
@@ -4158,10 +4157,8 @@ function renderDashboard(){
 }
 
 function updateHeaderConfig(fromDescontoModo){
-  state.config.fazenda = document.getElementById('fieldFazenda').value;
-  state.config.safra = document.getElementById('fieldSafra').value;
-  state.config.cultura = document.getElementById('fieldCultura').value;
-  state.config.descontoModo = document.getElementById('fieldDescontoModo').value;
+  const campoDesconto = document.getElementById('fieldDescontoModo');
+  if(campoDesconto) state.config.descontoModo = campoDesconto.value;
   saveCadastros();
   updateHeroCultura();
 
@@ -5530,7 +5527,7 @@ function renderTelaEntrada(){
           <span id="setaArvoreEntrada" style="font-size:12px;color:var(--ink-dim);transition:transform .15s;transform:rotate(-90deg);">▾</span>
         </div>
         <div id="arvoreCadastrosEntrada" style="display:none;padding:2px 4px 4px 30px;">
-          <div class="entrada-item" onclick="entrarNoAssistenteCadastro('passo-fazendas')">${icFazenda}Fazendas</div>
+          <div class="entrada-item" onclick="renderTelaCadastroFazendas()">${icFazenda}Fazendas</div>
           <div class="entrada-item" onclick="entrarNoAssistenteCadastro('passo-produtores')">${icProdutor}Produtores</div>
           <div class="entrada-item" onclick="entrarNoAssistenteCadastro('passo-empresas')">${icEmpresa}Empresas</div>
           <div class="entrada-item" onclick="entrarNoAssistenteCadastro('passo-transporte')">${icTransporte}Transporte</div>
@@ -5538,10 +5535,87 @@ function renderTelaEntrada(){
           <div class="entrada-item" onclick="entrarNoApp(); setTimeout(()=>openCadastroModal('configuracoes'), 30);">${icConfig}Configurações</div>
         </div>
       </div>
-      <button class="btn" style="width:100%;padding:14px;font-size:15px;" onclick="entrarNoApp()">Acessar</button>
+      <button class="btn" style="width:100%;padding:14px;font-size:15px;" onclick="renderTelaFiltroContexto()">Avançar →</button>
       <button class="btn ghost sm" style="width:100%;margin-top:10px;" onclick="logout()">🚪 Sair</button>
     </div>
   `;
+}
+function renderTelaCadastroFazendas(){
+  const s = getSessao();
+  document.body.innerHTML = `
+    <div style="max-width:520px;margin:0 auto;padding:60px 20px;">
+      <button class="btn ghost sm" onclick="renderTelaEntrada()" style="margin-bottom:18px;">← Voltar</button>
+      <h2 style="margin:0 0 4px;">Cadastro de Fazenda</h2>
+      <p class="small-note" style="margin:0 0 16px;">Talhão, variedade e hectares ficam em "Dados da Colheita", dentro do sistema — mudam a cada safra.</p>
+      <div class="card">
+        <h2>Fazendas cadastradas <button class="btn sm" onclick="openCadastroModal('fazenda')">➕ Nova fazenda</button></h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Nome</th><th></th></tr></thead>
+          <tbody id="tbody-fazendas"></tbody>
+        </table></div>
+      </div>
+    </div>
+  `;
+  updateTbodyFazendas();
+}
+function renderTelaFiltroContexto(){
+  const s = getSessao();
+  const produtoresSel = state.config.contextoProdutores || [];
+  const fazendasSel = state.config.contextoFazendas || [];
+  document.body.innerHTML = `
+    <div style="max-width:520px;margin:0 auto;padding:50px 20px;">
+      <button class="btn ghost sm" onclick="renderTelaEntrada()" style="margin-bottom:14px;">← Voltar</button>
+      <h2 style="margin:0 0 4px;">Selecionar contexto de trabalho</h2>
+      <p class="small-note" style="margin:0 0 18px;">Escolha quem e onde você vai atender nesta colheita.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+        <div class="card" style="padding:12px;">
+          <div class="actions-row" style="justify-content:space-between;margin-bottom:8px;">
+            <b style="font-size:13px;">Produtores</b>
+            <span style="font-size:11px;color:var(--gold);cursor:pointer;" onclick="marcarTodosCheckList('listaProdutoresContexto', true)">selecionar todos</span>
+          </div>
+          <div id="listaProdutoresContexto" style="max-height:180px;overflow-y:auto;">
+            ${state.produtores.map(p=>`<label class="col-filter-item"><input type="checkbox" value="${p.id}" ${produtoresSel.includes(p.id)?'checked':''}><span>${p.nome}</span></label>`).join('') || '<p class="small-note">Nenhum produtor cadastrado.</p>'}
+          </div>
+        </div>
+        <div class="card" style="padding:12px;">
+          <div class="actions-row" style="justify-content:space-between;margin-bottom:8px;">
+            <b style="font-size:13px;">Fazendas</b>
+            <span style="font-size:11px;color:var(--gold);cursor:pointer;" onclick="marcarTodosCheckList('listaFazendasContexto', true)">selecionar todas</span>
+          </div>
+          <div id="listaFazendasContexto" style="max-height:180px;overflow-y:auto;">
+            ${state.fazendas.map(f=>`<label class="col-filter-item"><input type="checkbox" value="${f.id}" ${fazendasSel.includes(f.id)?'checked':''}><span>${f.nome}</span></label>`).join('') || '<p class="small-note">Nenhuma fazenda cadastrada.</p>'}
+          </div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+        <div class="field"><label>Safra</label>
+          <select id="fContextoSafra">
+            <option value="">Selecione a safra</option>
+            ${['2023/2024','2024/2025','2025/2026','2026/2027','2027/2028','2028/2029'].map(sf=>`<option value="${sf}" ${state.config.safra===sf?'selected':''}>${sf}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field"><label>Cultura</label>
+          <select id="fContextoCultura">
+            ${state.culturas.map(c=>`<option value="${c.nome}" ${c.nome===state.config.cultura?'selected':''}>${c.nome}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="actions-row">
+        <button class="btn ghost" style="flex:1;" onclick="renderTelaEntrada()">← Voltar</button>
+        <button class="btn" style="flex:2;" onclick="confirmarContextoEEntrar()">Avançar →</button>
+      </div>
+    </div>
+  `;
+}
+function confirmarContextoEEntrar(){
+  state.config.contextoProdutores = coletarValoresMarcados('listaProdutoresContexto');
+  state.config.contextoFazendas = coletarValoresMarcados('listaFazendasContexto');
+  state.config.safra = document.getElementById('fContextoSafra').value;
+  state.config.cultura = document.getElementById('fContextoCultura').value;
+  const fazendasNomes = state.fazendas.filter(f=>state.config.contextoFazendas.includes(f.id)).map(f=>f.nome);
+  state.config.fazenda = fazendasNomes.join(', ');
+  saveCadastros();
+  entrarNoApp();
 }
 function bootAfterLogin(){
   const s = getSessao();
