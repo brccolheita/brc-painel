@@ -377,11 +377,11 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
       </div>
       <div>
         <h1 id="pageTitle">BRC - Colheita e Comercialização</h1>
-        <p>Cadastre produtores, contratos e empresas; lance cargas por foto do romaneio ou manualmente; acompanhe saldos e o dashboard em tempo real.</p>
+        <p>Cadastre produtores, empresas e contratos; importe relatórios de cargas e inclua romaneios com tecnologia IA; acompanhe o dashboard de colheita em tempo real.</p>
       </div>
     </div>
     <div class="hero-actions" style="align-items:center;gap:10px;">
-      <span id="sessaoUsuarioLabel" style="color:var(--ink);font-size:13px;font-weight:600;align-self:center;"></span>
+      <span id="sessaoUsuarioLabel" style="color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6);font-size:13px;font-weight:600;align-self:center;"></span>
       <div class="interacoes-fixed" id="cardAcoesRapidas">
         <button class="interacoes-trigger" id="btnInteracoesToggle">☰ Interações</button>
         <div class="interacoes-panel" id="interacoesPanel">
@@ -393,13 +393,11 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
           <button class="interacoes-item" id="btnExportBackup" data-item-id="exportBackup">💾 Exportar backup completo (Excel)</button>
           <button class="interacoes-item" id="btnGerarDashboard" data-item-id="gerarDashboard">📊 Gerar Dashboard</button>
           <div class="interacoes-divider"></div>
-          <button class="interacoes-item" id="btnToggleTema" data-item-id="tema">🌗 Tema claro / escuro</button>
+          <button class="interacoes-item" id="btnToggleTema" data-item-id="tema">⚙️ Configurações</button>
         </div>
       </div>
-      <div style="display:flex;flex-direction:column;gap:6px;">
-        <button class="btn danger" onclick="logout()">🚪 Sair</button>
-        <button class="btn ghost sm" onclick="renderTelaFiltroContexto()">← Voltar</button>
-      </div>
+      <button class="interacoes-trigger" onclick="renderTelaFiltroContexto()">← Voltar</button>
+      <button class="interacoes-trigger" style="color:#ffb4b4;" onclick="logout()">🚪 Sair</button>
     </div>
   </div>
   <input type="file" id="importInput" accept=".xlsx,.xls" style="display:none">
@@ -1248,13 +1246,15 @@ function tornarBarraRolagemFixa(tableId){
     const innerBottom = barraBottom.querySelector('.sticky-hscroll-inner');
     innerTop.style.width = table.scrollWidth + 'px';
     innerBottom.style.width = table.scrollWidth + 'px';
-    const mostrar = table.scrollWidth > wrap.clientWidth + 2;
-    barraTop.style.display = mostrar ? 'block' : 'none';
-    barraBottom.style.display = mostrar ? 'block' : 'none';
+    const precisaHorizontal = table.scrollWidth > wrap.clientWidth + 2;
+    const temAlturaSuficiente = table.scrollHeight > wrap.clientHeight + 60; // só duplica se sobrar distância de verdade
+    barraBottom.style.display = precisaHorizontal ? 'block' : 'none';
+    barraTop.style.display = (precisaHorizontal && temAlturaSuficiente) ? 'block' : 'none';
   };
   sync();
   if(window.ResizeObserver && !table._resizeObsBarra){
     new ResizeObserver(sync).observe(table);
+    new ResizeObserver(sync).observe(wrap);
     table._resizeObsBarra = true;
   }
 }
@@ -2315,7 +2315,7 @@ function bindShellEvents(){
     panel.classList.remove('aberto');
     openCadastroModal('linkMotorista');
   });
-  document.getElementById('btnToggleTema').addEventListener('click', ()=>{ panel.classList.remove('aberto'); toggleTema(); });
+  document.getElementById('btnToggleTema').addEventListener('click', ()=>{ panel.classList.remove('aberto'); openCadastroModal('configuracoes'); });
   restaurarOrdemInteracoes();
   inicializarDragReorderInteracoes();
 }
