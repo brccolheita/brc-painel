@@ -4909,12 +4909,27 @@ function renderDashboard(){
       <div id="subDashDiario">
         <div class="periodo-auto">📅 Mostrando apenas os romaneios de hoje (<b>${dataBR(todayISO())}</b>)</div>
         <section style="margin-top:18px;">
-          <h2>Romaneios de hoje</h2>
-          <div class="card"><div class="table-wrap"><table id="tblRomaneiosDia"></table></div></div>
+          <h2>Romaneios <span id="tituloEscopoRomaneiosDia">de hoje</span>
+            <div class="actions-row">
+              <button class="btn ghost sm" id="btnAcumuladoDiario" onclick="toggleAcumuladoDiario()">📚 Mostrar acumulado</button>
+              <button class="btn ghost sm" onclick="exportarRomaneiosDiarioPDF()">🖨️ Exportar relatório PDF</button>
+            </div>
+          </h2>
+          <div class="card"><div class="table-wrap"><table id="tblRomaneiosDia">
+            <thead>${filterHeaderCells('romaneiosDia',[{key:'romaneio',label:'Nº Romaneio'},{key:'motorista',label:'Motorista'},{key:'produtor',label:'Produtor'},{key:null,label:'Peso Bruto'},{key:null,label:'Tara'},{key:null,label:'Bruto s/ Tara'},{key:null,label:'Umidade'},{key:null,label:'Impureza'},{key:null,label:'Avariado'},{key:null,label:'Saldo Líquido'}])}</thead>
+            <tbody id="tbodyRomaneiosDia"></tbody>
+          </table></div></div>
         </section>
-        <div class="kpis" id="kpisDiario" style="margin-top:22px;"></div>
+
+        <section style="margin-top:22px;">
+          <div class="kpis" id="kpisDiarioLinha1"></div>
+        </section>
+        <section style="margin-top:14px;">
+          <div class="kpis" id="kpisDiarioLinha2"></div>
+        </section>
+
         <section style="margin-top:26px;">
-          <h2>Acompanhamento de descontos — carga a carga (hoje)</h2>
+          <h2>Acompanhamento de descontos — carga a carga</h2>
           <div class="card"><canvas id="chartDescontoDiario"></canvas></div>
           <p class="small-note" id="notaDescontoDiario" style="margin-top:8px;"></p>
         </section>
@@ -5072,57 +5087,119 @@ function updateHeaderConfig(fromDescontoModo){
   if(fromDescontoModo) paintDashboard();
 }
 
+let dashboardDiarioAcumulado = false;
+let ultimoDashboardDiarioLista = [];
 function computeDashboardDiario(){
   const hoje = todayISO();
-  const completas = state.entregas.filter(e=>e.status==='completo' && e.dataSaida===hoje);
+  const completas = state.entregas.filter(e=>e.status==='completo' && (dashboardDiarioAcumulado || e.dataSaida===hoje));
   const joined = completas.map(e=>({ e, v: vendaById(e.vendaId) }));
   const modo = state.config.descontoModo || 'fatores';
   const n = joined.length;
 
+  const somaBruto = joined.reduce((a,x)=>a+num(x.e.pesoBruto),0);
   const somaBrutoDescTara = joined.reduce((a,x)=>a+num(x.e.pesoLiquidoSemDesc),0);
   const somaLiquidoFinal = joined.reduce((a,x)=>a+num(x.e.pesoLiquidoComDesc),0);
   const somaUmidade = joined.reduce((a,x)=>a+num(x.e.umidade),0);
   const somaImpureza = joined.reduce((a,x)=>a+num(x.e.impureza),0);
   const somaArdido = joined.reduce((a,x)=>a+num(x.e.ardido),0);
+  const somaDescontos = somaUmidade+somaImpureza+somaArdido;
 
   return {
     hoje, n, joined, descontoModo: modo,
+    somaBruto, somaBrutoDescTara, somaLiquidoFinal, somaDescontos,
+    somaUmidade, somaImpureza, somaArdido,
     volumeMedioBrutoKg: n ? somaBrutoDescTara/n : 0,
-    totalLiquidoKg: somaLiquidoFinal,
     volumeMedioLiquidoKg: n ? somaLiquidoFinal/n : 0,
     descMedioUmidadeKg: n ? somaUmidade/n : 0,
     descMedioImpurezaKg: n ? somaImpureza/n : 0,
     descMedioArdidoKg: n ? somaArdido/n : 0,
   };
 }
-let chartDescDiario;
-function paintDashboardDiario(){
-  const d = computeDashboardDiario();
-  const ordenado = d.joined.slice().sort((a,b)=>(a.e.nrRomaneio||'').localeCompare(b.e.nrRomaneio||''));
-  const maisRecentesPrimeiro = d.joined.slice().sort((a,b)=>(b.e.nrRomaneio||'').localeCompare(a.e.nrRomaneio||''));
-
-  let tblHtml = `<tr><th>Nº Romaneio</th><th>Motorista</th><th>Produtor</th><th>Peso Bruto</th><th>Tara</th><th>Bruto s/ tara</th><th>Umidade</th><th>Impureza</th><th>Avariado</th><th>Saldo Líquido</th></tr>`;
-  if(d.n===0){
-    tblHtml += `<tr><td colspan="10" style="text-align:center;color:var(--ink-dim);padding:22px 8px;">📂 Nenhum romaneio lançado hoje ainda.</td></tr>`;
-  }else{
-    maisRecentesPrimeiro.forEach(x=>{
-      tblHtml += `<tr>
-        <td>${x.e.nrRomaneio||'—'}</td><td>${x.e.motorista||'—'}</td><td>${x.v?produtorNome(x.v.produtorId):'—'}</td>
+function toggleAcumuladoDiario(){
+  dashboardDiarioAcumulado = !dashboardDiarioAcumulado;
+  paintDashboardDiario();
+}
+function updateTbodyRomaneiosDia(){
+  const filters = getFilterValues('romaneiosDia');
+  const linhas = ultimoDashboardDiarioLista.map(x=>{
+    const extract = {romaneio: x.e.nrRomaneio||'', motorista: x.e.motorista||'', produtor: x.v?produtorNome(x.v.produtorId):''};
+    return { extract, html: `<tr>
+        <td>${extract.romaneio||'—'}</td><td>${extract.motorista||'—'}</td><td>${extract.produtor||'—'}</td>
         <td>${fmt(x.e.pesoBruto,0)} kg</td><td>${fmt(x.e.tara,0)} kg</td><td>${fmt(x.e.pesoLiquidoSemDesc,0)} kg</td>
         <td>${fmt(x.e.umidade,0)} kg</td><td>${fmt(x.e.impureza,0)} kg</td><td>${fmt(x.e.ardido,0)} kg</td>
         <td><b>${fmt(x.e.pesoLiquidoComDesc,0)} kg</b></td>
-      </tr>`;
-    });
-  }
-  document.getElementById('tblRomaneiosDia').innerHTML = tblHtml;
+      </tr>` };
+  }).filter(r=>rowMatches(r.extract, filters));
+  document.getElementById('tbodyRomaneiosDia').innerHTML = linhas.length ? linhas.map(r=>r.html).join('') : emptyRow(10, dashboardDiarioAcumulado ? '📂 Nenhum romaneio lançado ainda nesta safra.' : '📂 Nenhum romaneio lançado hoje ainda.');
+}
+Object.assign(TBODY_UPDATERS, { romaneiosDia: updateTbodyRomaneiosDia });
+function exportarRomaneiosDiarioPDF(){
+  const d = computeDashboardDiario();
+  const linhas = d.joined.slice().sort((a,b)=>(b.e.nrRomaneio||'').localeCompare(a.e.nrRomaneio||'')).map(x=>`<tr>
+      <td>${x.e.nrRomaneio||'—'}</td><td>${x.e.motorista||'—'}</td><td>${x.v?produtorNome(x.v.produtorId):'—'}</td>
+      <td>${fmt(x.e.pesoBruto,0)}</td><td>${fmt(x.e.tara,0)}</td><td>${fmt(x.e.pesoLiquidoSemDesc,0)}</td>
+      <td>${fmt(x.e.umidade,0)}</td><td>${fmt(x.e.impureza,0)}</td><td>${fmt(x.e.ardido,0)}</td>
+      <td>${fmt(x.e.pesoLiquidoComDesc,0)}</td>
+    </tr>`).join('');
+  const escopoTxt = dashboardDiarioAcumulado ? 'Acumulado da safra' : `Dia ${dataBR(todayISO())}`;
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Relatório de Romaneios — ${todayISO()}</title>
+    <style>
+      body{ font-family: Arial, Helvetica, sans-serif; padding:24px; color:#111; }
+      h1{ font-size:18px; margin-bottom:4px; }
+      p.sub{ color:#555; font-size:12px; margin-top:0; margin-bottom:14px; }
+      table{ width:100%; border-collapse:collapse; font-size:10.5px; margin-bottom:22px; }
+      th, td{ border:1px solid #ccc; padding:5px 7px; text-align:left; }
+      th{ background:#f0f0f0; }
+      .resumo{ display:flex; flex-wrap:wrap; gap:14px; margin-bottom:20px; }
+      .resumo div{ border:1px solid #ccc; border-radius:6px; padding:8px 12px; font-size:11.5px; }
+      .resumo b{ display:block; font-size:14px; }
+      #btnImprimir{ margin-top:10px; padding:10px 18px; font-size:14px; cursor:pointer; }
+      @media print{ #btnImprimir{ display:none; } }
+    </style>
+  </head><body>
+    <h1>Relatório de Romaneios — BRC Colheita</h1>
+    <p class="sub">${escopoTxt} · Gerado em ${new Date().toLocaleString('pt-BR')} · ${d.n} romaneio(s)</p>
+    <div class="resumo">
+      <div>Romaneios<b>${d.n}</b></div>
+      <div>Volume total bruto<b>${fmt(d.somaBrutoDescTara,0)} kg</b></div>
+      <div>Volume total descontos<b>${fmt(d.somaDescontos,0)} kg</b></div>
+      <div>Volume total líquido<b>${fmt(d.somaLiquidoFinal,0)} kg</b></div>
+      <div>Desconto total umidade<b>${fmt(d.somaUmidade,0)} kg</b></div>
+      <div>Desconto total impureza<b>${fmt(d.somaImpureza,0)} kg</b></div>
+      <div>Desconto total avariado<b>${fmt(d.somaArdido,0)} kg</b></div>
+    </div>
+    <table>
+      <thead><tr><th>Nº Romaneio</th><th>Motorista</th><th>Produtor</th><th>Peso Bruto (kg)</th><th>Tara (kg)</th><th>Bruto s/ Tara (kg)</th><th>Umidade (kg)</th><th>Impureza (kg)</th><th>Avariado (kg)</th><th>Saldo Líquido (kg)</th></tr></thead>
+      <tbody>${linhas || '<tr><td colspan="10" style="text-align:center;">Nenhum romaneio encontrado.</td></tr>'}</tbody>
+    </table>
+    <button id="btnImprimir" onclick="window.print()">🖨️ Salvar como PDF / Imprimir</button>
+  </body></html>`;
+  const win = window.open('', '_blank');
+  if(!win){ toast('Seu navegador bloqueou a nova aba. Permita pop-ups para este site e tente de novo.', true); return; }
+  win.document.write(html);
+  win.document.close();
+}
+let chartDescDiario;
+function paintDashboardDiario(){
+  const d = computeDashboardDiario();
+  ultimoDashboardDiarioLista = d.joined;
+  const ordenado = d.joined.slice().sort((a,b)=>(a.e.nrRomaneio||'').localeCompare(b.e.nrRomaneio||''));
 
-  document.getElementById('kpisDiario').innerHTML = `
-    <div class="kpi"><div class="label">Romaneios hoje</div><div class="value">${d.n}</div><div class="sub">recebidos até agora</div></div>
-    <div class="kpi"><div class="label">Volume médio bruto</div><div class="value">${fmt(d.volumeMedioBrutoKg,0)} kg</div><div class="sub">peso bruto já descontada a tara, por carga</div></div>
-    <div class="kpi"><div class="label">Total líquido entregue hoje</div><div class="value ok">${fmt(d.totalLiquidoKg,0)} kg</div><div class="sub">saldo líquido — média de ${fmt(d.volumeMedioLiquidoKg,0)} kg/carga</div></div>
-    <div class="kpi"><div class="label">Desconto médio · Umidade</div><div class="value warn">${fmt(d.descMedioUmidadeKg,0)} kg</div><div class="sub">por carga, em média</div></div>
-    <div class="kpi"><div class="label">Desconto médio · Impureza</div><div class="value warn">${fmt(d.descMedioImpurezaKg,0)} kg</div><div class="sub">por carga, em média</div></div>
-    <div class="kpi"><div class="label">Desconto médio · Avariado</div><div class="value warn">${fmt(d.descMedioArdidoKg,0)} kg</div><div class="sub">por carga, em média</div></div>
+  document.getElementById('tituloEscopoRomaneiosDia').textContent = dashboardDiarioAcumulado ? '— acumulado da safra' : 'de hoje';
+  document.getElementById('btnAcumuladoDiario').innerHTML = dashboardDiarioAcumulado ? '📅 Mostrar só hoje' : '📚 Mostrar acumulado';
+  updateTbodyRomaneiosDia();
+
+  document.getElementById('kpisDiarioLinha1').innerHTML = `
+    <div class="kpi"><div class="label">Romaneios${dashboardDiarioAcumulado?' (acumulado)':' hoje'}</div><div class="value">${d.n}</div><div class="sub">recebidos até agora</div></div>
+    <div class="kpi"><div class="label">Volume total bruto</div><div class="value">${fmt(d.somaBrutoDescTara,0)} kg</div><div class="sub">peso bruto já descontada a tara</div></div>
+    <div class="kpi"><div class="label">Volume total descontos</div><div class="value warn">${fmt(d.somaDescontos,0)} kg</div><div class="sub">umidade + impureza + avariado</div></div>
+    <div class="kpi"><div class="label">Volume total líquido</div><div class="value ok">${fmt(d.somaLiquidoFinal,0)} kg</div><div class="sub">saldo líquido final, pós-descontos</div></div>
+  `;
+
+  document.getElementById('kpisDiarioLinha2').innerHTML = `
+    <div class="kpi"><div class="label">Desconto total · Umidade</div><div class="value warn">${fmt(d.somaUmidade,0)} kg</div><div class="sub">média de ${fmt(d.descMedioUmidadeKg,0)} kg/carga</div></div>
+    <div class="kpi"><div class="label">Desconto total · Impureza</div><div class="value warn">${fmt(d.somaImpureza,0)} kg</div><div class="sub">média de ${fmt(d.descMedioImpurezaKg,0)} kg/carga</div></div>
+    <div class="kpi"><div class="label">Desconto total · Avariado</div><div class="value warn">${fmt(d.somaArdido,0)} kg</div><div class="sub">média de ${fmt(d.descMedioArdidoKg,0)} kg/carga</div></div>
   `;
 
   if(chartDescDiario) chartDescDiario.destroy();
@@ -5152,7 +5229,7 @@ function paintDashboardDiario(){
 
   document.getElementById('notaDescontoDiario').innerHTML = d.n
     ? 'Cada camada mostra o desconto (em kg) de um fator, carga a carga — a altura total em cada ponto é a soma dos três (efeito "relevo").'
-    : 'Sem romaneios hoje ainda para gerar o gráfico.';
+    : (dashboardDiarioAcumulado ? 'Sem romaneios lançados ainda para gerar o gráfico.' : 'Sem romaneios hoje ainda para gerar o gráfico.');
 }
 function paintDashboard(){
   const data = computeDashboard();
