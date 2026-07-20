@@ -283,13 +283,7 @@ body.read-only .interacoes-fixed{ display:none; }
 .small-note{ font-size:11.5px; color:var(--ink-dim); }
 
 .th-flex{ display:flex; align-items:center; gap:6px; justify-content:space-between; }
-table.table-resizable{ border-collapse:separate; border-spacing:0; }
-table.table-resizable thead th{ color:var(--gold); font-weight:700; }
 .table-wrap.resizable-wrap{ overflow:auto; resize:both; border:1px solid var(--line); border-radius:8px; min-width:320px; min-height:220px; max-width:100%; }
-.sticky-hscroll{ position:sticky; left:0; height:14px; overflow-x:auto; overflow-y:hidden; background:var(--bg-2); z-index:6; }
-.sticky-hscroll-top{ top:0; border-bottom:1px solid var(--line); }
-.sticky-hscroll-bottom{ bottom:0; border-top:1px solid var(--line); }
-.sticky-hscroll-inner{ height:1px; }
 .col-filter-popover{
   background:var(--menu-bg); backdrop-filter:blur(18px) saturate(160%); -webkit-backdrop-filter:blur(18px) saturate(160%);
   border:1px solid var(--line); border-radius:12px; padding:10px; min-width:220px; max-width:280px;
@@ -1227,71 +1221,12 @@ function toggleColFilter(btn){
 function emptyRow(cols,msg){ return `<tr><td colspan="${cols}" style="text-align:center;color:var(--ink-dim);padding:20px;">${msg}</td></tr>`; }
 
 function tornarColunasRedimensionaveis(tableId){
-  const table = document.getElementById(tableId);
-  if(!table) return;
-  table.classList.add('table-resizable');
-  tornarBarraRolagemFixa(tableId);
+  // Desativado: esse sistema (cabeçalho fixo + barra de rolagem dupla) causava a
+  // barra de rolagem duplicada e o "pulo" pro topo da planilha ao agir numa linha.
+  // Todas as tabelas agora usam o estilo padrão único (igual ao do Dashboard).
 }
 function tornarBarraRolagemFixa(tableId){
-  const table = document.getElementById(tableId);
-  if(!table) return;
-  const wrap = table.closest('.table-wrap');
-  if(!wrap) return;
-
-  // cabeçalho fixo (sticky) ao rolar a planilha pra baixo
-  table.querySelectorAll('thead th').forEach(th=>{
-    th.style.position = 'sticky';
-    th.style.top = '15px';
-    th.style.zIndex = '4';
-    th.style.background = 'var(--bg-2)';
-  });
-
-  function pegarOuCriarBarra(posicao){
-    let barra = wrap.querySelector('.sticky-hscroll-'+posicao);
-    if(barra) return barra;
-    barra = document.createElement('div');
-    barra.className = 'sticky-hscroll sticky-hscroll-'+posicao;
-    const inner = document.createElement('div');
-    inner.className = 'sticky-hscroll-inner';
-    barra.appendChild(inner);
-    if(posicao==='top') wrap.insertBefore(barra, wrap.firstChild);
-    else wrap.appendChild(barra);
-    return barra;
-  }
-  const barraTop = pegarOuCriarBarra('top');
-  const barraBottom = pegarOuCriarBarra('bottom');
-  const barras = [barraTop, barraBottom];
-
-  barras.forEach(barra=>{
-    if(barra._ligado) return;
-    barra._ligado = true;
-    barra.addEventListener('scroll', ()=>{
-      wrap.scrollLeft = barra.scrollLeft;
-      barras.forEach(b=>{ if(b!==barra && b.scrollLeft!==barra.scrollLeft) b.scrollLeft = barra.scrollLeft; });
-    });
-  });
-  if(!wrap._ligadoScrollSync){
-    wrap._ligadoScrollSync = true;
-    wrap.addEventListener('scroll', ()=>{
-      barras.forEach(b=>{ if(b.scrollLeft !== wrap.scrollLeft) b.scrollLeft = wrap.scrollLeft; });
-    });
-  }
-  const sync = ()=>{
-    const innerTop = barraTop.querySelector('.sticky-hscroll-inner');
-    const innerBottom = barraBottom.querySelector('.sticky-hscroll-inner');
-    innerTop.style.width = table.scrollWidth + 'px';
-    innerBottom.style.width = table.scrollWidth + 'px';
-    const precisaHorizontal = table.scrollWidth > wrap.clientWidth + 2;
-    const temAlturaSuficiente = table.scrollHeight > wrap.clientHeight + 60; // só duplica se sobrar distância de verdade
-    barraBottom.style.display = precisaHorizontal ? 'block' : 'none';
-    barraTop.style.display = (precisaHorizontal && temAlturaSuficiente) ? 'block' : 'none';
-  };
-  sync();
-  if(window.ResizeObserver && !table._resizeObsBarra){
-    new ResizeObserver(sync).observe(table);
-    new ResizeObserver(sync).observe(wrap);
-    table._resizeObsBarra = true;
-  }
+  // Desativado — ver nota em tornarColunasRedimensionaveis.
 }
 
 /* ---------------- CADASTROS (Produtores / Empresas / Contratos / Motoristas / Talhões) ---------------- */
