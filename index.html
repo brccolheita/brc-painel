@@ -4911,6 +4911,7 @@ function renderDashboard(){
         <section style="margin-top:18px;">
           <h2>Romaneios <span id="tituloEscopoRomaneiosDia">de hoje</span>
             <div class="actions-row">
+              <button class="btn ghost sm" id="btnUnidadeDiario" onclick="toggleUnidadeDiario()">⇄ Ver em sacas</button>
               <button class="btn ghost sm" id="btnAcumuladoDiario" onclick="toggleAcumuladoDiario()">📚 Mostrar acumulado</button>
               <button class="btn ghost sm" onclick="exportarRomaneiosDiarioPDF()">🖨️ Exportar relatório PDF</button>
             </div>
@@ -4929,9 +4930,20 @@ function renderDashboard(){
         </section>
 
         <section style="margin-top:26px;">
-          <h2>Acompanhamento de descontos — carga a carga</h2>
+          <h2>Evolução dos descontos por romaneio</h2>
           <div class="card"><canvas id="chartDescontoDiario"></canvas></div>
           <p class="small-note" id="notaDescontoDiario" style="margin-top:8px;"></p>
+        </section>
+
+        <section class="grid2" style="margin-top:22px;">
+          <div>
+            <h2>Composição do desconto por fator</h2>
+            <div class="card"><canvas id="chartDescComposicaoDiario"></canvas></div>
+          </div>
+          <div>
+            <h2>Percentual sobre o total colhido</h2>
+            <div class="card comp-card" id="descCompLegendDiario"></div>
+          </div>
         </section>
       </div>
 
@@ -5088,6 +5100,7 @@ function updateHeaderConfig(fromDescontoModo){
 }
 
 let dashboardDiarioAcumulado = false;
+let dashboardDiarioUnidade = 'kg';
 let ultimoDashboardDiarioLista = [];
 function computeDashboardDiario(){
   const hoje = todayISO();
@@ -5113,11 +5126,21 @@ function computeDashboardDiario(){
     descMedioUmidadeKg: n ? somaUmidade/n : 0,
     descMedioImpurezaKg: n ? somaImpureza/n : 0,
     descMedioArdidoKg: n ? somaArdido/n : 0,
+    umidadePct: somaBrutoDescTara>0 ? (somaUmidade/somaBrutoDescTara*100) : 0,
+    impurezaPct: somaBrutoDescTara>0 ? (somaImpureza/somaBrutoDescTara*100) : 0,
+    ardidoPct: somaBrutoDescTara>0 ? (somaArdido/somaBrutoDescTara*100) : 0,
   };
 }
 function toggleAcumuladoDiario(){
   dashboardDiarioAcumulado = !dashboardDiarioAcumulado;
   paintDashboardDiario();
+}
+function toggleUnidadeDiario(){
+  dashboardDiarioUnidade = dashboardDiarioUnidade==='kg' ? 'scs' : 'kg';
+  paintDashboardDiario();
+}
+function fmtValorDiario(kg){
+  return dashboardDiarioUnidade==='scs' ? fmt(kg/60,2)+' scs' : fmt(kg,0)+' kg';
 }
 function updateTbodyRomaneiosDia(){
   const filters = getFilterValues('romaneiosDia');
@@ -5125,9 +5148,9 @@ function updateTbodyRomaneiosDia(){
     const extract = {romaneio: x.e.nrRomaneio||'', motorista: x.e.motorista||'', produtor: x.v?produtorNome(x.v.produtorId):''};
     return { extract, html: `<tr>
         <td>${extract.romaneio||'—'}</td><td>${extract.motorista||'—'}</td><td>${extract.produtor||'—'}</td>
-        <td>${fmt(x.e.pesoBruto,0)} kg</td><td>${fmt(x.e.tara,0)} kg</td><td>${fmt(x.e.pesoLiquidoSemDesc,0)} kg</td>
-        <td>${fmt(x.e.umidade,0)} kg</td><td>${fmt(x.e.impureza,0)} kg</td><td>${fmt(x.e.ardido,0)} kg</td>
-        <td><b>${fmt(x.e.pesoLiquidoComDesc,0)} kg</b></td>
+        <td>${fmtValorDiario(x.e.pesoBruto)}</td><td>${fmtValorDiario(x.e.tara)}</td><td>${fmtValorDiario(x.e.pesoLiquidoSemDesc)}</td>
+        <td>${fmtValorDiario(x.e.umidade)}</td><td>${fmtValorDiario(x.e.impureza)}</td><td>${fmtValorDiario(x.e.ardido)}</td>
+        <td><b>${fmtValorDiario(x.e.pesoLiquidoComDesc)}</b></td>
       </tr>` };
   }).filter(r=>rowMatches(r.extract, filters));
   document.getElementById('tbodyRomaneiosDia').innerHTML = linhas.length ? linhas.map(r=>r.html).join('') : emptyRow(10, dashboardDiarioAcumulado ? '📂 Nenhum romaneio lançado ainda nesta safra.' : '📂 Nenhum romaneio lançado hoje ainda.');
@@ -5179,57 +5202,75 @@ function exportarRomaneiosDiarioPDF(){
   win.document.write(html);
   win.document.close();
 }
-let chartDescDiario;
+let chartDescDiario, chartDescComposicaoDiario;
 function paintDashboardDiario(){
   const d = computeDashboardDiario();
   ultimoDashboardDiarioLista = d.joined;
   const ordenado = d.joined.slice().sort((a,b)=>(a.e.nrRomaneio||'').localeCompare(b.e.nrRomaneio||''));
+  const unScs = dashboardDiarioUnidade==='scs';
 
   document.getElementById('tituloEscopoRomaneiosDia').textContent = dashboardDiarioAcumulado ? '— acumulado da safra' : 'de hoje';
   document.getElementById('btnAcumuladoDiario').innerHTML = dashboardDiarioAcumulado ? '📅 Mostrar só hoje' : '📚 Mostrar acumulado';
+  document.getElementById('btnUnidadeDiario').innerHTML = unScs ? '⇄ Ver em kg' : '⇄ Ver em sacas';
   updateTbodyRomaneiosDia();
 
   document.getElementById('kpisDiarioLinha1').innerHTML = `
     <div class="kpi"><div class="label">Romaneios${dashboardDiarioAcumulado?' (acumulado)':' hoje'}</div><div class="value">${d.n}</div><div class="sub">recebidos até agora</div></div>
-    <div class="kpi"><div class="label">Volume total bruto</div><div class="value">${fmt(d.somaBrutoDescTara,0)} kg</div><div class="sub">peso bruto já descontada a tara</div></div>
-    <div class="kpi"><div class="label">Volume total descontos</div><div class="value warn">${fmt(d.somaDescontos,0)} kg</div><div class="sub">umidade + impureza + avariado</div></div>
-    <div class="kpi"><div class="label">Volume total líquido</div><div class="value ok">${fmt(d.somaLiquidoFinal,0)} kg</div><div class="sub">saldo líquido final, pós-descontos</div></div>
+    <div class="kpi"><div class="label">Volume total bruto</div><div class="value">${fmtValorDiario(d.somaBrutoDescTara)}</div><div class="sub">peso bruto já descontada a tara</div></div>
+    <div class="kpi"><div class="label">Volume total descontos</div><div class="value warn">${fmtValorDiario(d.somaDescontos)}</div><div class="sub">umidade + impureza + avariado</div></div>
+    <div class="kpi"><div class="label">Volume total líquido</div><div class="value ok">${fmtValorDiario(d.somaLiquidoFinal)}</div><div class="sub">saldo líquido final, pós-descontos</div></div>
   `;
 
   document.getElementById('kpisDiarioLinha2').innerHTML = `
-    <div class="kpi"><div class="label">Desconto total · Umidade</div><div class="value warn">${fmt(d.somaUmidade,0)} kg</div><div class="sub">média de ${fmt(d.descMedioUmidadeKg,0)} kg/carga</div></div>
-    <div class="kpi"><div class="label">Desconto total · Impureza</div><div class="value warn">${fmt(d.somaImpureza,0)} kg</div><div class="sub">média de ${fmt(d.descMedioImpurezaKg,0)} kg/carga</div></div>
-    <div class="kpi"><div class="label">Desconto total · Avariado</div><div class="value warn">${fmt(d.somaArdido,0)} kg</div><div class="sub">média de ${fmt(d.descMedioArdidoKg,0)} kg/carga</div></div>
+    <div class="kpi"><div class="label">Desconto total · Umidade</div><div class="value warn">${fmtValorDiario(d.somaUmidade)}</div><div class="sub" style="font-size:24px;font-weight:800;color:var(--gold);margin-top:8px;">${fmtValorDiario(d.descMedioUmidadeKg)}<span style="font-size:12px;font-weight:400;color:var(--ink-dim);"> /carga</span></div></div>
+    <div class="kpi"><div class="label">Desconto total · Impureza</div><div class="value warn">${fmtValorDiario(d.somaImpureza)}</div><div class="sub" style="font-size:24px;font-weight:800;color:var(--gold);margin-top:8px;">${fmtValorDiario(d.descMedioImpurezaKg)}<span style="font-size:12px;font-weight:400;color:var(--ink-dim);"> /carga</span></div></div>
+    <div class="kpi"><div class="label">Desconto total · Avariado</div><div class="value warn">${fmtValorDiario(d.somaArdido)}</div><div class="sub" style="font-size:24px;font-weight:800;color:var(--gold);margin-top:8px;">${fmtValorDiario(d.descMedioArdidoKg)}<span style="font-size:12px;font-weight:400;color:var(--ink-dim);"> /carga</span></div></div>
   `;
 
   if(chartDescDiario) chartDescDiario.destroy();
+  if(chartDescComposicaoDiario) chartDescComposicaoDiario.destroy();
   const cor = (nome, fallback) => (getComputedStyle(document.body).getPropertyValue(nome).trim() || fallback);
-  const corUmidade = cor('--gold','#FFDD00'), corImpureza = cor('--cyan','#3DFFE8'), corArdido = cor('--red','#FF3D5A');
-  const corLinha = cor('--line','#2A322A'), corInkDim = cor('--ink-dim','#98A092'), corInk = cor('--ink','#EDEFE9');
+  const corGold = cor('--gold','#FFDD00'), corCyan = cor('--cyan','#3DFFE8'), corRed = cor('--red','#FF3D5A');
+  const corLinha = cor('--line','#2A322A'), corInkDim = cor('--ink-dim','#98A092'), corInk = cor('--ink','#EDEFE9'), corPanel = cor('--panel','#161C16');
 
   chartDescDiario = new Chart(document.getElementById('chartDescontoDiario'), {
     type:'line',
     data:{
       labels: ordenado.map(x=>x.e.nrRomaneio || '—'),
-      datasets:[
-        {label:'Umidade (kg)', data: ordenado.map(x=>num(x.e.umidade)), borderColor:corUmidade, backgroundColor:corUmidade+'55', fill:true, tension:.35, pointRadius:2, stack:'desc'},
-        {label:'Impureza (kg)', data: ordenado.map(x=>num(x.e.impureza)), borderColor:corImpureza, backgroundColor:corImpureza+'55', fill:true, tension:.35, pointRadius:2, stack:'desc'},
-        {label:'Avariado (kg)', data: ordenado.map(x=>num(x.e.ardido)), borderColor:corArdido, backgroundColor:corArdido+'55', fill:true, tension:.35, pointRadius:2, stack:'desc'},
-      ]
+      datasets:[{
+        label: unScs ? 'Desconto (sacas)' : 'Desconto (kg)',
+        data: ordenado.map(x=>{ const t = num(x.e.umidade)+num(x.e.impureza)+num(x.e.ardido); return unScs ? t/60 : t; }),
+        borderColor:corRed, backgroundColor:corRed+'2A', fill:true, tension:.3, pointRadius:2
+      }]
     },
     options:{
-      responsive:true, interaction:{mode:'index', intersect:false},
-      plugins:{legend:{position:'bottom', labels:{color:corInk}}},
+      responsive:true, plugins:{legend:{display:false}},
       scales:{
         x:{ grid:{color:corLinha}, title:{display:true,text:'Nº Romaneio', color:corInkDim}, ticks:{color:corInkDim, maxRotation:90,minRotation:60} },
-        y:{ stacked:true, grid:{color:corLinha}, title:{display:true,text:'Kg descontados', color:corInkDim}, ticks:{color:corInkDim} }
+        y:{ grid:{color:corLinha}, title:{display:true,text: unScs?'Sacas descontadas':'Kg descontados', color:corInkDim}, ticks:{color:corInkDim} }
       }
     }
   });
-
   document.getElementById('notaDescontoDiario').innerHTML = d.n
-    ? 'Cada camada mostra o desconto (em kg) de um fator, carga a carga — a altura total em cada ponto é a soma dos três (efeito "relevo").'
+    ? `Desconto total (umidade + impureza + avariado) por romaneio, em ${unScs?'sacas':'kg'} — ${dashboardDiarioAcumulado?'acumulado da safra':'somente hoje'}.`
     : (dashboardDiarioAcumulado ? 'Sem romaneios lançados ainda para gerar o gráfico.' : 'Sem romaneios hoje ainda para gerar o gráfico.');
+
+  const compLabels = ['Umidade','Impureza','Ardido/Avariado'];
+  const compPct = [d.umidadePct, d.impurezaPct, d.ardidoPct];
+  const compValores = [d.somaUmidade, d.somaImpureza, d.somaArdido];
+  const compColors = [corGold, corCyan, corRed];
+  document.getElementById('descCompLegendDiario').innerHTML = compLabels.map((l,i)=>`
+    <div class="comp-item">
+      <span class="comp-dot" style="background:${compColors[i]}"></span>
+      <span class="comp-name">${l}</span>
+      <span class="comp-val">${fmtPct(compPct[i])}</span>
+      <span class="comp-sub">${fmtValorDiario(compValores[i])}</span>
+    </div>`).join('');
+  chartDescComposicaoDiario = new Chart(document.getElementById('chartDescComposicaoDiario'), {
+    type:'doughnut',
+    data:{ labels: compLabels, datasets:[{ data: compPct, backgroundColor: compColors, borderColor:corPanel, borderWidth:3 }] },
+    options:{ responsive:true, plugins:{legend:{position:'bottom', labels:{color:corInk}}} }
+  });
 }
 function paintDashboard(){
   const data = computeDashboard();
