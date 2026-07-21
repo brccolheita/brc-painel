@@ -393,6 +393,7 @@ body.read-only .interacoes-fixed{ display:none; }
 .dash-scope .comp-sub{ font-size:11px; color:var(--ink-dim); font-family:'JetBrains Mono',monospace; min-width:90px; text-align:right; }
 footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); margin-top:56px; font-family:'JetBrains Mono',monospace;}
 @media (max-width:900px){ .dash-scope .grid2{grid-template-columns:1fr;} .dash-scope .hectbox{flex-direction:column; align-items:stretch;} }
+@media (max-width:640px){ #btnNotificacoesPush .texto-notificacoes{ display:none; } #btnNotificacoesPush{ padding:11px 14px; } }
 </style>
 </head>
 <body>
@@ -422,10 +423,10 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
           <button class="interacoes-item" id="btnExportBackup" data-item-id="exportBackup">💾 Exportar backup completo (Excel)</button>
           <button class="interacoes-item" id="btnGerarDashboard" data-item-id="gerarDashboard">📊 Gerar Dashboard</button>
           <div class="interacoes-divider"></div>
-          <button class="interacoes-item" id="btnNotificacoesPush" data-item-id="notificacoesPush">🔔 Ativar notificações</button>
           <button class="interacoes-item" id="btnToggleTema" data-item-id="tema">⚙️ Configurações</button>
         </div>
       </div>
+      <button class="interacoes-trigger" id="btnNotificacoesPush" onclick="toggleNotificacoesUsuario()" title="Ativar notificações"><span id="iconeNotificacoesPush">🔔</span><span class="texto-notificacoes"> Ativar notificações</span></button>
       <button class="interacoes-trigger" id="btnMaximizarTela" onclick="toggleTelaMaximizada()">⛶ Maximizar</button>
       <button class="interacoes-trigger" onclick="renderTelaFiltroContexto()">← Voltar</button>
       <button class="interacoes-trigger" style="color:var(--red);font-weight:800;border-color:var(--red-dim);" onclick="logout()">Sair</button>
@@ -594,6 +595,10 @@ async function ativarNotificacoesPush(){
   const usuario = s ? state.usuarios.find(u=>u.id===s.usuarioId) : null;
   if(!usuario){ toast('Faça login antes de ativar as notificações.', true); return; }
   if(usuario.papel==='motorista'){ toast('Notificações push não estão disponíveis para o acesso de motorista.', true); return; }
+  if(isIOSSemInstalar()){
+    toast('No iPhone, antes de ativar: toque em Compartilhar → "Adicionar à Tela de Início", depois abra o sistema por esse ícone e tente de novo.', true);
+    return;
+  }
   try{
     const permissao = await Notification.requestPermission();
     if(permissao !== 'granted'){ toast('Você precisa permitir as notificações pra ativar isso.', true); return; }
@@ -645,11 +650,20 @@ async function atualizarBotaoNotificacoes(){
   const btn = document.getElementById('btnNotificacoesPush');
   if(!btn) return;
   if(!('serviceWorker' in navigator)){ btn.style.display = 'none'; return; }
+  const icone = document.getElementById('iconeNotificacoesPush');
+  const texto = btn.querySelector('.texto-notificacoes');
   try{
     const reg = await navigator.serviceWorker.getRegistration('./sw.js');
     const sub = reg ? await reg.pushManager.getSubscription() : null;
-    btn.textContent = sub ? '🔕 Desativar notificações' : '🔔 Ativar notificações';
+    if(icone) icone.textContent = sub ? '🔕' : '🔔';
+    if(texto) texto.textContent = sub ? ' Desativar notificações' : ' Ativar notificações';
+    btn.title = sub ? 'Desativar notificações' : 'Ativar notificações';
   }catch(e){}
+}
+function isIOSSemInstalar(){
+  const ehIOS = /iP(hone|od|ad)/.test(navigator.platform) || (navigator.userAgent.includes('Mac') && 'ontouchend' in document);
+  const instalado = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+  return ehIOS && !instalado;
 }
 function usuarioIdParaProdutor(produtorId){
   const u = state.usuarios.find(u=>u.papel==='produtor' && u.produtorId===produtorId);
@@ -1209,9 +1223,9 @@ function renderUsuarios(containerId){
       </div>
       <p class="small-note" style="margin-top:0;">Contas de Admin e Produtor são criadas aqui. Acessos de Motorista são criados na aba Cadastros, junto com o cadastro de cada motorista — o login dele é sempre a placa do caminhão, com a senha definida no cadastro dele.</p>
       <table>
-        <thead><tr><th>Usuário</th><th>Papel</th><th>Vínculo</th><th>Expira em</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Usuário</th><th>Papel</th><th>Vínculo</th><th>Expira em</th><th>Status</th><th>🔔 Push</th><th></th></tr></thead>
         <tbody>
-          ${!state.usuarios.length ? emptyRow(6,'Nenhum usuário cadastrado ainda.') : state.usuarios.map(u=>{
+          ${!state.usuarios.length ? emptyRow(7,'Nenhum usuário cadastrado ainda.') : state.usuarios.map(u=>{
             const expirado = usuarioExpirado(u);
             const vinculo = u.papel==='motorista' ? (motoristaById(u.motoristaId)?.nome || '—')
               : u.papel==='admin' ? labelPermissoesAdmin(u) : '—';
@@ -1221,6 +1235,7 @@ function renderUsuarios(containerId){
               <td>${vinculo}</td>
               <td>${u.expiraEm || 'sem expiração'}</td>
               <td>${expirado ? '<span style="color:var(--red)">expirado</span>' : '<span style="color:var(--lime)">ativo</span>'}</td>
+              <td id="pushStatus-${u.id}">${u.papel==='motorista' ? '<span class="small-note">não se aplica</span>' : '<span class="small-note">verificando…</span>'}</td>
               <td><div class="actions-row">
                 ${u.papel==='motorista'
                   ? `<button class="btn ghost sm" onclick="openCadastroModal('acessoMotorista','${u.motoristaId}')">Gerenciar</button>
@@ -1235,6 +1250,22 @@ function renderUsuarios(containerId){
       </table>
     </div>
   `;
+  atualizarStatusPushUsuarios();
+}
+async function atualizarStatusPushUsuarios(){
+  for(const u of state.usuarios){
+    if(u.papel==='motorista') continue;
+    const el = document.getElementById('pushStatus-'+u.id);
+    if(!el) continue;
+    try{
+      const res = await window.storage.get('push-subs:'+u.id);
+      const subs = (res && res.value) || [];
+      const n = Array.isArray(subs) ? subs.length : 0;
+      el.innerHTML = n>0 ? `<span class="tag ok">🔔 ativo${n>1?' ('+n+' aparelhos)':''}</span>` : `<span class="tag muted">🔕 inativo</span>`;
+    }catch(e){
+      el.innerHTML = `<span class="tag muted">🔕 inativo</span>`;
+    }
+  }
 }
 async function salvarUsuario(id){
   const usuario = document.getElementById('fUsuarioLogin').value.trim();
@@ -2391,7 +2422,6 @@ function bindShellEvents(){
     openCadastroModal('linkMotorista');
   });
   document.getElementById('btnToggleTema').addEventListener('click', ()=>{ panel.classList.remove('aberto'); openCadastroModal('configuracoes'); });
-  document.getElementById('btnNotificacoesPush').addEventListener('click', ()=>{ panel.classList.remove('aberto'); toggleNotificacoesUsuario(); });
   atualizarBotaoNotificacoes();
   restaurarOrdemInteracoes();
   inicializarDragReorderInteracoes();
