@@ -1083,23 +1083,33 @@ function gaugeArmazemSVG(pctBruto){
     <text x="${cx}" y="${cy-16}" text-anchor="middle" font-size="24" font-weight="700" fill="${cor}" font-family="'JetBrains Mono',monospace">${fmt(pctBruto,0)}%</text>
   </svg>`;
 }
+let unidadeGaugeArmazem = 'ton'; // 'ton' ou 'sacas' — alterna a descrição ao lado do medidor em todo o sistema
+function toggleUnidadeGaugeArmazem(){
+  unidadeGaugeArmazem = unidadeGaugeArmazem==='ton' ? 'sacas' : 'ton';
+  renderEstoque();
+  renderGaugesDashboard();
+}
 function cardArmazemFazenda(f){
   const saldoKg = calcSaldoFazendaKg(f.id);
   const capacidadeKg = num(f.armazemKg);
   const pct = capacidadeKg ? (saldoKg/capacidadeKg*100) : 0;
+  const disponivelKg = Math.max(0, capacidadeKg - saldoKg);
+  const depositadoTxt = unidadeGaugeArmazem==='sacas' ? `${fmt(saldoKg/60,0)} sacas` : `${fmt(saldoKg/1000,1)} t`;
+  const disponivelTxt = unidadeGaugeArmazem==='sacas' ? `${fmt(disponivelKg/60,0)} sacas` : `${fmt(disponivelKg/1000,1)} t`;
   const porCultura = calcSaldoPorCulturaFazenda(f.id);
   const linhasCultura = Object.entries(porCultura).filter(([,kg])=>Math.abs(kg)>0.01).map(([culturaId,kg])=>{
     const nome = culturaId==='_sem_cultura' ? 'Sem cultura definida' : (culturaById(culturaId)?.nome || '—');
+    const valorTxt = unidadeGaugeArmazem==='sacas' ? `${fmt(kg/60,1)} sc` : `${fmt(kg/1000,2)} t`;
     return `<div class="actions-row" style="justify-content:space-between;font-size:12.5px;padding:3px 0;">
-      <span style="color:var(--ink-dim);">${nome}</span><span>${fmt(kg,0)} kg (${fmt(kg/60,1)} sc)</span>
+      <span style="color:var(--ink-dim);">${nome}</span><span>${valorTxt}</span>
     </div>`;
   }).join('') || '<p class="small-note" style="margin:4px 0 0;">Nenhuma movimentação ainda.</p>';
   return `<div class="card">
     <h3 style="margin:0 0 6px;">${f.nome}</h3>
     ${capacidadeKg ? gaugeArmazemSVG(pct) : '<p class="small-note">Defina a capacidade do armazém no cadastro desta fazenda pra ver o medidor.</p>'}
     <div style="text-align:center;margin:4px 0 12px;">
-      <div style="font-size:15px;font-weight:700;">${fmt(saldoKg,0)} kg <span class="small-note" style="font-weight:500;">(${fmt(saldoKg/60,1)} sc)</span></div>
-      ${capacidadeKg ? `<div class="small-note">de ${fmt(capacidadeKg,0)} kg (${fmt(capacidadeKg/60,1)} sc) de capacidade</div>` : ''}
+      <div style="font-size:14.5px;"><b>${depositadoTxt}</b> depositadas</div>
+      <div class="small-note">${disponivelTxt} disponíveis para depósito</div>
     </div>
     <div style="border-top:1px solid var(--line);padding-top:8px;">${linhasCultura}</div>
   </div>`;
@@ -1115,11 +1125,24 @@ function renderEstoque(){
   if(!fazendas.length){ el.innerHTML = ''; return; }
   const movsOrdenados = [...state.movimentosEstoque].sort((a,b)=>(b.data||'').localeCompare(a.data||'') || (b.createdAt||'').localeCompare(a.createdAt||''));
   el.innerHTML = `
-    <div class="section-title">Estoque de Armazém</div>
+    <div class="section-title">Estoque de Armazém
+      <button class="btn ghost sm" style="text-transform:none;letter-spacing:0;margin-left:8px;" onclick="toggleUnidadeGaugeArmazem()">⇄ Ver em ${unidadeGaugeArmazem==='sacas'?'toneladas':'sacas'}</button>
+    </div>
     <div class="actions-row" style="margin-bottom:16px;">
       <button class="btn" onclick="openCadastroModal('romaneioArmazem')">➕ Registrar entrada no armazém</button>
       <button class="btn ghost" onclick="openCadastroModal('ajusteEstoque')">⚖️ Ajuste manual</button>
+      <span class="choice-wrap">
+        <button class="btn ghost sm" onclick="toggleChoicePopover('popoverImportarArmazem')">📥 Importar</button>
+        <span class="choice-popover" id="popoverImportarArmazem">
+          <button onclick="fecharChoicePopovers(); document.getElementById('importArmazemInput').click();">📊 Planilha Excel (.xlsx)</button>
+          <button onclick="fecharChoicePopovers(); document.getElementById('importArmazemInputPDF').click();">📄 Relatório em PDF</button>
+        </span>
+      </span>
+      <button class="btn ghost sm" onclick="exportarEstoqueXlsx()">📤 Exportar planilha</button>
+      <input type="file" id="importArmazemInput" accept=".xlsx,.xls" style="display:none">
+      <input type="file" id="importArmazemInputPDF" accept=".pdf" style="display:none">
     </div>
+    <p class="small-note" style="margin-top:-10px;margin-bottom:14px;">Importar aceita planilha Excel ou relatório em PDF (lido por IA) — mesma lógica de Cargas &amp; Romaneios, mas sem NF/venda: é o caminhão saindo do campo direto pro silo.</p>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;margin-bottom:24px;">
       ${fazendas.map(f=>cardArmazemFazenda(f)).join('')}
     </div>
@@ -1150,6 +1173,8 @@ function renderEstoque(){
       </table></div>
     </div>
   `;
+  document.getElementById('importArmazemInput').addEventListener('change', (e)=>{ if(e.target.files[0]) handleImportArmazemXlsx(e.target.files[0]); e.target.value=''; });
+  document.getElementById('importArmazemInputPDF').addEventListener('change', (e)=>{ if(e.target.files[0]) handleImportArmazemPDF(e.target.files[0]); e.target.value=''; });
 }
 
 /* ---------------- AGREGAÇÕES PARA O DASHBOARD ---------------- */
@@ -5525,7 +5550,6 @@ function renderDashboard(){
         </div>
         <div id="pdfPage1Diario">
         <div class="pdf-header" id="pdfHeaderBlockDiario"></div>
-        <div id="estoqueGaugesDiario"></div>
         <div id="alertaDescontoDiario"></div>
         <section style="margin-top:10px;">
           <h2>Romaneios <span id="tituloEscopoRomaneiosDia">de hoje</span>
@@ -5569,6 +5593,7 @@ function renderDashboard(){
           </div>
         </section>
         </div>
+        <div id="estoqueGaugesDiario"></div>
       </div>
 
       <div id="subDashGeral" style="display:none;">
@@ -5602,7 +5627,6 @@ function renderDashboard(){
       <div id="exportArea" style="margin-top:26px;">
         <div id="pdfPage1">
           <div class="pdf-header" id="pdfHeaderBlock"></div>
-          <div id="estoqueGaugesGeral"></div>
           <div class="kpis" id="kpis"></div>
 
           <section>
@@ -5675,6 +5699,7 @@ function renderDashboard(){
         </div>
       </div>
       </div>
+      <div id="estoqueGaugesGeral"></div>
 
       <footer class="dash-footer" id="footerNote">App de Colheita.</footer>
     </div>
@@ -5691,8 +5716,10 @@ function renderGaugesDashboard(){
     || state.config.cultura==='Algodão' || !armazensCadastradosNoContexto().length;
   const fazendas = semArmazem ? [] : armazensCadastradosNoContexto();
   const html = !fazendas.length ? '' : `
-    <section style="margin-top:4px;margin-bottom:22px;">
-      <h2>Estoque de Armazém</h2>
+    <section style="margin-top:22px;margin-bottom:4px;">
+      <h2>Estoque de Armazém
+        <button class="btn ghost sm leitura-ok" onclick="toggleUnidadeGaugeArmazem()">⇄ Ver em ${unidadeGaugeArmazem==='sacas'?'toneladas':'sacas'}</button>
+      </h2>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;">
         ${fazendas.map(f=>cardArmazemFazenda(f)).join('')}
       </div>
@@ -6353,6 +6380,17 @@ function getOrCreateMotorista(nome, placa){
   if(!m){ state.motoristas.push({id: uid('mot'), nome, placa: placa||''}); }
   else if(placa && !m.placa){ m.placa = placa; }
 }
+function getOrCreateFazenda(nome){
+  if(!nome) return null;
+  let f = state.fazendas.find(x=>stripAccents(x.nome)===stripAccents(nome));
+  if(!f){ f = {id: uid('faz'), nome: String(nome).trim(), armazemKg:0, talhoes:[]}; state.fazendas.push(f); }
+  return f.id;
+}
+function getOrCreateCulturaPorNome(nome){
+  if(!nome) return null;
+  let c = state.culturas.find(x=>stripAccents(x.nome)===stripAccents(nome));
+  return c ? c.id : null; // não cria cultura nova por importação — só Soja/Milho/Algodão já cadastrados
+}
 
 /* ---------------- IMPORTAR CONTRATO FECHADO EM PDF ----------------
    Lê o texto do PDF (pdf.js), tenta identificar comprador, vendedor, volume e preço
@@ -6594,6 +6632,14 @@ function isFormatoSoftwareGestaoVenda(headers){
 function isFormatoRemessa(headerRow){
   const nk = headerRow.map(h=>stripAccents(String(h||'')));
   return nk.some(h=>h.includes('transportadora')) && nk.some(h=>h==='placa') && nk.some(h=>h.includes('numero nf'));
+}
+// Relatório de ENTRADA NO ARMAZÉM — sem NF/venda, é o caminhão saindo do campo direto pro silo.
+function isFormatoArmazem(headers){
+  const nk = headers.map(h=>stripAccents(String(h||'')));
+  const temArmazem = nk.some(h=>h.includes('armazem') || h.includes('fazenda') || h.includes('silo'));
+  const temProdutor = nk.some(h=>h.includes('produtor'));
+  const temPeso = nk.some(h=>h.includes('peso bruto') || h==='peso bruto (kg)' || h.includes('pesobruto'));
+  return temArmazem && temProdutor && temPeso;
 }
 
 /* ---- Import 0: relatório PADRÃO de NFs emitidas (formato oficial a partir de agora) ----
@@ -6886,6 +6932,202 @@ function handleImportLegacy(rows, colheitaId){
 
   saveCadastros(); saveVendas(); saveEntregas(); renderAll();
   toast(`Importação concluída: ${novasVendas} venda(s) nova(s), ${novasEntregas} entrega(s) completa(s), ${ignoradas} linha(s) ignorada(s).`);
+}
+
+/* ---- Import: ENTRADA NO ARMAZÉM (sem NF/venda — caminhão do campo direto pro silo) ----
+   Mesma lógica de Cargas & Romaneios (planilha, PDF lido por IA, ou sincronização automática),
+   só que gera romaneiosArmazem + movimentoEstoque de entrada em vez de venda/entrega comercial. */
+function handleImportArmazem(rows){
+  if(!rows || !rows.length){ toast('Não encontrei linhas de dados nesse relatório.', true); return; }
+  const headers = Object.keys(rows[0]);
+  const keys = {
+    armazem: findKey(headers, ['armazem']) || findKey(headers,['fazenda']) || findKey(headers,['silo']),
+    produtor: findKey(headers, ['produtor']),
+    cultura: findKey(headers, ['cultura']),
+    safra: findKey(headers, ['safra']),
+    motorista: findKey(headers, ['motorista']) || findKey(headers,['transportadora']),
+    placa: findKey(headers, ['placa']),
+    romaneio: findKey(headers, ['romaneio']) || findKey(headers,['numero']),
+    data: findKey(headers, ['data']),
+    pesoBruto: findKey(headers, ['peso','bruto']),
+    tara: findKey(headers, ['tara']),
+    umidade: findKey(headers, ['umidade']),
+    impureza: findKey(headers, ['impureza']),
+    ardido: findKey(headers, ['ardido']) || findKey(headers,['avariado']),
+    obs: findKey(headers, ['observacao']) || findKey(headers,['obs']),
+  };
+  let novos = 0, ignoradosSemDados = 0, ignoradosAlgodao = 0;
+  const fazendasTocadas = new Set();
+  rows.forEach(row=>{
+    const armazemNome = keys.armazem ? String(row[keys.armazem]||'').trim() : '';
+    const produtorNomeRaw = keys.produtor ? String(row[keys.produtor]||'').trim() : '';
+    const pesoBruto = keys.pesoBruto ? num(row[keys.pesoBruto]) : 0;
+    if(!armazemNome || !produtorNomeRaw || !pesoBruto){ ignoradosSemDados++; return; }
+
+    const culturaNomeRaw = keys.cultura ? String(row[keys.cultura]||'').trim() : (state.config.cultura||'');
+    const culturaId = getOrCreateCulturaPorNome(culturaNomeRaw);
+    if(culturaEhAlgodao(culturaId)){ ignoradosAlgodao++; return; }
+
+    const fazendaId = getOrCreateFazenda(armazemNome);
+    const produtorId = getOrCreateProdutor(produtorNomeRaw);
+    const motorista = keys.motorista ? String(row[keys.motorista]||'').trim() : '';
+    const placa = keys.placa ? String(row[keys.placa]||'').trim().toUpperCase() : '';
+    if(motorista) getOrCreateMotorista(motorista, placa);
+
+    const r = {
+      id: uid('romarm'), fazendaId, produtorId, culturaId,
+      safra: keys.safra ? String(row[keys.safra]||'').trim() : (state.config.safra||''),
+      motorista, placa,
+      nrRomaneio: keys.romaneio ? String(row[keys.romaneio]||'').trim() : '',
+      dataEntrada: keys.data ? (toISODate(row[keys.data]) || todayISO()) : todayISO(),
+      pesoBruto, tara: keys.tara ? num(row[keys.tara]) : 0,
+      umidade: keys.umidade ? num(row[keys.umidade]) : 0,
+      impureza: keys.impureza ? num(row[keys.impureza]) : 0,
+      ardido: keys.ardido ? num(row[keys.ardido]) : 0,
+      obs: keys.obs ? String(row[keys.obs]||'') : '',
+      createdAt: new Date().toISOString(),
+    };
+    recalcRomaneioArmazem(r);
+    state.romaneiosArmazem.push(r);
+    upsertMovimentoEstoque({
+      tipo:'entrada', fazendaId, produtorId, culturaId, safra: r.safra,
+      pesoKg: r.pesoLiquido, scs: r.scsLiquido, data: r.dataEntrada, obs: r.obs
+    }, 'romaneioArmazem', r.id);
+    fazendasTocadas.add(fazendaId);
+    novos++;
+  });
+
+  saveCadastros(); saveEstoque(); renderAll();
+  const avisoAlgodao = ignoradosAlgodao>0 ? ` ${ignoradosAlgodao} linha(s) de algodão ignorada(s) (fora do controle de estoque).` : '';
+  const avisoSemDados = ignoradosSemDados>0 ? ` ${ignoradosSemDados} linha(s) sem dados suficientes (armazém/produtor/peso bruto).` : '';
+  toast(`Importação de estoque: ${novos} entrada(s) registrada(s).${avisoAlgodao}${avisoSemDados}`);
+  fazendasTocadas.forEach(verificarLimiteArmazemEAvisar);
+}
+function handleImportArmazemXlsx(file){
+  const reader = new FileReader();
+  reader.onload = (e)=>{
+    try{
+      const wb = XLSX.read(e.target.result, {type:'array', cellDates:true});
+      const sheetName = wb.SheetNames.find(n=>stripAccents(n).includes('armazem')) || wb.SheetNames[0];
+      const sheet = wb.Sheets[sheetName];
+      const objRows = XLSX.utils.sheet_to_json(sheet, {defval:null});
+      if(!objRows.length){ toast('Não encontrei linhas de dados nessa planilha.', true); return; }
+      handleImportArmazem(objRows);
+    }catch(err){
+      console.error(err);
+      toast('Não foi possível ler essa planilha. Confira o formato.', true);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+function handleImportArmazemPDF(file){
+  if(!window.pdfjsLib){ toast('Biblioteca de leitura de PDF não carregou. Verifique sua conexão.', true); return; }
+  const reader = new FileReader();
+  reader.onload = async (ev)=>{
+    try{
+      const pdf = await pdfjsLib.getDocument({data: ev.target.result}).promise;
+      let texto = '';
+      for(let i=1;i<=pdf.numPages;i++){
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        texto += content.items.map(it=>it.str).join(' ') + '\n';
+      }
+      toast('Lendo o relatório de entradas de armazém com IA...');
+      let linhas;
+      try{ linhas = await analisarRelatorioArmazemIA(texto); }
+      catch(errIA){
+        console.error(errIA);
+        toast('A IA não conseguiu ler esse relatório em PDF: ' + errIA.message, true);
+        return;
+      }
+      if(!Array.isArray(linhas) || !linhas.length){
+        toast('Não encontrei nenhuma entrada de armazém legível nesse PDF.', true);
+        return;
+      }
+      const rows = linhas.map(r=>({
+        Armazem: r.armazem||'', Produtor: r.produtor||'', Cultura: r.cultura||'', Safra: r.safra||'',
+        Motorista: r.motorista||'', Placa: r.placa||'', Romaneio: r.romaneio||'', Data: r.data||'',
+        'Peso Bruto': r.pesoBruto||0, Tara: r.tara||0, Umidade: r.umidade||0, Impureza: r.impureza||0,
+        Ardido: r.ardido||0, Observacao: r.observacao||''
+      }));
+      handleImportArmazem(rows);
+    }catch(err){
+      console.error(err);
+      toast('Não consegui ler esse PDF. Confira se não é uma imagem escaneada sem texto.', true);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+async function analisarRelatorioArmazemIA(texto){
+  const prompt = `Você é um especialista em romaneios de recebimento de grãos em armazém/silo próprio no agronegócio brasileiro.
+Leia o texto abaixo, extraído de um relatório de entradas de armazém, e responda APENAS com um JSON válido (sem markdown, sem texto antes ou depois): um array de objetos, um item por romaneio de entrada encontrado, cada um com exatamente estas chaves:
+{
+ "armazem": string ou null (nome da fazenda/armazém/silo de destino),
+ "produtor": string ou null,
+ "cultura": string ou null (exatamente uma destas opções, se identificável: "Milho", "Soja" ou "Algodão"),
+ "safra": string ou null,
+ "motorista": string ou null,
+ "placa": string ou null,
+ "romaneio": string ou null (número do romaneio),
+ "data": string ou null (formato AAAA-MM-DD),
+ "pesoBruto": number ou null (kg),
+ "tara": number ou null (kg),
+ "umidade": number ou null (kg de desconto),
+ "impureza": number ou null (kg de desconto),
+ "ardido": number ou null (kg de desconto, avariado),
+ "observacao": string ou null
+}
+Inclua uma entrada no array para cada romaneio do relatório, mesmo que sejam muitos. Se um campo não existir ou não estiver legível, use null. Não invente dados. Responda somente o JSON (array).
+
+TEXTO DO RELATÓRIO:
+"""
+${String(texto||'').slice(0, 40000)}
+"""`;
+
+  const response = await fetch(`${API_BASE}/analisar-contrato`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-api-key": API_KEY },
+    body: JSON.stringify({ prompt, maxTokens: 6000 })
+  });
+  if(!response.ok){
+    let detalhe = '';
+    try{
+      const errBody = await response.json();
+      if(typeof errBody.error === 'string') detalhe = errBody.error;
+      else if(errBody.error && errBody.error.message) detalhe = errBody.error.message;
+      else if(errBody.message) detalhe = errBody.message;
+    }catch(e){}
+    throw new Error('Falha ao consultar IA (status ' + response.status + ')' + (detalhe ? ': ' + detalhe : ''));
+  }
+  const data = await response.json();
+  const textBlock = (data.content || []).map(b=>b.text||'').join('\n').trim();
+  let parsed;
+  try{ parsed = extrairJsonDaResposta(textBlock); }
+  catch(e){
+    console.error('Resposta da IA (não era JSON válido):', textBlock);
+    throw new Error('A IA não retornou um JSON válido. Tente novamente — se o relatório tiver muitos romaneios, considere dividir em partes menores.');
+  }
+  return parsed;
+}
+function exportarEstoqueXlsx(){
+  const headersRom = ['Armazém','Produtor','Cultura','Safra','Motorista','Placa','Nº Romaneio','Data',
+    'Peso Bruto (kg)','Tara (kg)','Umidade (kg)','Impureza (kg)','Ardido (kg)','Peso Líquido (kg)','Sacas','Obs.'];
+  const rowsRom = state.romaneiosArmazem.map(r=>[
+    state.fazendas.find(f=>f.id===r.fazendaId)?.nome||'', produtorNome(r.produtorId), culturaNome(r.culturaId),
+    r.safra||'', r.motorista||'', r.placa||'', r.nrRomaneio||'', r.dataEntrada||'',
+    r.pesoBruto||0, r.tara||0, r.umidade||0, r.impureza||0, r.ardido||0, r.pesoLiquido||0, r.scsLiquido||0, r.obs||''
+  ]);
+  const headersMov = ['Data','Tipo','Armazém','Cultura','Produtor','Safra','Kg','Sacas','Origem','Obs.'];
+  const rowsMov = state.movimentosEstoque.map(m=>[
+    m.data||'', m.tipo||'', state.fazendas.find(f=>f.id===m.fazendaId)?.nome||'',
+    m.culturaId?culturaNome(m.culturaId):'', m.produtorId?produtorNome(m.produtorId):'', m.safra||'',
+    m.pesoKg||0, m.scs||0, m.origem?.tipo||'', m.obs||''
+  ]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headersRom, ...rowsRom]), 'ENTRADAS DE ARMAZÉM');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headersMov, ...rowsMov]), 'MOVIMENTAÇÕES');
+  XLSX.writeFile(wb, `Estoque_de_armazem_${todayISO()}.xlsx`);
+  toast('Planilha de estoque exportada.');
 }
 
 /* ---- Dispatcher de importação ---- */
@@ -7418,9 +7660,25 @@ async function syncGoogleSheet(){
     const data = await res.json();
     if(!data.rows || !data.rows.length) return;
     const headers = data.headers || [];
-    if(isFormatoPadraoNF(headers)) handleImportPadraoNF(data.rows, null);
+    if(isFormatoArmazem(headers)) handleImportArmazem(data.rows);
+    else if(isFormatoPadraoNF(headers)) handleImportPadraoNF(data.rows, null);
     else if(isFormatoSoftwareGestaoVenda(headers)) handleImportSoftwareGestaoVenda(data.rows, null);
     else handleImportLegacy(data.rows, null);
+  }catch(e){ /* silencioso: sincronização automática não deve incomodar o usuário */ }
+}
+// Busca a fila de itens que o ERP de faturamento empurrou via webhook (POST /api/erp/webhook-nf)
+// e importa cada lote com a mesma lógica de importação de planilha/PDF já usada no resto do sistema.
+async function syncERPWebhook(){
+  try{
+    const res = await fetch(`${API_BASE}/erp/fila`, { headers: { 'x-api-key': API_KEY } });
+    if(!res.ok) return; // silencioso: rota ainda pode não estar configurada (sem ERP_WEBHOOK_SECRET)
+    const data = await res.json();
+    if(!data.itens || !data.itens.length) return;
+    data.itens.forEach(item=>{
+      if(!item.dados || !item.dados.length) return;
+      if(item.tipo==='armazem') handleImportArmazem(item.dados);
+      else if(item.tipo==='nf') handleImportPadraoNF(item.dados, null);
+    });
   }catch(e){ /* silencioso: sincronização automática não deve incomodar o usuário */ }
 }
 
@@ -7429,7 +7687,7 @@ async function forcarSincronizacao(){
   try{
     await loadState();
     const s = getSessao();
-    if(s?.papel==='admin'){ await syncGoogleSheet(); }
+    if(s?.papel==='admin'){ await syncGoogleSheet(); await syncERPWebhook(); }
     renderAll();
     toast('Dados sincronizados com sucesso.');
   }catch(e){
@@ -7457,7 +7715,9 @@ function entrarNoApp(tabInicial){
   if(label) label.textContent = `Usuário: ${s.usuario} · ${labelPapel(s.papel)}`;
   if(s.papel==='admin'){
     syncGoogleSheet();
+    syncERPWebhook();
     setInterval(syncGoogleSheet, 5*60*1000);
+    setInterval(syncERPWebhook, 5*60*1000);
   }
   if(tabInicial) switchTab(tabInicial);
 }
