@@ -1,6 +1,6 @@
 {
   "name": "BRC - Colheita e Comercialização",
-  "short_name": "BRC",
+  "short_name": "BRC Colheita",
   "description": "Colheita e comercialização — cadastros, cargas, romaneios e contratos.",
   "start_url": "./index.html",
   "scope": "./",
