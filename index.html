@@ -536,7 +536,13 @@ function fmtInt(n){ return Math.round(n||0).toLocaleString('pt-BR'); }
 function fmtPct(n){ return fmt(n) + '%'; }
 function fmtMoney(n){ return (n||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
 function stripAccents(s){ return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase(); }
-function todayISO(){ return new Date().toISOString().slice(0,10); }
+function todayISO(){
+  const d = new Date();
+  const ano = d.getFullYear();
+  const mes = String(d.getMonth()+1).padStart(2,'0');
+  const dia = String(d.getDate()).padStart(2,'0');
+  return `${ano}-${mes}-${dia}`;
+}
 function onlyDigits(v){ return String(v||'').replace(/\D/g,''); }
 function toISODate(v){
   if(!v) return null;
@@ -2823,6 +2829,26 @@ function openCadastroModal(kind, id){
       </div>`;
   }
 
+  if(kind==='limitesDesconto'){
+    title.textContent = 'Limite percentual de desconto';
+    const lim = limitesDescontoAtuais();
+    body.innerHTML = `
+      <p class="small-note" style="margin-top:-4px;">Defina, para cada fator, o percentual máximo de desconto (sobre o peso bruto já descontada a tara) que uma carga pode ter. Ultrapassando qualquer um deles, a carga é sinalizada e o produtor recebe uma notificação automática.</p>
+      <div class="field"><label>Umidade</label>
+        <div class="actions-row"><input type="number" id="fLimiteUmidade" value="${lim.umidade}" step="0.5" style="flex:1;"><span class="small-note">%</span></div>
+      </div>
+      <div class="field"><label>Impureza</label>
+        <div class="actions-row"><input type="number" id="fLimiteImpureza" value="${lim.impureza}" step="0.5" style="flex:1;"><span class="small-note">%</span></div>
+      </div>
+      <div class="field"><label>Avariado</label>
+        <div class="actions-row"><input type="number" id="fLimiteAvariado" value="${lim.avariado}" step="0.5" style="flex:1;"><span class="small-note">%</span></div>
+      </div>
+      <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
+        <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
+        <button class="btn" onclick="salvarLimitesDesconto()">Salvar</button>
+      </div>`;
+  }
+
   if(kind==='configuracoes'){
     title.textContent = 'Configurações';
     const prefs = preferenciasUsuarioAtual();
@@ -4591,6 +4617,7 @@ async function salvarEntrega(){
   }
   renderAll();
   closeCargaModal();
+  if(entrega.status==='completo') verificarLimiteEAvisarAutomatico(entrega);
   toast(entrega.status==='completo' ? 'Entrega lançada com sucesso.' : 'Entrega registrada como pendente de pesagem.');
 }
 
@@ -4994,23 +5021,16 @@ function renderDashboard(){
       </div>
 
       <div id="subDashDiario">
-        <div class="periodo-auto">📅 Mostrando apenas os romaneios de hoje (<b>${dataBR(todayISO())}</b>)</div>
-        <div style="align-self:flex-end;margin:10px 0 0 0;text-align:right;">
+        <div style="align-self:flex-end;margin:0 0 10px 0;text-align:right;">
           <button class="btn pdf" id="pdfBtnDiario" onclick="exportPDFDiario()">⬇ Exportar PDF</button>
         </div>
-        <div id="pdfPage1Diario" style="margin-top:10px;">
+        <div id="pdfPage1Diario">
         <div class="pdf-header" id="pdfHeaderBlockDiario"></div>
-        <div class="card" style="margin-top:14px;border-color:var(--gold-dim);">
-          <div class="actions-row" style="align-items:center;">
-            <label style="margin:0;flex:0 0 auto;">Avisar quando o desconto de uma carga passar de</label>
-            <input type="number" id="fLimiteDescontoAlerta" value="${state.config.limiteDescontoAlerta ?? 8}" step="0.5" style="width:80px;" onchange="definirLimiteDescontoAlerta(this.value)">
-            <span class="small-note" style="margin:0;">%</span>
-          </div>
-          <div id="alertaDescontoDiario" style="margin-top:10px;"></div>
-        </div>
-        <section style="margin-top:18px;">
+        <div id="alertaDescontoDiario"></div>
+        <section style="margin-top:10px;">
           <h2>Romaneios <span id="tituloEscopoRomaneiosDia">de hoje</span>
             <div class="actions-row">
+              <button class="btn ghost sm" onclick="openCadastroModal('limitesDesconto')">🎯 Limite percentual de desconto</button>
               <button class="btn ghost sm" id="btnUnidadeDiario" onclick="toggleUnidadeDiario()">⇄ Ver em sacas</button>
               <button class="btn ghost sm" id="btnAcumuladoDiario" onclick="toggleAcumuladoDiario()">📚 Mostrar acumulado</button>
               <button class="btn ghost sm" onclick="exportarRomaneiosDiarioPDF()">🖨️ Exportar relatório PDF</button>
@@ -5206,19 +5226,32 @@ function updateHeaderConfig(fromDescontoModo){
 let dashboardDiarioAcumulado = false;
 let dashboardDiarioUnidade = 'kg';
 let ultimoDashboardDiarioLista = [];
+function limitesDescontoAtuais(){
+  return {
+    umidade: num(state.config.limiteUmidadePct ?? 3),
+    impureza: num(state.config.limiteImpurezaPct ?? 2),
+    avariado: num(state.config.limiteAvariadoPct ?? 1),
+  };
+}
 function computeDashboardDiario(){
   const hoje = todayISO();
   const completas = state.entregas.filter(e=>e.status==='completo' && (dashboardDiarioAcumulado || e.dataSaida===hoje));
   const joined = completas.map(e=>({ e, v: vendaById(e.vendaId) }));
   const modo = state.config.descontoModo || 'fatores';
   const n = joined.length;
-  const limitePct = num(state.config.limiteDescontoAlerta ?? 8);
+  const limites = limitesDescontoAtuais();
 
   joined.forEach(x=>{
     const base = num(x.e.pesoLiquidoSemDesc);
-    const descKg = num(x.e.umidade)+num(x.e.impureza)+num(x.e.ardido);
-    x.descontoPct = base>0 ? (descKg/base*100) : 0;
-    x.acimaDoLimite = x.descontoPct > limitePct;
+    x.umidadePctCarga = base>0 ? (num(x.e.umidade)/base*100) : 0;
+    x.impurezaPctCarga = base>0 ? (num(x.e.impureza)/base*100) : 0;
+    x.ardidoPctCarga = base>0 ? (num(x.e.ardido)/base*100) : 0;
+    x.descontoPct = x.umidadePctCarga + x.impurezaPctCarga + x.ardidoPctCarga;
+    x.fatoresExcedidos = [];
+    if(x.umidadePctCarga > limites.umidade) x.fatoresExcedidos.push({nome:'Umidade', valor:x.umidadePctCarga, limite:limites.umidade});
+    if(x.impurezaPctCarga > limites.impureza) x.fatoresExcedidos.push({nome:'Impureza', valor:x.impurezaPctCarga, limite:limites.impureza});
+    if(x.ardidoPctCarga > limites.avariado) x.fatoresExcedidos.push({nome:'Avariado', valor:x.ardidoPctCarga, limite:limites.avariado});
+    x.acimaDoLimite = x.fatoresExcedidos.length > 0;
   });
   const excedentes = joined.filter(x=>x.acimaDoLimite);
 
@@ -5231,7 +5264,7 @@ function computeDashboardDiario(){
   const somaDescontos = somaUmidade+somaImpureza+somaArdido;
 
   return {
-    hoje, n, joined, descontoModo: modo, limitePct, excedentes,
+    hoje, n, joined, descontoModo: modo, limites, excedentes,
     somaBruto, somaBrutoDescTara, somaLiquidoFinal, somaDescontos,
     somaUmidade, somaImpureza, somaArdido,
     volumeMedioBrutoKg: n ? somaBrutoDescTara/n : 0,
@@ -5244,10 +5277,14 @@ function computeDashboardDiario(){
     ardidoPct: somaBrutoDescTara>0 ? (somaArdido/somaBrutoDescTara*100) : 0,
   };
 }
-function definirLimiteDescontoAlerta(valor){
-  state.config.limiteDescontoAlerta = num(valor);
+function salvarLimitesDesconto(){
+  state.config.limiteUmidadePct = num(document.getElementById('fLimiteUmidade').value);
+  state.config.limiteImpurezaPct = num(document.getElementById('fLimiteImpureza').value);
+  state.config.limiteAvariadoPct = num(document.getElementById('fLimiteAvariado').value);
   saveCadastros();
-  paintDashboardDiario();
+  closeCadastroModal();
+  toast('Limites de desconto atualizados.');
+  if(document.getElementById('subDashDiario')) paintDashboardDiario();
 }
 function normalizarTelefoneWpp(telefone){
   let d = onlyDigits(telefone||'');
@@ -5255,13 +5292,38 @@ function normalizarTelefoneWpp(telefone){
   if(d.length<=11) d = '55'+d;
   return d;
 }
+function verificarLimiteEAvisarAutomatico(entrega){
+  try{
+    const base = num(entrega.pesoLiquidoSemDesc);
+    if(base<=0) return;
+    const limites = limitesDescontoAtuais();
+    const umidadePct = num(entrega.umidade)/base*100;
+    const impurezaPct = num(entrega.impureza)/base*100;
+    const ardidoPct = num(entrega.ardido)/base*100;
+    const fatores = [];
+    if(umidadePct > limites.umidade) fatores.push({nome:'Umidade', valor:umidadePct, limite:limites.umidade});
+    if(impurezaPct > limites.impureza) fatores.push({nome:'Impureza', valor:impurezaPct, limite:limites.impureza});
+    if(ardidoPct > limites.avariado) fatores.push({nome:'Avariado', valor:ardidoPct, limite:limites.avariado});
+    if(!fatores.length) return;
+
+    const venda = vendaById(entrega.vendaId);
+    if(!venda?.produtorId) return;
+    const usuarioId = usuarioIdParaProdutor(venda.produtorId);
+    if(!usuarioId) return;
+
+    const fatoresTxt = fatores.map(f=>`${f.nome} ${fmtPct(f.valor)} (limite ${fmtPct(f.limite)})`).join(' · ');
+    const mensagem = `Romaneio ${entrega.nrRomaneio||'—'}: desconto acima do limite em ${fatores.map(f=>f.nome).join(', ')} — ${fatoresTxt}.`;
+    enviarPushAlerta(usuarioId, '⚠️ Desconto acima do limite', mensagem);
+  }catch(e){ console.error('Falha ao checar limite de desconto automático:', e); }
+}
 function avisarProdutorDescontoWhatsapp(entregaId){
   const d = computeDashboardDiario();
   const x = d.joined.find(j=>j.e.id===entregaId);
   if(!x) return;
   const produtor = x.v ? state.produtores.find(p=>p.id===x.v.produtorId) : null;
   const fone = normalizarTelefoneWpp(produtor?.telefone);
-  const texto = `Olá${produtor?', '+produtor.nome.split(' ')[0]:''}! Aviso sobre o romaneio nº ${x.e.nrRomaneio||'—'}: o desconto total desta carga ficou em ${fmtPct(x.descontoPct)} (limite configurado: ${fmtPct(d.limitePct)}). Peso bruto s/ tara: ${fmt(x.e.pesoLiquidoSemDesc,0)} kg · Saldo líquido: ${fmt(x.e.pesoLiquidoComDesc,0)} kg.`;
+  const fatoresTxt = (x.fatoresExcedidos||[]).map(f=>`${f.nome} ${fmtPct(f.valor)} (limite ${fmtPct(f.limite)})`).join(', ') || `desconto total de ${fmtPct(x.descontoPct)}`;
+  const texto = `Olá${produtor?', '+produtor.nome.split(' ')[0]:''}! Aviso sobre o romaneio nº ${x.e.nrRomaneio||'—'}: acima do limite em ${fatoresTxt}. Peso bruto s/ tara: ${fmt(x.e.pesoLiquidoSemDesc,0)} kg · Saldo líquido: ${fmt(x.e.pesoLiquidoComDesc,0)} kg.`;
   const url = fone ? `https://wa.me/${fone}?text=${encodeURIComponent(texto)}` : `https://wa.me/?text=${encodeURIComponent(texto)}`;
   if(!fone) toast('Este produtor não tem telefone cadastrado — escolha o contato manualmente no WhatsApp.', true);
   window.open(url, '_blank');
@@ -5352,19 +5414,22 @@ function paintDashboardDiario(){
 
   const alertaEl = document.getElementById('alertaDescontoDiario');
   if(!d.excedentes.length){
-    alertaEl.innerHTML = `<p class="small-note" style="margin:0;">✅ Nenhuma carga ${dashboardDiarioAcumulado?'':'hoje '}com desconto acima de ${fmtPct(d.limitePct)}.</p>`;
+    alertaEl.innerHTML = '';
   }else{
-    alertaEl.innerHTML = `<p style="color:var(--red);font-weight:700;margin:0 0 8px 0;">⚠️ ${d.excedentes.length} carga(s) com desconto acima de ${fmtPct(d.limitePct)}:</p>` +
+    alertaEl.innerHTML = `<div class="card" style="margin-bottom:14px;border-color:var(--red-dim);">
+      <p style="color:var(--red);font-weight:700;margin:0 0 8px 0;">⚠️ ${d.excedentes.length} carga(s) acima do limite configurado:</p>` +
       d.excedentes.map(x=>{
         const produtor = x.v ? produtorNome(x.v.produtorId) : '—';
+        const fatoresTxt = x.fatoresExcedidos.map(f=>`${f.nome} ${fmtPct(f.valor)} (limite ${fmtPct(f.limite)})`).join(' · ');
+        const mensagemPush = `Romaneio ${x.e.nrRomaneio||'—'}: desconto acima do limite em ${x.fatoresExcedidos.map(f=>f.nome).join(', ')} — ${fatoresTxt}.`;
         return `<div class="actions-row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);">
-          <span style="font-size:13px;">Romaneio <b>${x.e.nrRomaneio||'—'}</b> · ${produtor} · desconto de <b style="color:var(--red);">${fmtPct(x.descontoPct)}</b></span>
+          <span style="font-size:13px;">Romaneio <b>${x.e.nrRomaneio||'—'}</b> · ${produtor} · <b style="color:var(--red);">${fatoresTxt}</b></span>
           <div class="actions-row">
-            <button class="btn ghost sm" onclick="avisarProdutorDescontoWhatsapp('${x.e.id}')">📲 Avisar por WhatsApp</button>
-            ${x.v?.produtorId ? `<button class="btn ghost sm" onclick="enviarPushAlerta(usuarioIdParaProdutor('${x.v.produtorId}'),'Desconto acima do limite','Romaneio ${x.e.nrRomaneio||'—'}: desconto de ${fmtPct(x.descontoPct)} (limite: ${fmtPct(d.limitePct)}).')">🔔 Notificar por push</button>` : ''}
+            <button class="btn ghost sm" onclick="avisarProdutorDescontoWhatsapp('${x.e.id}')">📲 WhatsApp</button>
+            ${x.v?.produtorId ? `<button class="btn ghost sm" onclick="enviarPushAlerta(usuarioIdParaProdutor('${x.v.produtorId}'),'⚠️ Desconto acima do limite','${mensagemPush.replace(/'/g,"\\'")}')">🔔 Push</button>` : ''}
           </div>
         </div>`;
-      }).join('');
+      }).join('') + `</div>`;
   }
 
   document.getElementById('kpisDiarioLinha1').innerHTML = `
