@@ -422,12 +422,13 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
           <button class="interacoes-item" id="btnExportBackup" data-item-id="exportBackup">💾 Exportar backup completo (Excel)</button>
           <button class="interacoes-item" id="btnGerarDashboard" data-item-id="gerarDashboard">📊 Gerar Dashboard</button>
           <div class="interacoes-divider"></div>
+          <button class="interacoes-item" id="btnNotificacoesPush" data-item-id="notificacoesPush">🔔 Ativar notificações</button>
           <button class="interacoes-item" id="btnToggleTema" data-item-id="tema">⚙️ Configurações</button>
         </div>
       </div>
       <button class="interacoes-trigger" id="btnMaximizarTela" onclick="toggleTelaMaximizada()">⛶ Maximizar</button>
       <button class="interacoes-trigger" onclick="renderTelaFiltroContexto()">← Voltar</button>
-      <button class="interacoes-trigger" style="color:#ffb4b4;" onclick="logout()">🚪 Sair</button>
+      <button class="interacoes-trigger" style="color:var(--red);font-weight:800;border-color:var(--red-dim);" onclick="logout()">Sair</button>
     </div>
   </div>
   <input type="file" id="importInput" accept=".xlsx,.xls" style="display:none">
@@ -591,7 +592,8 @@ async function ativarNotificacoesPush(){
   }
   const s = getSessao();
   const usuario = s ? state.usuarios.find(u=>u.id===s.usuarioId) : null;
-  if(!usuario?.produtorId){ toast('Notificações push são só pra contas de produtor.', true); return; }
+  if(!usuario){ toast('Faça login antes de ativar as notificações.', true); return; }
+  if(usuario.papel==='motorista'){ toast('Notificações push não estão disponíveis para o acesso de motorista.', true); return; }
   try{
     const permissao = await Notification.requestPermission();
     if(permissao !== 'granted'){ toast('Você precisa permitir as notificações pra ativar isso.', true); return; }
@@ -606,7 +608,7 @@ async function ativarNotificacoesPush(){
     }
     await fetch(`${API_BASE}/push/subscribe`, {
       method:'POST', headers:{'Content-Type':'application/json','x-api-key':API_KEY},
-      body: JSON.stringify({ produtorId: usuario.produtorId, subscription: sub.toJSON() }),
+      body: JSON.stringify({ usuarioId: usuario.id, subscription: sub.toJSON() }),
     });
     toast('Notificações ativadas neste aparelho! 🔔');
     atualizarBotaoNotificacoes();
@@ -625,7 +627,7 @@ async function desativarNotificacoesPush(){
       const usuario = s ? state.usuarios.find(u=>u.id===s.usuarioId) : null;
       await fetch(`${API_BASE}/push/unsubscribe`, {
         method:'POST', headers:{'Content-Type':'application/json','x-api-key':API_KEY},
-        body: JSON.stringify({ produtorId: usuario?.produtorId, endpoint: sub.endpoint }),
+        body: JSON.stringify({ usuarioId: usuario?.id, endpoint: sub.endpoint }),
       });
       await sub.unsubscribe();
     }
@@ -633,42 +635,36 @@ async function desativarNotificacoesPush(){
     atualizarBotaoNotificacoes();
   }catch(e){ console.error(e); }
 }
-async function toggleNotificacoesProdutor(){
+async function toggleNotificacoesUsuario(){
   const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration('./sw.js') : null;
   const sub = reg ? await reg.pushManager.getSubscription() : null;
   if(sub) await desativarNotificacoesPush();
   else await ativarNotificacoesPush();
 }
-async function configurarBotaoNotificacoesProdutor(){
-  const heroActions = document.querySelector('.hero-actions');
-  if(!heroActions || document.getElementById('btnNotificacoesProdutor')) return;
-  const btn = document.createElement('button');
-  btn.className = 'interacoes-trigger';
-  btn.id = 'btnNotificacoesProdutor';
-  btn.textContent = '🔔 Ativar notificações';
-  btn.onclick = toggleNotificacoesProdutor;
-  heroActions.insertBefore(btn, heroActions.firstChild);
-  await atualizarBotaoNotificacoes();
-}
 async function atualizarBotaoNotificacoes(){
-  const btn = document.getElementById('btnNotificacoesProdutor');
+  const btn = document.getElementById('btnNotificacoesPush');
   if(!btn) return;
   if(!('serviceWorker' in navigator)){ btn.style.display = 'none'; return; }
   try{
     const reg = await navigator.serviceWorker.getRegistration('./sw.js');
     const sub = reg ? await reg.pushManager.getSubscription() : null;
-    btn.textContent = sub ? '🔔 Notificações ativadas' : '🔔 Ativar notificações';
+    btn.textContent = sub ? '🔕 Desativar notificações' : '🔔 Ativar notificações';
   }catch(e){}
 }
-async function enviarPushAlerta(produtorId, title, message, url){
+function usuarioIdParaProdutor(produtorId){
+  const u = state.usuarios.find(u=>u.papel==='produtor' && u.produtorId===produtorId);
+  return u ? u.id : null;
+}
+async function enviarPushAlerta(usuarioId, title, message, url){
+  if(!usuarioId){ toast('Este produtor ainda não tem um usuário de login cadastrado — cadastre um em Usuários pra poder notificar por push.', true); return; }
   try{
     const res = await fetch(`${API_BASE}/push/send`, {
       method:'POST', headers:{'Content-Type':'application/json','x-api-key':API_KEY},
-      body: JSON.stringify({ produtorId, title, message, url }),
+      body: JSON.stringify({ usuarioId, title, message, url }),
     });
     const data = await res.json();
     if(data.enviados>0) toast('Notificação enviada pro celular do produtor. 🔔');
-    else toast(data.aviso || 'Este produtor ainda não ativou notificações no aparelho dele.', true);
+    else toast(data.aviso || 'Este produtor ainda não ativou notificações em nenhum aparelho.', true);
   }catch(e){
     console.error(e);
     toast('Não consegui enviar a notificação push: ' + e.message, true);
@@ -2395,6 +2391,8 @@ function bindShellEvents(){
     openCadastroModal('linkMotorista');
   });
   document.getElementById('btnToggleTema').addEventListener('click', ()=>{ panel.classList.remove('aberto'); openCadastroModal('configuracoes'); });
+  document.getElementById('btnNotificacoesPush').addEventListener('click', ()=>{ panel.classList.remove('aberto'); toggleNotificacoesUsuario(); });
+  atualizarBotaoNotificacoes();
   restaurarOrdemInteracoes();
   inicializarDragReorderInteracoes();
 }
@@ -5333,7 +5331,7 @@ function paintDashboardDiario(){
           <span style="font-size:13px;">Romaneio <b>${x.e.nrRomaneio||'—'}</b> · ${produtor} · desconto de <b style="color:var(--red);">${fmtPct(x.descontoPct)}</b></span>
           <div class="actions-row">
             <button class="btn ghost sm" onclick="avisarProdutorDescontoWhatsapp('${x.e.id}')">📲 Avisar por WhatsApp</button>
-            ${x.v?.produtorId ? `<button class="btn ghost sm" onclick="enviarPushAlerta('${x.v.produtorId}','Desconto acima do limite','Romaneio ${x.e.nrRomaneio||'—'}: desconto de ${fmtPct(x.descontoPct)} (limite: ${fmtPct(d.limitePct)}).')">🔔 Notificar por push</button>` : ''}
+            ${x.v?.produtorId ? `<button class="btn ghost sm" onclick="enviarPushAlerta(usuarioIdParaProdutor('${x.v.produtorId}'),'Desconto acima do limite','Romaneio ${x.e.nrRomaneio||'—'}: desconto de ${fmtPct(x.descontoPct)} (limite: ${fmtPct(d.limitePct)}).')">🔔 Notificar por push</button>` : ''}
           </div>
         </div>`;
       }).join('');
@@ -6773,7 +6771,6 @@ function entrarNoApp(tabInicial){
   if(s.papel==='produtor'){
     window.modoSomenteLeitura = true;
     document.body.classList.add('read-only');
-    configurarBotaoNotificacoesProdutor();
   }
   if(s.papel==='admin'){
     if(s.podeGerenciarUsuarios===false) document.body.classList.add('sem-acesso-usuarios');
@@ -6824,7 +6821,7 @@ function renderTelaEntrada(){
         </div>
       </div>
       <button class="btn" style="width:100%;padding:14px;font-size:15px;" onclick="renderTelaFiltroContexto()">Avançar →</button>
-      <button class="btn ghost sm" style="width:100%;margin-top:10px;" onclick="logout()">🚪 Sair</button>
+      <button class="btn ghost sm" style="width:100%;margin-top:10px;color:var(--red);font-weight:800;border-color:var(--red-dim);" onclick="logout()">Sair</button>
     </div>
     ${modalCadastroHTML()}
   `;
