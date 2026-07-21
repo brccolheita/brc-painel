@@ -521,7 +521,7 @@ const state = {
   usuarios: [],    // {id, usuario, senha, papel:'admin'|'produtor'|'motorista', produtorId, expiraEm}
   romaneiosArmazem: [], // ENTRADA no armazém próprio (caminhão do campo pro silo, sem comprador ainda) — ver schema abaixo
   movimentosEstoque: [], // ver schema abaixo
-  config: { fazenda:'', safra:'2026/2027', cultura:'Milho', descontoModo:'fatores', contextoProdutores:[], contextoFazendas:[] },
+  config: { fazenda:'', safra:'2026/2027', cultura:'Milho', descontoModo:'fatores', contextoProdutores:[], contextoFazendas:[], limiteArmazemPct:80, umidadeSeguraPct:14, proximoNumeroComprovante:1 },
   loaded: false,
 };
 
@@ -782,7 +782,7 @@ async function loadState(){
       state.motoristas = c.motoristas || [];
       state.colheitas = c.colheitas || (c.talhoes||[]).map(t=>({id:t.id, culturaId:t.culturaId||null, variedadeId:t.variedadeId||null, area:t.area||0, talhao:t.nome||'', produtorId:t.produtorId||null}));
       state.culturas = c.culturas || [];
-      state.config = Object.assign({fazenda:'', safra:'2026/2027', cultura:'Milho', descontoModo:'fatores', contextoProdutores:[], contextoFazendas:[]}, c.config || {});
+      state.config = Object.assign({fazenda:'', safra:'2026/2027', cultura:'Milho', descontoModo:'fatores', contextoProdutores:[], contextoFazendas:[], limiteArmazemPct:80, umidadeSeguraPct:14, proximoNumeroComprovante:1}, c.config || {});
     }
   }catch(e){}
   try{
@@ -1015,6 +1015,11 @@ function calcSaldoFazendaKg(fazendaId, culturaId){
     .filter(m=>!culturaId || m.culturaId===culturaId)
     .reduce((acc,m)=> acc + (m.tipo==='saida' ? -num(m.pesoKg) : num(m.pesoKg)), 0);
 }
+function calcSaldoProdutorNaFazenda(produtorId, fazendaId, culturaId){
+  return movimentosDaFazenda(fazendaId)
+    .filter(m=>m.produtorId===produtorId && (!culturaId || m.culturaId===culturaId))
+    .reduce((acc,m)=> acc + (m.tipo==='saida' ? -num(m.pesoKg) : num(m.pesoKg)), 0);
+}
 function calcSaldoPorCulturaFazenda(fazendaId){
   const porCultura = {};
   movimentosDaFazenda(fazendaId).forEach(m=>{
@@ -1022,6 +1027,12 @@ function calcSaldoPorCulturaFazenda(fazendaId){
     porCultura[key] = (porCultura[key]||0) + (m.tipo==='saida' ? -num(m.pesoKg) : num(m.pesoKg));
   });
   return porCultura;
+}
+// Numeração sequencial do Comprovante de Depósito — documento interno (armazenagem própria, sem CDA/WA).
+function proximoNumeroComprovante(){
+  const atual = num(state.config.proximoNumeroComprovante) || 1;
+  state.config.proximoNumeroComprovante = atual + 1;
+  return 'CD-' + String(atual).padStart(6,'0');
 }
 function recalcRomaneioArmazem(r){
   r.pesoBruto = num(r.pesoBruto);
@@ -1034,6 +1045,42 @@ function recalcRomaneioArmazem(r){
     : +(r.pesoBruto - r.umidade - r.impureza - r.ardido).toFixed(2);
   r.scsLiquido = +(r.pesoLiquido/60).toFixed(4);
   return r;
+}
+/* ---------------- CAPACIDADE DE RECEBIMENTO (24h) — armazém + secador ----------------
+   Se o grão que está chegando estiver acima da umidade segura pra armazenagem, o secador
+   vira o gargalo (limitado pela vazão dele em 24h) em vez do espaço físico livre no armazém. */
+function umidadeMediaRecenteFazenda(fazendaId, horas){
+  const limiteTs = Date.now() - (horas||24)*3600*1000;
+  const recentes = state.romaneiosArmazem.filter(r=>r.fazendaId===fazendaId && new Date(r.createdAt||r.dataEntrada).getTime()>=limiteTs && num(r.pesoBruto)>0);
+  if(!recentes.length) return null;
+  const somaPeso = recentes.reduce((s,r)=>s+num(r.pesoBruto),0);
+  if(!somaPeso) return null;
+  // umidade aqui é registrada como kg de desconto, não %; convertendo pra % sobre o peso bruto pra comparar com o limite seguro.
+  const somaUmidadePct = recentes.reduce((s,r)=>s + (num(r.umidade)/num(r.pesoBruto)*100)*num(r.pesoBruto), 0);
+  return somaUmidadePct/somaPeso;
+}
+function recebidoHojeKg(fazendaId){
+  const hoje = todayISO();
+  return state.romaneiosArmazem.filter(r=>r.fazendaId===fazendaId && r.dataEntrada===hoje).reduce((s,r)=>s+num(r.pesoLiquido),0);
+}
+function capacidadeRecebimento24h(fazendaId){
+  const f = state.fazendas.find(x=>x.id===fazendaId);
+  if(!f) return null;
+  const capacidadeKg = num(f.armazemKg);
+  if(!capacidadeKg) return null;
+  const saldoKg = calcSaldoFazendaKg(fazendaId);
+  const espacoLivreKg = Math.max(0, capacidadeKg - saldoKg);
+  const secadorTonHora = num(f.secadorTonHora);
+  const umidadeSegura = num(state.config.umidadeSeguraPct ?? 14);
+  const umidadeMedia = umidadeMediaRecenteFazenda(fazendaId, 24);
+  const precisaSecar = umidadeMedia!==null && umidadeMedia>umidadeSegura;
+  let limiteKg = espacoLivreKg;
+  let gargalo = 'armazem';
+  if(precisaSecar && secadorTonHora>0){
+    const capSecador24hKg = secadorTonHora*1000*24;
+    if(capSecador24hKg < limiteKg){ limiteKg = capSecador24hKg; gargalo = 'secador'; }
+  }
+  return { limiteKg, espacoLivreKg, umidadeMedia, precisaSecar, secadorConfigurado: secadorTonHora>0, gargalo };
 }
 function upsertMovimentoEstoque(dados, origemTipo, refId){
   let mov = state.movimentosEstoque.find(m=>m.origem?.tipo===origemTipo && m.origem?.refId===refId);
@@ -1114,6 +1161,26 @@ function cardArmazemFazenda(f){
     <div style="border-top:1px solid var(--line);padding-top:8px;">${linhasCultura}</div>
   </div>`;
 }
+function cardRecebimento24hFazenda(f){
+  const info = capacidadeRecebimento24h(f.id);
+  if(!info) return '';
+  const recebidoKg = recebidoHojeKg(f.id);
+  const pct = info.limiteKg>0 ? (recebidoKg/info.limiteKg*100) : (recebidoKg>0 ? 100 : 0);
+  const recebidoTxt = unidadeGaugeArmazem==='sacas' ? `${fmt(recebidoKg/60,0)} sacas` : `${fmt(recebidoKg/1000,1)} t`;
+  const limiteTxt = unidadeGaugeArmazem==='sacas' ? `${fmt(info.limiteKg/60,0)} sacas` : `${fmt(info.limiteKg/1000,1)} t`;
+  const gargaloTxt = info.gargalo==='secador'
+    ? `Gargalo: secador (umidade média de entrada em ${fmt(info.umidadeMedia,1)}%, acima do limite seguro)`
+    : (info.umidadeMedia!==null ? `Gargalo: espaço livre no armazém (grão chegando seco, ${fmt(info.umidadeMedia,1)}% de umidade)` : 'Gargalo: espaço livre no armazém (sem entradas recentes pra estimar umidade)');
+  return `<div class="card">
+    <h3 style="margin:0 0 6px;">${f.nome} <span class="small-note" style="font-weight:500;">— recebimento (24h)</span></h3>
+    ${gaugeArmazemSVG(pct)}
+    <div style="text-align:center;margin:4px 0 12px;">
+      <div style="font-size:14.5px;"><b>${recebidoTxt}</b> recebidas hoje</div>
+      <div class="small-note">de até ${limiteTxt} nas próximas 24h</div>
+    </div>
+    <p class="small-note" style="border-top:1px solid var(--line);padding-top:8px;margin:0;">${gargaloTxt}${!info.secadorConfigurado && info.precisaSecar ? ' · cadastre a capacidade do secador pra um cálculo mais preciso' : ''}</p>
+  </div>`;
+}
 function renderEstoque(){
   const el = document.getElementById('tab-estoque');
   if(!el) return;
@@ -1143,22 +1210,34 @@ function renderEstoque(){
       <input type="file" id="importArmazemInputPDF" accept=".pdf" style="display:none">
     </div>
     <p class="small-note" style="margin-top:-10px;margin-bottom:14px;">Importar aceita planilha Excel ou relatório em PDF (lido por IA) — mesma lógica de Cargas &amp; Romaneios, mas sem NF/venda: é o caminhão saindo do campo direto pro silo.</p>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;margin-bottom:24px;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;margin-bottom:16px;">
       ${fazendas.map(f=>cardArmazemFazenda(f)).join('')}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;margin-bottom:24px;">
+      ${fazendas.map(f=>cardRecebimento24hFazenda(f)).join('')}
     </div>
 
     <div class="section-title">Movimentações</div>
     <div class="card">
       <div class="actions-row" style="margin-bottom:14px;">
         <button class="btn ghost sm" onclick="exportarRelatorioEstoquePDF()">🖨️ Exportar relatório PDF</button>
-        <button class="btn ghost sm" onclick="openCadastroModal('limiteArmazem')">🔔 Limite de aviso do armazém (${num(state.config.limiteArmazemPct ?? 80)}%)</button>
+        <button class="btn ghost sm" onclick="openCadastroModal('limiteArmazem')">⚙️ Configurações do armazém</button>
+      </div>
+      <div class="field" style="background:var(--bg-soft,rgba(0,0,0,.03));padding:12px;border-radius:8px;margin-bottom:16px;">
+        <label>📄 Comprovante de depósito — extrato consolidado por produtor</label>
+        <div class="form-grid">
+          <select id="fExtratoProdutor">${optionsProdutores()}</select>
+          <select id="fExtratoFazenda">${optionsFazendas()}</select>
+        </div>
+        <button class="btn ghost sm" style="margin-top:8px;" onclick="imprimirExtratoDepositoProdutor()">🖨️ Gerar extrato</button>
       </div>
       <div class="table-wrap"><table>
-        <thead><tr><th>Data</th><th>Tipo</th><th>Armazém</th><th>Cultura</th><th>Produtor</th><th>Kg</th><th>Sacas</th><th>Origem</th><th>Obs.</th></tr></thead>
+        <thead><tr><th>Data</th><th>Tipo</th><th>Armazém</th><th>Cultura</th><th>Produtor</th><th>Kg</th><th>Sacas</th><th>Origem</th><th>Obs.</th><th>Comprovante</th></tr></thead>
         <tbody>
-          ${!movsOrdenados.length ? emptyRow(9,'Nenhuma movimentação registrada ainda.') : movsOrdenados.map(m=>{
+          ${!movsOrdenados.length ? emptyRow(10,'Nenhuma movimentação registrada ainda.') : movsOrdenados.map(m=>{
             const tipoTag = m.tipo==='entrada' ? '<span class="tag ok">Entrada</span>' : m.tipo==='saida' ? '<span class="tag neg">Saída</span>' : '<span class="tag pending">Ajuste</span>';
             const origemTxt = m.origem?.tipo==='romaneioArmazem' ? 'Romaneio de armazém' : m.origem?.tipo==='entrega' ? 'Venda/entrega' : 'Manual';
+            const rom = m.origem?.tipo==='romaneioArmazem' ? state.romaneiosArmazem.find(x=>x.id===m.origem.refId) : null;
             return `<tr>
               <td>${dataBR(m.data)}</td><td>${tipoTag}</td>
               <td>${state.fazendas.find(f=>f.id===m.fazendaId)?.nome || '—'}</td>
@@ -1167,6 +1246,7 @@ function renderEstoque(){
               <td>${fmt(m.pesoKg,0)}</td><td>${fmt(m.scs,1)}</td>
               <td class="small-note">${origemTxt}</td>
               <td class="small-note">${m.obs||''}</td>
+              <td>${rom ? `<button class="btn ghost sm" onclick="imprimirComprovanteDeposito('${rom.id}')">🖨️ ${rom.numeroComprovante||''}</button>` : '—'}</td>
             </tr>`;
           }).join('')}
         </tbody>
@@ -1759,14 +1839,15 @@ function converterArmazemParaSacas(){
 function salvarFazenda(){
   const nome = document.getElementById('fFazendaNome').value.trim();
   const armazemKg = num(document.getElementById('fFazendaArmazemKg').value);
+  const secadorTonHora = num(document.getElementById('fFazendaSecadorTonHora').value);
   if(!nome){ toast('Informe o nome da fazenda.', true); return; }
   const overlay = document.getElementById('modalCadastro');
   const id = overlay.dataset.id;
   if(id){
     const f = state.fazendas.find(x=>x.id===id);
-    Object.assign(f, {nome, armazemKg});
+    Object.assign(f, {nome, armazemKg, secadorTonHora});
   } else {
-    state.fazendas.push({id: uid('faz'), nome, armazemKg, talhoes: novaFazendaTalhoesTemp});
+    state.fazendas.push({id: uid('faz'), nome, armazemKg, secadorTonHora, talhoes: novaFazendaTalhoesTemp});
     novaFazendaTalhoesTemp = [];
   }
   saveCadastros(); renderAllOuAtualizarTelaAcesso(); closeCadastroModal(); toast('Fazenda salva.');
@@ -3177,6 +3258,11 @@ function openCadastroModal(kind, id){
         <p class="small-note" id="conversaoArmazemInfo" style="margin-top:6px;">${f?.armazemKg ? fmt(f.armazemKg/60,1)+' sacas (60 kg)' : ''}</p>
       </div>
       <div class="field">
+        <label>Secador — capacidade de secagem <span class="small-note">(toneladas por hora)</span></label>
+        <input id="fFazendaSecadorTonHora" type="number" step="0.1" value="${f?.secadorTonHora||''}" placeholder="Ex: 12 (deixe em branco se não tiver secador)">
+        <p class="small-note" style="margin-top:6px;">Usado pra calcular o medidor de capacidade de recebimento nas próximas 24h: se o grão chegando estiver acima da umidade segura, o secador vira o gargalo em vez do espaço livre no armazém.</p>
+      </div>
+      <div class="field">
         <label>Talhões desta fazenda <span class="small-note">(nome e área definitivos — a variedade é escolhida depois, no operacional)</span></label>
         <div id="listaTalhoesFazenda">${renderListaTalhoesFazenda(f?f.id:null)}</div>
         <div class="actions-row" style="margin-top:8px;gap:6px;">
@@ -3661,12 +3747,16 @@ function openCadastroModal(kind, id){
   }
 
   if(kind==='limiteArmazem'){
-    title.textContent = 'Limite de aviso — armazém';
+    title.textContent = 'Configurações do armazém';
     const atual = num(state.config.limiteArmazemPct ?? 80);
+    const umidadeSegura = num(state.config.umidadeSeguraPct ?? 14);
     body.innerHTML = `
       <p class="small-note" style="margin-top:-4px;">Quando o armazém atingir esse percentual da capacidade cadastrada, os usuários com push ativo recebem um aviso automático.</p>
       <div class="field"><label>Avisar ao atingir</label>
         <div class="actions-row"><input type="number" id="fLimiteArmazemPct" value="${atual}" step="1" min="1" max="100" style="flex:1;"><span class="small-note">%</span></div>
+      </div>
+      <div class="field"><label>Umidade segura para armazenagem <span class="small-note">(acima disso, considera que precisa passar pelo secador)</span></label>
+        <div class="actions-row"><input type="number" id="fUmidadeSeguraPct" value="${umidadeSegura}" step="0.5" min="1" max="30" style="flex:1;"><span class="small-note">%</span></div>
       </div>
       <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
         <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
@@ -3719,7 +3809,7 @@ async function salvarRomaneioArmazem(){
 
   let r = id ? state.romaneiosArmazem.find(x=>x.id===id) : null;
   const novo = !r;
-  if(!r){ r = { id: uid('romarm'), createdAt: new Date().toISOString() }; }
+  if(!r){ r = { id: uid('romarm'), createdAt: new Date().toISOString(), numeroComprovante: proximoNumeroComprovante() }; }
   Object.assign(r, {
     fazendaId, produtorId, culturaId,
     safra: document.getElementById('fRomArmazemSafra').value.trim(),
@@ -3744,6 +3834,7 @@ async function salvarRomaneioArmazem(){
   }, 'romaneioArmazem', r.id);
 
   await saveEstoque();
+  if(novo) saveCadastros(); // persiste o contador sequencial do comprovante
   renderEstoque();
   closeCadastroModal();
   toast('Entrada registrada no armazém.');
@@ -3782,10 +3873,12 @@ async function salvarAjusteEstoque(){
 }
 function salvarLimiteArmazem(){
   state.config.limiteArmazemPct = num(document.getElementById('fLimiteArmazemPct').value) || 80;
+  state.config.umidadeSeguraPct = num(document.getElementById('fUmidadeSeguraPct').value) || 14;
   saveCadastros();
   closeCadastroModal();
   renderEstoque();
-  toast('Limite de aviso do armazém atualizado.');
+  renderGaugesDashboard();
+  toast('Configurações do armazém atualizadas.');
 }
 // Dispara um push automático quando o armazém cruza (pra cima) o percentual configurado — e "reseta" o
 // aviso quando o nível volta pra baixo do limite, pra poder avisar de novo numa próxima vez que encher.
@@ -3861,6 +3954,103 @@ function exportarRelatorioEstoquePDF(){
   win.document.close();
 }
 
+/* ---- Comprovante de Depósito (armazenagem própria, sem CDA/WA) ----
+   Documento interno que comprova, pro produtor, o que ele depositou no armazém e qual o
+   saldo dele até aquele momento. Não é um título negociável (isso exigiria CDA/WA registrado). */
+function avisoSemWarrant(){
+  return `<p style="font-size:10.5px;color:#555;border-top:1px dashed #999;padding-top:10px;margin-top:18px;">
+    Este documento comprova o depósito de grãos em regime de <b>armazenagem própria</b> e não constitui
+    Certificado de Depósito Agropecuário (CDA) nem Warrant Agropecuário (WA), não sendo título negociável
+    perante terceiros. Serve apenas como comprovante interno de custódia entre BR Consult e o produtor depositante.
+  </p>`;
+}
+function imprimirComprovanteDeposito(romaneioId){
+  const r = state.romaneiosArmazem.find(x=>x.id===romaneioId);
+  if(!r){ toast('Não encontrei esse romaneio de armazém.', true); return; }
+  const f = state.fazendas.find(x=>x.id===r.fazendaId);
+  const saldoAtualProdutor = calcSaldoProdutorNaFazenda(r.produtorId, r.fazendaId, r.culturaId);
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Comprovante de Depósito ${r.numeroComprovante||''}</title>
+    <style>
+      body{ font-family: Arial, Helvetica, sans-serif; padding:32px; color:#111; }
+      h1{ font-size:17px; margin-bottom:2px; }
+      h2{ font-size:13px; color:#555; font-weight:normal; margin-top:0; }
+      table{ width:100%; border-collapse:collapse; font-size:12.5px; margin-top:16px; }
+      td, th{ border:1px solid #ccc; padding:7px 10px; text-align:left; }
+      th{ background:#f0f0f0; width:38%; }
+      .totais{ margin-top:14px; font-size:13.5px; }
+      #btnImprimir{ margin-top:24px; padding:10px 18px; font-size:14px; cursor:pointer; }
+      @media print{ #btnImprimir{ display:none; } }
+    </style>
+  </head><body>
+    <h1>Comprovante de Depósito de Grãos — BRC Colheita</h1>
+    <h2>Nº ${r.numeroComprovante || '—'} · Emitido em ${new Date().toLocaleString('pt-BR')}</h2>
+    <table>
+      <tr><th>Produtor</th><td>${produtorNome(r.produtorId)}</td></tr>
+      <tr><th>Armazém</th><td>${f?.nome||'—'}</td></tr>
+      <tr><th>Cultura / Safra</th><td>${culturaNome(r.culturaId)} — ${r.safra||'—'}</td></tr>
+      <tr><th>Data de entrada</th><td>${dataBR(r.dataEntrada)}</td></tr>
+      <tr><th>Motorista / Placa</th><td>${r.motorista||'—'} / ${r.placa||'—'}</td></tr>
+      <tr><th>Nº do romaneio</th><td>${r.nrRomaneio||'—'}</td></tr>
+      <tr><th>Peso bruto</th><td>${fmt(r.pesoBruto,0)} kg</td></tr>
+      <tr><th>Descontos (tara/umidade/impureza/ardido)</th><td>${fmt((r.tara||0)+(r.umidade||0)+(r.impureza||0)+(r.ardido||0),0)} kg</td></tr>
+      <tr><th>Peso líquido depositado</th><td><b>${fmt(r.pesoLiquido,0)} kg (${fmt(r.scsLiquido,1)} sacas)</b></td></tr>
+    </table>
+    <p class="totais">Saldo atual deste produtor nesta cultura/armazém: <b>${fmt(saldoAtualProdutor,0)} kg (${fmt(saldoAtualProdutor/60,1)} sacas)</b></p>
+    ${r.obs ? `<p style="font-size:12px;color:#555;">Observações: ${r.obs}</p>` : ''}
+    ${avisoSemWarrant()}
+    <button id="btnImprimir" onclick="window.print()">🖨️ Salvar como PDF / Imprimir</button>
+  </body></html>`;
+  const win = window.open('', '_blank');
+  if(!win){ toast('Seu navegador bloqueou a nova aba. Permita pop-ups para este site e tente de novo.', true); return; }
+  win.document.write(html);
+  win.document.close();
+}
+function imprimirExtratoDepositoProdutor(){
+  const produtorId = document.getElementById('fExtratoProdutor')?.value;
+  const fazendaId = document.getElementById('fExtratoFazenda')?.value;
+  if(!produtorId || !fazendaId){ toast('Selecione o produtor e o armazém.', true); return; }
+  const f = state.fazendas.find(x=>x.id===fazendaId);
+  const movs = state.movimentosEstoque
+    .filter(m=>m.produtorId===produtorId && m.fazendaId===fazendaId)
+    .sort((a,b)=>(a.data||'').localeCompare(b.data||'') || (a.createdAt||'').localeCompare(b.createdAt||''));
+  let saldoCorrido = 0;
+  const linhas = movs.map(m=>{
+    saldoCorrido += (m.tipo==='saida' ? -num(m.pesoKg) : num(m.pesoKg));
+    const tipoTxt = m.tipo==='entrada' ? 'Entrada' : m.tipo==='saida' ? 'Saída' : 'Ajuste';
+    const rom = m.origem?.tipo==='romaneioArmazem' ? state.romaneiosArmazem.find(x=>x.id===m.origem.refId) : null;
+    return `<tr>
+      <td>${dataBR(m.data)}</td><td>${tipoTxt}</td><td>${culturaNome(m.culturaId)}</td>
+      <td>${rom?.numeroComprovante || (m.origem?.tipo==='entrega' ? 'Venda/entrega' : '—')}</td>
+      <td>${fmt(m.pesoKg,0)}</td><td>${fmt(saldoCorrido,0)}</td>
+    </tr>`;
+  }).join('');
+  const saldoFinal = calcSaldoProdutorNaFazenda(produtorId, fazendaId);
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Extrato de Depósito — ${produtorNome(produtorId)}</title>
+    <style>
+      body{ font-family: Arial, Helvetica, sans-serif; padding:32px; color:#111; }
+      h1{ font-size:17px; margin-bottom:2px; } h2{ font-size:13px; color:#555; font-weight:normal; margin-top:0; }
+      table{ width:100%; border-collapse:collapse; font-size:12px; margin-top:16px; }
+      th, td{ border:1px solid #ccc; padding:6px 8px; text-align:left; } th{ background:#f0f0f0; }
+      .totais{ margin-top:14px; font-size:14px; }
+      #btnImprimir{ margin-top:24px; padding:10px 18px; font-size:14px; cursor:pointer; }
+      @media print{ #btnImprimir{ display:none; } }
+    </style>
+  </head><body>
+    <h1>Extrato de Depósito de Grãos — BRC Colheita</h1>
+    <h2>Produtor: ${produtorNome(produtorId)} · Armazém: ${f?.nome||'—'} · Emitido em ${new Date().toLocaleString('pt-BR')}</h2>
+    <table>
+      <thead><tr><th>Data</th><th>Tipo</th><th>Cultura</th><th>Comprovante/Origem</th><th>Kg</th><th>Saldo acumulado (kg)</th></tr></thead>
+      <tbody>${linhas || '<tr><td colspan="6" style="text-align:center;">Nenhuma movimentação para este produtor neste armazém.</td></tr>'}</tbody>
+    </table>
+    <p class="totais">Saldo atual: <b>${fmt(saldoFinal,0)} kg (${fmt(saldoFinal/60,1)} sacas)</b></p>
+    ${avisoSemWarrant()}
+    <button id="btnImprimir" onclick="window.print()">🖨️ Salvar como PDF / Imprimir</button>
+  </body></html>`;
+  const win = window.open('', '_blank');
+  if(!win){ toast('Seu navegador bloqueou a nova aba. Permita pop-ups para este site e tente de novo.', true); return; }
+  win.document.write(html);
+  win.document.close();
+}
 function optionsEmpresas(selectedId){
   if(!state.empresas.length) return `<option value="">Cadastre uma empresa primeiro</option>`;
   return state.empresas.map(e=>`<option value="${e.id}" ${e.id===selectedId?'selected':''}>${e.nome}</option>`).join('');
@@ -5699,7 +5889,6 @@ function renderDashboard(){
         </div>
       </div>
       </div>
-      <div id="estoqueGaugesGeral"></div>
 
       <footer class="dash-footer" id="footerNote">App de Colheita.</footer>
     </div>
@@ -5709,7 +5898,8 @@ function renderDashboard(){
   paintDashboardDiario();
   renderGaugesDashboard();
 }
-// Mesmo medidor da aba Estoque, só que resumido, aparecendo nos dois dashboards (diário e geral).
+// Mesmo medidor da aba Estoque, só que resumido — aparece só no Dashboard Diário (é a visão
+// operacional do dia a dia, onde a capacidade de recebimento nas próximas 24h faz mais sentido).
 // Some sozinho se a cultura ativa for Algodão ou se nenhuma fazenda do contexto tiver capacidade cadastrada.
 function renderGaugesDashboard(){
   const semArmazem = culturaEhAlgodao((state.culturas.find(c=>c.nome===state.config.cultura)||{}).id)
@@ -5720,14 +5910,15 @@ function renderGaugesDashboard(){
       <h2>Estoque de Armazém
         <button class="btn ghost sm leitura-ok" onclick="toggleUnidadeGaugeArmazem()">⇄ Ver em ${unidadeGaugeArmazem==='sacas'?'toneladas':'sacas'}</button>
       </h2>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-bottom:14px;">
         ${fazendas.map(f=>cardArmazemFazenda(f)).join('')}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;">
+        ${fazendas.map(f=>cardRecebimento24hFazenda(f)).join('')}
       </div>
     </section>`;
   const diario = document.getElementById('estoqueGaugesDiario');
-  const geral = document.getElementById('estoqueGaugesGeral');
   if(diario) diario.innerHTML = html;
-  if(geral) geral.innerHTML = html;
 }
 function mostrarSubDashboard(qual){
   document.getElementById('subDashDiario').style.display = qual==='diario' ? '' : 'none';
@@ -6975,7 +7166,7 @@ function handleImportArmazem(rows){
     if(motorista) getOrCreateMotorista(motorista, placa);
 
     const r = {
-      id: uid('romarm'), fazendaId, produtorId, culturaId,
+      id: uid('romarm'), fazendaId, produtorId, culturaId, numeroComprovante: proximoNumeroComprovante(),
       safra: keys.safra ? String(row[keys.safra]||'').trim() : (state.config.safra||''),
       motorista, placa,
       nrRomaneio: keys.romaneio ? String(row[keys.romaneio]||'').trim() : '',
