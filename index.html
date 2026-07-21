@@ -458,6 +458,7 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
     <button class="tab-btn" data-tab="cargas">Cargas &amp; Romaneios</button>
     <button class="tab-btn" data-tab="conferencia">Conferência<span class="badge-count" id="badgeConferencia" style="display:none">0</span></button>
     <button class="tab-btn" data-tab="contratos">Contratos &amp; Saldos</button>
+    <button class="tab-btn" data-tab="estoque" id="tabBtnEstoque">Estoque</button>
     <button class="tab-btn" data-tab="dashboard">Dashboard</button>
     <button class="tab-btn" data-tab="usuarios">Usuários</button>
   </nav>
@@ -468,6 +469,7 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
   <section class="tab-panel" id="tab-cargas"></section>
   <section class="tab-panel" id="tab-conferencia"></section>
   <section class="tab-panel" id="tab-contratos"></section>
+  <section class="tab-panel" id="tab-estoque"></section>
   <section class="tab-panel" id="tab-dashboard"></section>
   <section class="tab-panel" id="tab-usuarios"></section>
 </main>
@@ -517,9 +519,23 @@ const state = {
   vendas: [],      // ver schema abaixo
   entregas: [],    // ver schema abaixo
   usuarios: [],    // {id, usuario, senha, papel:'admin'|'produtor'|'motorista', produtorId, expiraEm}
+  romaneiosArmazem: [], // ENTRADA no armazém próprio (caminhão do campo pro silo, sem comprador ainda) — ver schema abaixo
+  movimentosEstoque: [], // ver schema abaixo
   config: { fazenda:'', safra:'2026/2027', cultura:'Milho', descontoModo:'fatores', contextoProdutores:[], contextoFazendas:[] },
   loaded: false,
 };
+
+/* ROMANEIO DE ARMAZÉM — entrada de grão no armazém próprio, direto do campo, sem comprador definido ainda.
+{ id, fazendaId, produtorId, culturaId, variedadeId, safra, colheitaId,
+  motorista, placa, nrRomaneio, dataEntrada,
+  pesoBruto, tara, umidade, impureza, ardido,
+  pesoLiquido, scsLiquido, obs, createdAt, updatedAt }
+
+MOVIMENTO DE ESTOQUE — todo lançamento de entrada/saída/ajuste no armazém (fazenda = armazém, capacidade em fazenda.armazemKg).
+{ id, tipo:'entrada'|'saida'|'ajuste', fazendaId, produtorId, culturaId, safra,
+  pesoKg, scs, origem:{ tipo:'romaneioArmazem'|'entrega'|'manual', refId }, data, obs, createdAt, updatedAt }
+Saldo = soma(entrada) - soma(saida) + soma(ajuste, já com sinal). Algodão não participa deste controle.
+*/
 
 /* VENDA — a nota fiscal de venda original (produtor → empresa compradora)
 { id, empresaId, produtorId, contratoId, nrNF, dataNF, pesoFiscal, valorFiscal, chaveNFe, createdAt }
@@ -752,6 +768,7 @@ const STORE_KEY_CADASTROS = 'cadastros';
 const STORE_KEY_VENDAS = 'vendas';
 const STORE_KEY_ENTREGAS = 'entregas';
 const STORE_KEY_USUARIOS = 'usuarios';
+const STORE_KEY_ESTOQUE = 'estoque';
 
 async function loadState(){
   try{
@@ -779,6 +796,14 @@ async function loadState(){
   try{
     const r4 = await window.storage.get(STORE_KEY_USUARIOS, true);
     if(r4 && r4.value){ state.usuarios = JSON.parse(r4.value) || []; }
+  }catch(e){}
+  try{
+    const r5 = await window.storage.get(STORE_KEY_ESTOQUE, true);
+    if(r5 && r5.value){
+      const est = JSON.parse(r5.value);
+      state.romaneiosArmazem = est.romaneiosArmazem || [];
+      state.movimentosEstoque = est.movimentosEstoque || [];
+    }
   }catch(e){}
   if(!state.culturas.length){
     state.culturas = ['Soja','Milho','Algodão'].map(nome=>({id: uid('cult'), nome, variedades: []}));
@@ -810,6 +835,13 @@ async function saveVendas(){
 async function saveEntregas(){
   try{ await window.storage.set(STORE_KEY_ENTREGAS, JSON.stringify(state.entregas), true); }
   catch(e){ toast('Não foi possível salvar as entregas. Tente novamente.', true); }
+}
+async function saveEstoque(){
+  try{
+    await window.storage.set(STORE_KEY_ESTOQUE, JSON.stringify({
+      romaneiosArmazem: state.romaneiosArmazem, movimentosEstoque: state.movimentosEstoque
+    }), true);
+  }catch(e){ toast('Não foi possível salvar o estoque. Tente novamente.', true); }
 }
 
 /* ---------------- HELPERS DE BUSCA / JOIN ---------------- */
@@ -964,6 +996,160 @@ function calcSaldos(){
     const saldoAEntregarKg = volumeKg - entregueKg; // positivo = falta entregar; negativo = excedente
     return { contrato:c, cargas: entregasDoContrato.length, scsEntregues, entregueKg, isVenda, volume, volumeKg, saldo, saldoAEntregarKg };
   });
+}
+
+/* ---------------- ESTOQUE DE ARMAZÉM (armazém = fazenda; capacidade em fazenda.armazemKg) ---------------- */
+function culturaEhAlgodao(culturaId){
+  const c = culturaId ? culturaById(culturaId) : null;
+  return !!(c && stripAccents(c.nome)==='algodao');
+}
+function fazendasDoContextoEstoque(){
+  const ids = state.config.contextoFazendas || [];
+  return ids.length ? state.fazendas.filter(f=>ids.includes(f.id)) : state.fazendas;
+}
+function movimentosDaFazenda(fazendaId){
+  return state.movimentosEstoque.filter(m=>m.fazendaId===fazendaId);
+}
+function calcSaldoFazendaKg(fazendaId, culturaId){
+  return movimentosDaFazenda(fazendaId)
+    .filter(m=>!culturaId || m.culturaId===culturaId)
+    .reduce((acc,m)=> acc + (m.tipo==='saida' ? -num(m.pesoKg) : num(m.pesoKg)), 0);
+}
+function calcSaldoPorCulturaFazenda(fazendaId){
+  const porCultura = {};
+  movimentosDaFazenda(fazendaId).forEach(m=>{
+    const key = m.culturaId || '_sem_cultura';
+    porCultura[key] = (porCultura[key]||0) + (m.tipo==='saida' ? -num(m.pesoKg) : num(m.pesoKg));
+  });
+  return porCultura;
+}
+function recalcRomaneioArmazem(r){
+  r.pesoBruto = num(r.pesoBruto);
+  r.tara = num(r.tara);
+  r.umidade = num(r.umidade);
+  r.impureza = num(r.impureza);
+  r.ardido = num(r.ardido);
+  r.pesoLiquido = r.tara
+    ? +(r.pesoBruto - r.tara).toFixed(2)
+    : +(r.pesoBruto - r.umidade - r.impureza - r.ardido).toFixed(2);
+  r.scsLiquido = +(r.pesoLiquido/60).toFixed(4);
+  return r;
+}
+function upsertMovimentoEstoque(dados, origemTipo, refId){
+  let mov = state.movimentosEstoque.find(m=>m.origem?.tipo===origemTipo && m.origem?.refId===refId);
+  if(!mov){
+    mov = { id: uid('mov'), origem:{tipo:origemTipo, refId}, createdAt: new Date().toISOString() };
+    state.movimentosEstoque.push(mov);
+  }
+  Object.assign(mov, dados, { updatedAt: new Date().toISOString() });
+  return mov;
+}
+// Gera (ou atualiza) a SAÍDA de estoque automaticamente quando uma entrega comercial (Cargas & Romaneios)
+// é confirmada como 'completo'. A fazenda de origem é descoberta pela cadeia entrega → venda → colheita → fazenda.
+// Se essa cadeia não existir (venda sem colheita vinculada), não dá pra saber de qual armazém saiu — não gera movimento.
+function gerarSaidaEstoqueAutomatica(entrega){
+  if(!entrega || entrega.status!=='completo') return;
+  const venda = vendaById(entrega.vendaId);
+  const colheita = venda && venda.colheitaId ? state.colheitas.find(c=>c.id===venda.colheitaId) : null;
+  const fazendaId = colheita ? colheita.fazendaId : null;
+  if(!fazendaId) return;
+  const culturaId = colheita.culturaId || null;
+  if(culturaEhAlgodao(culturaId)) return; // algodão fica fora do controle de estoque
+  const pesoKg = num(entrega.pesoLiquidoSemDesc) || num(entrega.pesoBruto) || 0;
+  if(!pesoKg) return;
+  upsertMovimentoEstoque({
+    tipo:'saida', fazendaId, produtorId: venda.produtorId||null, culturaId,
+    safra: state.config.safra||'', pesoKg, scs: +(pesoKg/60).toFixed(4),
+    data: entrega.dataSaida || todayISO(), obs:''
+  }, 'entrega', entrega.id);
+  saveEstoque();
+  verificarLimiteArmazemEAvisar(fazendaId);
+}
+
+function gaugeArmazemSVG(pctBruto){
+  const pct = Math.max(0, Math.min(100, pctBruto||0));
+  const cor = pct>=90 ? 'var(--red)' : (pct>=70 ? 'var(--gold)' : 'var(--lime)');
+  const raio = 80, cx = 100, cy = 100;
+  const circunf = Math.PI*raio;
+  const dash = (pct/100)*circunf;
+  const angRad = (180-(pct/100)*180) * Math.PI/180;
+  const nx = (cx + (raio-18)*Math.cos(angRad)).toFixed(1);
+  const ny = (cy - (raio-18)*Math.sin(angRad)).toFixed(1);
+  return `<svg viewBox="0 0 200 116" style="width:100%;max-width:200px;display:block;margin:0 auto;">
+    <path d="M ${cx-raio} ${cy} A ${raio} ${raio} 0 0 1 ${cx+raio} ${cy}" fill="none" stroke="var(--line)" stroke-width="14" stroke-linecap="round"/>
+    <path d="M ${cx-raio} ${cy} A ${raio} ${raio} 0 0 1 ${cx+raio} ${cy}" fill="none" stroke="${cor}" stroke-width="14" stroke-linecap="round" stroke-dasharray="${dash.toFixed(1)} ${circunf.toFixed(1)}"/>
+    <line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="${cx}" cy="${cy}" r="6" fill="var(--ink)"/>
+    <text x="${cx}" y="${cy-16}" text-anchor="middle" font-size="24" font-weight="700" fill="${cor}" font-family="'JetBrains Mono',monospace">${fmt(pctBruto,0)}%</text>
+  </svg>`;
+}
+function cardArmazemFazenda(f){
+  const saldoKg = calcSaldoFazendaKg(f.id);
+  const capacidadeKg = num(f.armazemKg);
+  const pct = capacidadeKg ? (saldoKg/capacidadeKg*100) : 0;
+  const porCultura = calcSaldoPorCulturaFazenda(f.id);
+  const linhasCultura = Object.entries(porCultura).filter(([,kg])=>Math.abs(kg)>0.01).map(([culturaId,kg])=>{
+    const nome = culturaId==='_sem_cultura' ? 'Sem cultura definida' : (culturaById(culturaId)?.nome || '—');
+    return `<div class="actions-row" style="justify-content:space-between;font-size:12.5px;padding:3px 0;">
+      <span style="color:var(--ink-dim);">${nome}</span><span>${fmt(kg,0)} kg (${fmt(kg/60,1)} sc)</span>
+    </div>`;
+  }).join('') || '<p class="small-note" style="margin:4px 0 0;">Nenhuma movimentação ainda.</p>';
+  return `<div class="card">
+    <h3 style="margin:0 0 6px;">${f.nome}</h3>
+    ${capacidadeKg ? gaugeArmazemSVG(pct) : '<p class="small-note">Defina a capacidade do armazém no cadastro desta fazenda pra ver o medidor.</p>'}
+    <div style="text-align:center;margin:4px 0 12px;">
+      <div style="font-size:15px;font-weight:700;">${fmt(saldoKg,0)} kg <span class="small-note" style="font-weight:500;">(${fmt(saldoKg/60,1)} sc)</span></div>
+      ${capacidadeKg ? `<div class="small-note">de ${fmt(capacidadeKg,0)} kg (${fmt(capacidadeKg/60,1)} sc) de capacidade</div>` : ''}
+    </div>
+    <div style="border-top:1px solid var(--line);padding-top:8px;">${linhasCultura}</div>
+  </div>`;
+}
+function renderEstoque(){
+  const el = document.getElementById('tab-estoque');
+  if(!el) return;
+  if(culturaEhAlgodao((state.culturas.find(c=>c.nome===state.config.cultura)||{}).id) || state.config.cultura==='Algodão'){
+    el.innerHTML = '';
+    return;
+  }
+  const fazendas = armazensCadastradosNoContexto();
+  if(!fazendas.length){ el.innerHTML = ''; return; }
+  const movsOrdenados = [...state.movimentosEstoque].sort((a,b)=>(b.data||'').localeCompare(a.data||'') || (b.createdAt||'').localeCompare(a.createdAt||''));
+  el.innerHTML = `
+    <div class="section-title">Estoque de Armazém</div>
+    <div class="actions-row" style="margin-bottom:16px;">
+      <button class="btn" onclick="openCadastroModal('romaneioArmazem')">➕ Registrar entrada no armazém</button>
+      <button class="btn ghost" onclick="openCadastroModal('ajusteEstoque')">⚖️ Ajuste manual</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;margin-bottom:24px;">
+      ${fazendas.map(f=>cardArmazemFazenda(f)).join('')}
+    </div>
+
+    <div class="section-title">Movimentações</div>
+    <div class="card">
+      <div class="actions-row" style="margin-bottom:14px;">
+        <button class="btn ghost sm" onclick="exportarRelatorioEstoquePDF()">🖨️ Exportar relatório PDF</button>
+        <button class="btn ghost sm" onclick="openCadastroModal('limiteArmazem')">🔔 Limite de aviso do armazém (${num(state.config.limiteArmazemPct ?? 80)}%)</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Data</th><th>Tipo</th><th>Armazém</th><th>Cultura</th><th>Produtor</th><th>Kg</th><th>Sacas</th><th>Origem</th><th>Obs.</th></tr></thead>
+        <tbody>
+          ${!movsOrdenados.length ? emptyRow(9,'Nenhuma movimentação registrada ainda.') : movsOrdenados.map(m=>{
+            const tipoTag = m.tipo==='entrada' ? '<span class="tag ok">Entrada</span>' : m.tipo==='saida' ? '<span class="tag neg">Saída</span>' : '<span class="tag pending">Ajuste</span>';
+            const origemTxt = m.origem?.tipo==='romaneioArmazem' ? 'Romaneio de armazém' : m.origem?.tipo==='entrega' ? 'Venda/entrega' : 'Manual';
+            return `<tr>
+              <td>${dataBR(m.data)}</td><td>${tipoTag}</td>
+              <td>${state.fazendas.find(f=>f.id===m.fazendaId)?.nome || '—'}</td>
+              <td>${m.culturaId ? culturaNome(m.culturaId) : '—'}</td>
+              <td>${m.produtorId ? produtorNome(m.produtorId) : '—'}</td>
+              <td>${fmt(m.pesoKg,0)}</td><td>${fmt(m.scs,1)}</td>
+              <td class="small-note">${origemTxt}</td>
+              <td class="small-note">${m.obs||''}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table></div>
+    </div>
+  `;
 }
 
 /* ---------------- AGREGAÇÕES PARA O DASHBOARD ---------------- */
@@ -1205,9 +1391,26 @@ function renderAll(){
   renderCargas();
   renderConferencia();
   renderContratos();
+  atualizarVisibilidadeAbaEstoque();
+  renderEstoque();
   renderDashboard();
   renderUsuarios();
   updateBadge();
+}
+// Algodão não tem controle de estoque de armazém, e se nenhuma fazenda do contexto tiver capacidade
+// cadastrada, significa que o produtor não possui armazém — nesses casos a aba e o medidor ficam ocultos.
+function armazensCadastradosNoContexto(){
+  return fazendasDoContextoEstoque().filter(f=>num(f.armazemKg)>0);
+}
+function atualizarVisibilidadeAbaEstoque(){
+  const semArmazem = armazensCadastradosNoContexto().length===0;
+  const ocultar = culturaEhAlgodao((state.culturas.find(c=>c.nome===state.config.cultura)||{}).id) || state.config.cultura==='Algodão' || semArmazem;
+  const btn = document.getElementById('tabBtnEstoque');
+  if(btn) btn.style.display = ocultar ? 'none' : '';
+  if(ocultar){
+    const painel = document.getElementById('tab-estoque');
+    if(painel && painel.classList.contains('active')) switchTab('cadastros');
+  }
 }
 function renderAllOuAtualizarTelaAcesso(){
   // Se o app estiver montado, atualiza tudo normalmente. Se estivermos numa tela de
@@ -1482,6 +1685,7 @@ function updateHeroCultura(){
 function setCulturaAtiva(nome){
   state.config.cultura = nome;
   saveCadastros(); renderCadastros(); renderDashboard(); updateHeroCultura();
+  atualizarVisibilidadeAbaEstoque(); renderEstoque();
 }
 function adicionarVariedade(culturaId){
   const input = document.getElementById(`novaVariedade-${culturaId}`);
@@ -2095,6 +2299,7 @@ function confirmarEntrega(id){
   recalcEntrega(e);
   e.status = 'completo';
   e.updatedAt = new Date().toISOString();
+  gerarSaidaEstoqueAutomatica(e);
   saveEntregas(); renderAll();
   toast('Entrega confirmada e lançada no dashboard.');
 }
@@ -3371,6 +3576,79 @@ function openCadastroModal(kind, id){
     atualizarInfoAreaColheita();
   }
 
+  if(kind==='romaneioArmazem'){
+    const r = id ? state.romaneiosArmazem.find(x=>x.id===id) : null;
+    title.textContent = r ? 'Editar entrada de armazém' : 'Nova entrada no armazém';
+    body.innerHTML = `
+      <p class="small-note" style="margin-top:-4px;">Registra o caminhão que sai do campo direto pro silo, sem comprador definido ainda. Gera uma entrada de estoque automaticamente.</p>
+      <div class="form-grid">
+        <div class="field"><label>Armazém (fazenda)</label><select id="fRomArmazemFazenda">${optionsFazendas(r?.fazendaId)}</select></div>
+        <div class="field"><label>Produtor</label><select id="fRomArmazemProdutor">${optionsProdutores(r?.produtorId)}</select></div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>Cultura</label><select id="fRomArmazemCultura">${optionsCulturasSemAlgodao(r?.culturaId)}</select></div>
+        <div class="field"><label>Safra</label><input id="fRomArmazemSafra" value="${r?.safra || state.config.safra || ''}"></div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>Motorista</label><input id="fRomArmazemMotorista" value="${r?.motorista||''}"></div>
+        <div class="field"><label>Placa</label><input id="fRomArmazemPlaca" value="${r?.placa||''}"></div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>Nº do romaneio</label><input id="fRomArmazemNr" value="${r?.nrRomaneio||''}"></div>
+        <div class="field"><label>Data de entrada</label><input id="fRomArmazemData" type="date" value="${r?.dataEntrada || todayISO()}"></div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>Peso bruto (kg)</label><input id="fRomArmazemPesoBruto" type="number" step="0.01" value="${r?.pesoBruto||''}" oninput="atualizarPesoLiquidoRomaneioArmazem()"></div>
+        <div class="field"><label>Tara (kg) <span class="small-note">(opcional)</span></label><input id="fRomArmazemTara" type="number" step="0.01" value="${r?.tara||''}" oninput="atualizarPesoLiquidoRomaneioArmazem()"></div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>Umidade (kg desc.)</label><input id="fRomArmazemUmidade" type="number" step="0.01" value="${r?.umidade||''}" oninput="atualizarPesoLiquidoRomaneioArmazem()"></div>
+        <div class="field"><label>Impureza (kg desc.)</label><input id="fRomArmazemImpureza" type="number" step="0.01" value="${r?.impureza||''}" oninput="atualizarPesoLiquidoRomaneioArmazem()"></div>
+      </div>
+      <div class="field"><label>Avariado/ardido (kg desc.)</label><input id="fRomArmazemArdido" type="number" step="0.01" value="${r?.ardido||''}" oninput="atualizarPesoLiquidoRomaneioArmazem()"></div>
+      <p class="small-note" id="fRomArmazemPesoLiquidoInfo" style="font-size:14px;font-weight:700;"></p>
+      <div class="field"><label>Observações</label><textarea id="fRomArmazemObs" rows="2">${r?.obs||''}</textarea></div>
+      <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
+        <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
+        <button class="btn" onclick="salvarRomaneioArmazem()">Salvar</button>
+      </div>`;
+    setTimeout(atualizarPesoLiquidoRomaneioArmazem, 0);
+  }
+
+  if(kind==='ajusteEstoque'){
+    title.textContent = 'Ajuste manual de estoque';
+    body.innerHTML = `
+      <p class="small-note" style="margin-top:-4px;">Use pra corrigir quebra técnica, perda por secagem/beneficiamento ou contagem. Valor positivo soma ao estoque, negativo subtrai.</p>
+      <div class="form-grid">
+        <div class="field"><label>Armazém (fazenda)</label><select id="fAjusteFazenda">${optionsFazendas()}</select></div>
+        <div class="field"><label>Cultura</label><select id="fAjusteCultura">${optionsCulturasSemAlgodao()}</select></div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>Produtor <span class="small-note">(opcional)</span></label><select id="fAjusteProdutor">${'<option value="">— não vincular —</option>'+optionsProdutores()}</select></div>
+        <div class="field"><label>Quantidade (kg) <span class="small-note">(+ soma / − subtrai)</span></label><input id="fAjusteKg" type="number" step="0.01" placeholder="Ex: -150"></div>
+      </div>
+      <div class="field"><label>Data</label><input id="fAjusteData" type="date" value="${todayISO()}"></div>
+      <div class="field"><label>Motivo <span class="small-note">(obrigatório, fica no histórico)</span></label><textarea id="fAjusteObs" rows="2" placeholder="Ex: quebra técnica na secagem"></textarea></div>
+      <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
+        <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
+        <button class="btn" onclick="salvarAjusteEstoque()">Salvar</button>
+      </div>`;
+  }
+
+  if(kind==='limiteArmazem'){
+    title.textContent = 'Limite de aviso — armazém';
+    const atual = num(state.config.limiteArmazemPct ?? 80);
+    body.innerHTML = `
+      <p class="small-note" style="margin-top:-4px;">Quando o armazém atingir esse percentual da capacidade cadastrada, os usuários com push ativo recebem um aviso automático.</p>
+      <div class="field"><label>Avisar ao atingir</label>
+        <div class="actions-row"><input type="number" id="fLimiteArmazemPct" value="${atual}" step="1" min="1" max="100" style="flex:1;"><span class="small-note">%</span></div>
+      </div>
+      <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
+        <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
+        <button class="btn" onclick="salvarLimiteArmazem()">Salvar</button>
+      </div>`;
+  }
+
   overlay.classList.remove('hidden');
 }
 function closeCadastroModal(){
@@ -3389,6 +3667,173 @@ function closeCadastroModal(){
     }
   }
   overlay.classList.add('hidden');
+}
+
+function atualizarPesoLiquidoRomaneioArmazem(){
+  const info = document.getElementById('fRomArmazemPesoLiquidoInfo');
+  if(!info) return;
+  const bruto = num(document.getElementById('fRomArmazemPesoBruto').value);
+  const tara = num(document.getElementById('fRomArmazemTara').value);
+  const umidade = num(document.getElementById('fRomArmazemUmidade').value);
+  const impureza = num(document.getElementById('fRomArmazemImpureza').value);
+  const ardido = num(document.getElementById('fRomArmazemArdido').value);
+  const liquido = tara ? (bruto-tara) : (bruto-umidade-impureza-ardido);
+  info.textContent = bruto ? `Peso líquido: ${fmt(liquido,0)} kg (${fmt(liquido/60,1)} sacas)` : '';
+}
+async function salvarRomaneioArmazem(){
+  const overlay = document.getElementById('modalCadastro');
+  const id = overlay.dataset.id;
+  const fazendaId = document.getElementById('fRomArmazemFazenda').value;
+  const produtorId = document.getElementById('fRomArmazemProdutor').value;
+  const culturaId = document.getElementById('fRomArmazemCultura').value;
+  if(!fazendaId){ toast('Selecione o armazém (fazenda).', true); return; }
+  if(!produtorId){ toast('Selecione o produtor.', true); return; }
+  if(!culturaId){ toast('Selecione a cultura.', true); return; }
+  const pesoBruto = num(document.getElementById('fRomArmazemPesoBruto').value);
+  if(!pesoBruto){ toast('Informe o peso bruto.', true); return; }
+
+  let r = id ? state.romaneiosArmazem.find(x=>x.id===id) : null;
+  const novo = !r;
+  if(!r){ r = { id: uid('romarm'), createdAt: new Date().toISOString() }; }
+  Object.assign(r, {
+    fazendaId, produtorId, culturaId,
+    safra: document.getElementById('fRomArmazemSafra').value.trim(),
+    motorista: document.getElementById('fRomArmazemMotorista').value.trim(),
+    placa: document.getElementById('fRomArmazemPlaca').value.trim(),
+    nrRomaneio: document.getElementById('fRomArmazemNr').value.trim(),
+    dataEntrada: document.getElementById('fRomArmazemData').value || todayISO(),
+    pesoBruto,
+    tara: num(document.getElementById('fRomArmazemTara').value),
+    umidade: num(document.getElementById('fRomArmazemUmidade').value),
+    impureza: num(document.getElementById('fRomArmazemImpureza').value),
+    ardido: num(document.getElementById('fRomArmazemArdido').value),
+    obs: document.getElementById('fRomArmazemObs').value.trim(),
+    updatedAt: new Date().toISOString()
+  });
+  recalcRomaneioArmazem(r);
+  if(novo) state.romaneiosArmazem.push(r);
+
+  upsertMovimentoEstoque({
+    tipo:'entrada', fazendaId, produtorId, culturaId, safra: r.safra,
+    pesoKg: r.pesoLiquido, scs: r.scsLiquido, data: r.dataEntrada, obs: r.obs
+  }, 'romaneioArmazem', r.id);
+
+  await saveEstoque();
+  renderEstoque();
+  closeCadastroModal();
+  toast('Entrada registrada no armazém.');
+  verificarLimiteArmazemEAvisar(fazendaId);
+}
+function excluirRomaneioArmazem(id){
+  if(!confirm('Excluir esta entrada de armazém? O movimento de estoque correspondente também será removido.')) return;
+  state.romaneiosArmazem = state.romaneiosArmazem.filter(r=>r.id!==id);
+  state.movimentosEstoque = state.movimentosEstoque.filter(m=>!(m.origem?.tipo==='romaneioArmazem' && m.origem?.refId===id));
+  saveEstoque(); renderEstoque();
+  toast('Entrada de armazém excluída.');
+}
+async function salvarAjusteEstoque(){
+  const fazendaId = document.getElementById('fAjusteFazenda').value;
+  const culturaId = document.getElementById('fAjusteCultura').value;
+  const produtorId = document.getElementById('fAjusteProdutor').value || null;
+  const kg = num(document.getElementById('fAjusteKg').value);
+  const obs = document.getElementById('fAjusteObs').value.trim();
+  if(!fazendaId){ toast('Selecione o armazém (fazenda).', true); return; }
+  if(!culturaId){ toast('Selecione a cultura.', true); return; }
+  if(!kg){ toast('Informe a quantidade do ajuste (positiva ou negativa).', true); return; }
+  if(!obs){ toast('Descreva o motivo do ajuste — fica no histórico.', true); return; }
+
+  const mov = {
+    id: uid('mov'), tipo:'ajuste', fazendaId, culturaId, produtorId,
+    safra: state.config.safra||'', pesoKg: kg, scs: +(kg/60).toFixed(4),
+    origem:{tipo:'manual', refId:null}, data: document.getElementById('fAjusteData').value || todayISO(),
+    obs, createdAt: new Date().toISOString()
+  };
+  state.movimentosEstoque.push(mov);
+  await saveEstoque();
+  renderEstoque();
+  closeCadastroModal();
+  toast('Ajuste de estoque registrado.');
+  verificarLimiteArmazemEAvisar(fazendaId);
+}
+function salvarLimiteArmazem(){
+  state.config.limiteArmazemPct = num(document.getElementById('fLimiteArmazemPct').value) || 80;
+  saveCadastros();
+  closeCadastroModal();
+  renderEstoque();
+  toast('Limite de aviso do armazém atualizado.');
+}
+// Dispara um push automático quando o armazém cruza (pra cima) o percentual configurado — e "reseta" o
+// aviso quando o nível volta pra baixo do limite, pra poder avisar de novo numa próxima vez que encher.
+function verificarLimiteArmazemEAvisar(fazendaId){
+  try{
+    const f = state.fazendas.find(x=>x.id===fazendaId);
+    if(!f || !num(f.armazemKg)) return;
+    const capacidadeKg = num(f.armazemKg);
+    const saldoKg = calcSaldoFazendaKg(fazendaId);
+    const pct = saldoKg/capacidadeKg*100;
+    const limite = num(state.config.limiteArmazemPct ?? 80);
+    if(pct >= limite && !f.alertaArmazemDisparado){
+      f.alertaArmazemDisparado = true;
+      saveCadastros();
+      const sacasDisponiveis = Math.max(0, Math.round((capacidadeKg-saldoKg)/60));
+      const title = '⚠️ Armazém próximo do limite máximo';
+      const body = `Painel de alerta BRC informa:\n${f.nome}, o armazém está com ${fmtPct(pct)} da capacidade de armazenagem neste momento, temos espaço disponível para ${fmtInt(sacasDisponiveis)} sacas.`;
+      enviarPushAlerta(title, body);
+    } else if(pct < limite && f.alertaArmazemDisparado){
+      f.alertaArmazemDisparado = false;
+      saveCadastros();
+    }
+  }catch(e){ console.error('Falha ao checar limite do armazém:', e); }
+}
+function exportarRelatorioEstoquePDF(){
+  const fazendas = armazensCadastradosNoContexto();
+  const movs = [...state.movimentosEstoque].sort((a,b)=>(b.data||'').localeCompare(a.data||'') || (b.createdAt||'').localeCompare(a.createdAt||''));
+  const cardsHtml = fazendas.map(f=>{
+    const saldoKg = calcSaldoFazendaKg(f.id);
+    const capacidadeKg = num(f.armazemKg);
+    const pct = capacidadeKg ? (saldoKg/capacidadeKg*100) : 0;
+    return `<div style="border:1px solid #ccc;border-radius:8px;padding:12px;margin-bottom:10px;">
+      <b>${f.nome}</b> — ${fmtPct(pct)} da capacidade<br>
+      ${fmtInt(saldoKg)} kg (${fmt(saldoKg/60,1)} sc) de ${fmtInt(capacidadeKg)} kg (${fmt(capacidadeKg/60,1)} sc)
+    </div>`;
+  }).join('');
+  const linhas = movs.map(m=>{
+    const tipoTxt = m.tipo==='entrada' ? 'Entrada' : m.tipo==='saida' ? 'Saída' : 'Ajuste';
+    const origemTxt = m.origem?.tipo==='romaneioArmazem' ? 'Romaneio de armazém' : m.origem?.tipo==='entrega' ? 'Venda/entrega' : 'Manual';
+    return `<tr>
+      <td>${dataBR(m.data)}</td><td>${tipoTxt}</td>
+      <td>${state.fazendas.find(f=>f.id===m.fazendaId)?.nome || '—'}</td>
+      <td>${m.culturaId ? culturaNome(m.culturaId) : '—'}</td>
+      <td>${m.produtorId ? produtorNome(m.produtorId) : '—'}</td>
+      <td>${fmtInt(m.pesoKg)}</td><td>${fmt(m.scs,1)}</td>
+      <td>${origemTxt}</td><td>${m.obs||''}</td>
+    </tr>`;
+  }).join('');
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Relatório de Estoque de Armazém — ${todayISO()}</title>
+    <style>
+      body{ font-family: Arial, Helvetica, sans-serif; padding:24px; color:#111; }
+      h1{ font-size:18px; margin-bottom:4px; }
+      p.sub{ color:#555; font-size:12px; margin-top:0; margin-bottom:18px; }
+      table{ width:100%; border-collapse:collapse; font-size:11px; margin-top:14px; }
+      th, td{ border:1px solid #ccc; padding:6px 8px; text-align:left; }
+      th{ background:#f0f0f0; }
+      #btnImprimir{ margin-top:20px; padding:10px 18px; font-size:14px; cursor:pointer; }
+      @media print{ #btnImprimir{ display:none; } }
+    </style>
+  </head><body>
+    <h1>Relatório de Estoque de Armazém — BRC Colheita</h1>
+    <p class="sub">Gerado em ${new Date().toLocaleString('pt-BR')} · Safra ${state.config.safra||'—'}</p>
+    ${cardsHtml || '<p>Nenhum armazém com capacidade cadastrada.</p>'}
+    <table>
+      <thead><tr><th>Data</th><th>Tipo</th><th>Armazém</th><th>Cultura</th><th>Produtor</th><th>Kg</th><th>Sacas</th><th>Origem</th><th>Obs.</th></tr></thead>
+      <tbody>${linhas || '<tr><td colspan="9" style="text-align:center;">Nenhuma movimentação registrada.</td></tr>'}</tbody>
+    </table>
+    <button id="btnImprimir" onclick="window.print()">🖨️ Salvar como PDF / Imprimir</button>
+  </body></html>`;
+  const win = window.open('', '_blank');
+  if(!win){ toast('Seu navegador bloqueou a nova aba. Permita pop-ups para este site e tente de novo.', true); return; }
+  win.document.write(html);
+  win.document.close();
 }
 
 function optionsEmpresas(selectedId){
@@ -3418,6 +3863,11 @@ function optionsContratosDoProdutor(produtorId, selectedId){
   const list = produtorId ? contratosDoProdutor(produtorId) : state.contratos;
   if(!list.length) return `<option value="">Nenhum contrato para esse produtor</option>`;
   return `<option value="">— sem contrato vinculado —</option>` + list.map(c=>`<option value="${c.id}" ${c.id===selectedId?'selected':''}>${c.tipo} — ${c.doc||c.id}</option>`).join('');
+}
+function optionsCulturasSemAlgodao(selectedId){
+  const lista = state.culturas.filter(c=>stripAccents(c.nome)!=='algodao');
+  if(!lista.length) return `<option value="">— nenhuma —</option>`;
+  return `<option value="">— selecionar —</option>` + lista.map(c=>`<option value="${c.id}" ${c.id===selectedId?'selected':''}>${c.nome}</option>`).join('');
 }
 function optionsMotoristas(selectedId){
   if(!state.motoristas.length) return `<option value="">Nenhum motorista cadastrado</option>`;
@@ -4665,7 +5115,7 @@ async function salvarEntrega(){
   }
   renderAll();
   closeCargaModal();
-  if(entrega.status==='completo') verificarLimiteEAvisarAutomatico(entrega);
+  if(entrega.status==='completo'){ verificarLimiteEAvisarAutomatico(entrega); gerarSaidaEstoqueAutomatica(entrega); }
   toast(entrega.status==='completo' ? 'Entrega lançada com sucesso.' : 'Entrega registrada como pendente de pesagem.');
 }
 
@@ -5075,6 +5525,7 @@ function renderDashboard(){
         </div>
         <div id="pdfPage1Diario">
         <div class="pdf-header" id="pdfHeaderBlockDiario"></div>
+        <div id="estoqueGaugesDiario"></div>
         <div id="alertaDescontoDiario"></div>
         <section style="margin-top:10px;">
           <h2>Romaneios <span id="tituloEscopoRomaneiosDia">de hoje</span>
@@ -5151,6 +5602,7 @@ function renderDashboard(){
       <div id="exportArea" style="margin-top:26px;">
         <div id="pdfPage1">
           <div class="pdf-header" id="pdfHeaderBlock"></div>
+          <div id="estoqueGaugesGeral"></div>
           <div class="kpis" id="kpis"></div>
 
           <section>
@@ -5230,6 +5682,25 @@ function renderDashboard(){
   updateHeaderConfig();
   paintDashboard();
   paintDashboardDiario();
+  renderGaugesDashboard();
+}
+// Mesmo medidor da aba Estoque, só que resumido, aparecendo nos dois dashboards (diário e geral).
+// Some sozinho se a cultura ativa for Algodão ou se nenhuma fazenda do contexto tiver capacidade cadastrada.
+function renderGaugesDashboard(){
+  const semArmazem = culturaEhAlgodao((state.culturas.find(c=>c.nome===state.config.cultura)||{}).id)
+    || state.config.cultura==='Algodão' || !armazensCadastradosNoContexto().length;
+  const fazendas = semArmazem ? [] : armazensCadastradosNoContexto();
+  const html = !fazendas.length ? '' : `
+    <section style="margin-top:4px;margin-bottom:22px;">
+      <h2>Estoque de Armazém</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;">
+        ${fazendas.map(f=>cardArmazemFazenda(f)).join('')}
+      </div>
+    </section>`;
+  const diario = document.getElementById('estoqueGaugesDiario');
+  const geral = document.getElementById('estoqueGaugesGeral');
+  if(diario) diario.innerHTML = html;
+  if(geral) geral.innerHTML = html;
 }
 function mostrarSubDashboard(qual){
   document.getElementById('subDashDiario').style.display = qual==='diario' ? '' : 'none';
@@ -6409,6 +6880,7 @@ function handleImportLegacy(rows, colheitaId){
       state.entregas.push(entrega);
       novasEntregas++;
       verificarLimiteEAvisarAutomatico(entrega);
+      gerarSaidaEstoqueAutomatica(entrega);
     }
   });
 
