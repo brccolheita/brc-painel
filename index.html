@@ -113,13 +113,12 @@ body.fonte-grande{ zoom:1.25; }
 .btn:disabled{ opacity:.5; cursor:not-allowed; }
 
 .readonly-banner{ display:none; background:linear-gradient(90deg, var(--gold), #ffce33); color:#1a1400; font-weight:700; font-size:12.5px; text-align:center; padding:8px; letter-spacing:.4px; }
-body.read-only .readonly-banner{ display:block; }
 body.read-only #cardAcoesRapidas{ display:none; }
 body.read-only [data-tab="usuarios"], body.sem-acesso-usuarios [data-tab="usuarios"]{ display:none; }
 body.read-only #tab-usuarios, body.sem-acesso-usuarios #tab-usuarios{ display:none !important; }
 body.sem-liberar-acesso-motorista .cred-btn-acesso{ display:none; }
-body.read-only .actions-row button,
-body.read-only h2 button,
+body.read-only .actions-row button:not(.leitura-ok),
+body.read-only h2 button:not(.leitura-ok),
 body.read-only #btnNovaCarga,
 body.read-only #btnImportContratoPDF{
   display:none !important;
@@ -393,7 +392,18 @@ body.read-only .interacoes-fixed{ display:none; }
 .dash-scope .comp-sub{ font-size:11px; color:var(--ink-dim); font-family:'JetBrains Mono',monospace; min-width:90px; text-align:right; }
 footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); margin-top:56px; font-family:'JetBrains Mono',monospace;}
 @media (max-width:900px){ .dash-scope .grid2{grid-template-columns:1fr;} .dash-scope .hectbox{flex-direction:column; align-items:stretch;} }
-@media (max-width:640px){ #btnNotificacoesPush .texto-notificacoes{ display:none; } #btnNotificacoesPush{ padding:11px 14px; } }
+@media (max-width:640px){ #btnNotificacoesPush .texto-notificacoes{ display:none; } #btnNotificacoesPush{ padding:11px 14px; } #btnMaximizarTela{ display:none; } }
+@media (max-width:640px){
+  .hero.compacto{ padding:5px 3vw 0 3vw; }
+  .hero.compacto .hero-top{ padding-bottom:4px; gap:5px; }
+  .hero.compacto h1{ font-size:13px; }
+  .hero.compacto #heroLogoCircle{ width:20px; height:20px; }
+  .hero.compacto #heroLogoCircle svg{ width:11px; height:11px; }
+  .hero.compacto .interacoes-trigger{ padding:6px 9px; font-size:11px; gap:4px; }
+  .hero-actions{ gap:6px; }
+  .tabs{ padding:2px 3px 0 3px; gap:2px; }
+  .tab-btn{ padding:8px 9px; font-size:12px; }
+}
 </style>
 </head>
 <body>
@@ -675,16 +685,15 @@ function usuarioIdParaProdutor(produtorId){
   const u = state.usuarios.find(u=>u.papel==='produtor' && u.produtorId===produtorId);
   return u ? u.id : null;
 }
-async function enviarPushAlerta(usuarioId, title, message, url){
-  if(!usuarioId){ toast('Este produtor ainda não tem um usuário de login cadastrado — cadastre um em Usuários pra poder notificar por push.', true); return; }
+async function enviarPushAlerta(title, message, url){
   try{
-    const res = await fetch(`${API_BASE}/push/send`, {
+    const res = await fetch(`${API_BASE}/push/broadcast`, {
       method:'POST', headers:{'Content-Type':'application/json','x-api-key':API_KEY},
-      body: JSON.stringify({ usuarioId, title, message, url }),
+      body: JSON.stringify({ title, message, url }),
     });
     const data = await res.json();
-    if(data.enviados>0) toast('Notificação enviada pro celular do produtor. 🔔');
-    else toast(data.aviso || 'Este produtor ainda não ativou notificações em nenhum aparelho.', true);
+    if(data.enviados>0) toast(`Notificação enviada para ${data.enviados} aparelho(s) com push ativo. 🔔`);
+    else toast('Nenhum usuário com notificações ativas no momento — ninguém ativou o push ainda.', true);
   }catch(e){
     console.error(e);
     toast('Não consegui enviar a notificação push: ' + e.message, true);
@@ -5006,13 +5015,13 @@ function renderDashboard(){
   el.innerHTML = `
     <div class="dash-scope">
       <div class="actions-row" style="margin-bottom:18px;">
-        <button class="btn sm" id="btnSubDashDiario" onclick="mostrarSubDashboard('diario')">📅 Dashboard Diário</button>
-        <button class="btn ghost sm" id="btnSubDashGeral" onclick="mostrarSubDashboard('geral')">📊 Dashboard Geral</button>
+        <button class="btn sm leitura-ok" id="btnSubDashDiario" onclick="mostrarSubDashboard('diario')">📅 Dashboard Diário</button>
+        <button class="btn ghost sm leitura-ok" id="btnSubDashGeral" onclick="mostrarSubDashboard('geral')">📊 Dashboard Geral</button>
       </div>
 
       <div id="subDashDiario">
         <div style="align-self:flex-end;margin:0 0 10px 0;text-align:right;">
-          <button class="btn pdf" id="pdfBtnDiario" onclick="exportPDFDiario()">⬇ Exportar PDF</button>
+          <button class="btn pdf leitura-ok" id="pdfBtnDiario" onclick="exportPDFDiario()">⬇ Exportar PDF</button>
         </div>
         <div id="pdfPage1Diario">
         <div class="pdf-header" id="pdfHeaderBlockDiario"></div>
@@ -5021,9 +5030,9 @@ function renderDashboard(){
           <h2>Romaneios <span id="tituloEscopoRomaneiosDia">de hoje</span>
             <div class="actions-row">
               <button class="btn ghost sm" onclick="openCadastroModal('limitesDesconto')">🎯 Limite percentual de desconto</button>
-              <button class="btn ghost sm" id="btnUnidadeDiario" onclick="toggleUnidadeDiario()">⇄ Ver em sacas</button>
-              <button class="btn ghost sm" id="btnAcumuladoDiario" onclick="toggleAcumuladoDiario()">📚 Mostrar acumulado</button>
-              <button class="btn ghost sm" onclick="exportarRomaneiosDiarioPDF()">🖨️ Exportar relatório PDF</button>
+              <button class="btn ghost sm leitura-ok" id="btnUnidadeDiario" onclick="toggleUnidadeDiario()">⇄ Ver em sacas</button>
+              <button class="btn ghost sm leitura-ok" id="btnAcumuladoDiario" onclick="toggleAcumuladoDiario()">📚 Mostrar acumulado</button>
+              <button class="btn ghost sm leitura-ok" onclick="exportarRomaneiosDiarioPDF()">🖨️ Exportar relatório PDF</button>
             </div>
           </h2>
           <div class="card"><div class="table-wrap"><table id="tblRomaneiosDia">
@@ -5084,7 +5093,7 @@ function renderDashboard(){
         </div>
         <p class="small-note" style="flex-basis:100%;margin:2px 0 0 0;">Fazenda, safra e cultura são preenchidos em "Dados de Colheita e Comercialização" → Dados da Safra.</p>
         <div style="align-self:flex-end;">
-          <button class="btn pdf" id="pdfBtn" onclick="exportPDF()">⬇ Exportar PDF</button>
+          <button class="btn pdf leitura-ok" id="pdfBtn" onclick="exportPDF()">⬇ Exportar PDF</button>
         </div>
       </div>
       <div class="periodo-auto">📅 Período detectado automaticamente nas cargas lançadas: <b id="periodoAuto">—</b></div>
@@ -5175,8 +5184,8 @@ function renderDashboard(){
 function mostrarSubDashboard(qual){
   document.getElementById('subDashDiario').style.display = qual==='diario' ? '' : 'none';
   document.getElementById('subDashGeral').style.display = qual==='geral' ? '' : 'none';
-  document.getElementById('btnSubDashDiario').className = qual==='diario' ? 'btn sm' : 'btn ghost sm';
-  document.getElementById('btnSubDashGeral').className = qual==='geral' ? 'btn sm' : 'btn ghost sm';
+  document.getElementById('btnSubDashDiario').className = qual==='diario' ? 'btn sm leitura-ok' : 'btn ghost sm leitura-ok';
+  document.getElementById('btnSubDashGeral').className = qual==='geral' ? 'btn sm leitura-ok' : 'btn ghost sm leitura-ok';
 }
 
 function updateHeaderConfig(fromDescontoModo){
@@ -5238,9 +5247,9 @@ function computeDashboardDiario(){
     x.ardidoPctCarga = base>0 ? (num(x.e.ardido)/base*100) : 0;
     x.descontoPct = x.umidadePctCarga + x.impurezaPctCarga + x.ardidoPctCarga;
     x.fatoresExcedidos = [];
-    if(x.umidadePctCarga > limites.umidade) x.fatoresExcedidos.push({nome:'Umidade', valor:x.umidadePctCarga, limite:limites.umidade});
-    if(x.impurezaPctCarga > limites.impureza) x.fatoresExcedidos.push({nome:'Impureza', valor:x.impurezaPctCarga, limite:limites.impureza});
-    if(x.ardidoPctCarga > limites.avariado) x.fatoresExcedidos.push({nome:'Avariado', valor:x.ardidoPctCarga, limite:limites.avariado});
+    if(x.umidadePctCarga > limites.umidade) x.fatoresExcedidos.push({nome:'Umidade', campo:'umidade', valor:x.umidadePctCarga, limite:limites.umidade});
+    if(x.impurezaPctCarga > limites.impureza) x.fatoresExcedidos.push({nome:'Impureza', campo:'impureza', valor:x.impurezaPctCarga, limite:limites.impureza});
+    if(x.ardidoPctCarga > limites.avariado) x.fatoresExcedidos.push({nome:'Avariado', campo:'ardido', valor:x.ardidoPctCarga, limite:limites.avariado});
     x.acimaDoLimite = x.fatoresExcedidos.length > 0;
   });
   const excedentes = joined.filter(x=>x.acimaDoLimite);
@@ -5282,6 +5291,37 @@ function normalizarTelefoneWpp(telefone){
   if(d.length<=11) d = '55'+d;
   return d;
 }
+function montarMensagemAlertaPush(entrega, venda, fator){
+  const nomeProdutor = venda?.produtorId ? produtorNome(venda.produtorId) : 'Produtor não identificado';
+  const nrRomaneio = entrega.nrRomaneio || '—';
+  const nrNF = venda?.nrNF || '—';
+  const placa = entrega.placa || '—';
+  const excesso = fator.valor - fator.limite;
+  const pesoBrutoSemTara = fmt(entrega.pesoLiquidoSemDesc,0);
+  const descontoFatorKg = fmt(num(entrega[fator.campo]),0);
+  const pesoLiquido = fmt(entrega.pesoLiquidoComDesc,0);
+  const dataHora = entrega.dataSaida
+    ? (dataBR(entrega.dataSaida) + (entrega.horaSaida ? ' às '+entrega.horaSaida : ''))
+    : new Date().toLocaleString('pt-BR');
+
+  const title = `⚠️ ${fator.nome} acima do limite — Romaneio ${nrRomaneio}`;
+  const body = `Painel de alerta BRC informa:\n`
+    + `${nomeProdutor}, o romaneio nº ${nrRomaneio} referente à NF ${nrNF} placa ${placa}: está acima do limite estabelecido em ${fator.nome.toLowerCase()}, excesso de ${fmtPct(excesso)}.\n`
+    + `Peso bruto s/ tara: ${pesoBrutoSemTara} kg\n`
+    + `Desconto ${fator.nome.toLowerCase()}: ${descontoFatorKg} kg\n`
+    + `Peso líquido: ${pesoLiquido} kg.\n`
+    + `${dataHora}`;
+  return { title, body };
+}
+function dispararPushManualParaCarga(entregaId){
+  const d = computeDashboardDiario();
+  const x = d.joined.find(j=>j.e.id===entregaId);
+  if(!x || !x.fatoresExcedidos.length){ toast('Esta carga não tem nenhum fator acima do limite.', true); return; }
+  x.fatoresExcedidos.forEach(fator=>{
+    const {title, body} = montarMensagemAlertaPush(x.e, x.v, fator);
+    enviarPushAlerta(title, body);
+  });
+}
 function verificarLimiteEAvisarAutomatico(entrega){
   try{
     const base = num(entrega.pesoLiquidoSemDesc);
@@ -5291,19 +5331,16 @@ function verificarLimiteEAvisarAutomatico(entrega){
     const impurezaPct = num(entrega.impureza)/base*100;
     const ardidoPct = num(entrega.ardido)/base*100;
     const fatores = [];
-    if(umidadePct > limites.umidade) fatores.push({nome:'Umidade', valor:umidadePct, limite:limites.umidade});
-    if(impurezaPct > limites.impureza) fatores.push({nome:'Impureza', valor:impurezaPct, limite:limites.impureza});
-    if(ardidoPct > limites.avariado) fatores.push({nome:'Avariado', valor:ardidoPct, limite:limites.avariado});
+    if(umidadePct > limites.umidade) fatores.push({nome:'Umidade', campo:'umidade', valor:umidadePct, limite:limites.umidade});
+    if(impurezaPct > limites.impureza) fatores.push({nome:'Impureza', campo:'impureza', valor:impurezaPct, limite:limites.impureza});
+    if(ardidoPct > limites.avariado) fatores.push({nome:'Avariado', campo:'ardido', valor:ardidoPct, limite:limites.avariado});
     if(!fatores.length) return;
 
     const venda = vendaById(entrega.vendaId);
-    if(!venda?.produtorId) return;
-    const usuarioId = usuarioIdParaProdutor(venda.produtorId);
-    if(!usuarioId) return;
-
-    const fatoresTxt = fatores.map(f=>`${f.nome} ${fmtPct(f.valor)} (limite ${fmtPct(f.limite)})`).join(' · ');
-    const mensagem = `Romaneio ${entrega.nrRomaneio||'—'}: desconto acima do limite em ${fatores.map(f=>f.nome).join(', ')} — ${fatoresTxt}.`;
-    enviarPushAlerta(usuarioId, '⚠️ Desconto acima do limite', mensagem);
+    fatores.forEach(fator=>{
+      const {title, body} = montarMensagemAlertaPush(entrega, venda, fator);
+      enviarPushAlerta(title, body);
+    });
   }catch(e){ console.error('Falha ao checar limite de desconto automático:', e); }
 }
 function avisarProdutorDescontoWhatsapp(entregaId){
@@ -5411,12 +5448,11 @@ function paintDashboardDiario(){
       d.excedentes.map(x=>{
         const produtor = x.v ? produtorNome(x.v.produtorId) : '—';
         const fatoresTxt = x.fatoresExcedidos.map(f=>`${f.nome} ${fmtPct(f.valor)} (limite ${fmtPct(f.limite)})`).join(' · ');
-        const mensagemPush = `Romaneio ${x.e.nrRomaneio||'—'}: desconto acima do limite em ${x.fatoresExcedidos.map(f=>f.nome).join(', ')} — ${fatoresTxt}.`;
         return `<div class="actions-row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);">
           <span style="font-size:13px;">Romaneio <b>${x.e.nrRomaneio||'—'}</b> · ${produtor} · <b style="color:var(--red);">${fatoresTxt}</b></span>
           <div class="actions-row">
             <button class="btn ghost sm" onclick="avisarProdutorDescontoWhatsapp('${x.e.id}')">📲 WhatsApp</button>
-            ${x.v?.produtorId ? `<button class="btn ghost sm" onclick="enviarPushAlerta(usuarioIdParaProdutor('${x.v.produtorId}'),'⚠️ Desconto acima do limite','${mensagemPush.replace(/'/g,"\\'")}')">🔔 Push</button>` : ''}
+            <button class="btn ghost sm" onclick="dispararPushManualParaCarga('${x.e.id}')">🔔 Push</button>
           </div>
         </div>`;
       }).join('') + `</div>`;
