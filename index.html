@@ -1945,6 +1945,7 @@ function renderConferenciaMotoristas(){
 }
 function updateTbodyConferencia(){
   const filters = getFilterValues('conferencia');
+  const limites = limitesDescontoAtuais();
   const lista = state.entregas.filter(e=>e.status==='aguardando_conferencia').sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
   const rows = lista.map(e=>{
     const v = vendaById(e.vendaId);
@@ -1956,10 +1957,17 @@ function updateTbodyConferencia(){
       txRecebimento: fmt(e.txRecebimento,0), pesoLiqCom: fmt(e.pesoLiquidoComDesc,0), pesoLiqSem: fmt(e.pesoLiquidoSemDesc,0),
       scsBruto: fmt(e.scsBruto), scsLiqCom: fmt(e.scsLiquidoComDesc), scsLiqSem: fmt(e.scsLiquidoSemDesc)
     };
-    const html = `<tr>
+    const base = num(e.pesoLiquidoSemDesc);
+    const acimaDoLimite = base>0 && (
+      (num(e.umidade)/base*100) > limites.umidade ||
+      (num(e.impureza)/base*100) > limites.impureza ||
+      (num(e.ardido)/base*100) > limites.avariado
+    );
+    const estiloLinha = acimaDoLimite ? ' style="background:var(--red-dim);"' : '';
+    const html = `<tr${estiloLinha}>
       <td>${extract.recebido}</td><td>${extract.empresa}</td><td>${extract.produtor}</td>
       <td>${extract.nfRemessa||'—'}</td><td>${e.motorista||'—'}${e.placa?` (${e.placa})`:''}</td>
-      <td>${extract.romaneio||'—'}</td><td>${extract.data}</td>
+      <td>${extract.romaneio||'—'}${acimaDoLimite?' <span class="tag neg" title="Desconto acima do limite">⚠️</span>':''}</td><td>${extract.data}</td>
       <td>${extract.pesoBruto} kg</td><td>${extract.umidade} kg</td><td>${extract.impureza} kg</td><td>${extract.ardido} kg</td>
       <td>${extract.txRecebimento} kg</td><td>${extract.pesoLiqCom} kg</td><td>${extract.pesoLiqSem} kg</td>
       <td>${extract.scsBruto}</td><td>${extract.scsLiqCom}</td><td>${extract.scsLiqSem}</td>
@@ -1968,6 +1976,9 @@ function updateTbodyConferencia(){
         ${e.temFoto ? `<button class="btn ghost sm" onclick="visualizarFotoRomaneio('${e.id}')">👁️ Visualizar</button>` : ''}
         <button class="btn sm" onclick="confirmarEntrega('${e.id}')">✓ Confirmar</button>
         <button class="btn danger sm" onclick="rejeitarEntrega('${e.id}')">Rejeitar</button>
+        ${acimaDoLimite ? `<button class="btn ghost sm" title="Avisar por WhatsApp" onclick="avisarProdutorDescontoWhatsapp('${e.id}')">📲</button>
+        <button class="btn ghost sm" title="Enviar push" onclick="dispararPushManualParaCarga('${e.id}')">🔔</button>
+        <button class="btn ghost sm" title="Editar mensagem antes de enviar" onclick="abrirEditorPushCarga('${e.id}')">✏️</button>` : ''}
       </div></td>
     </tr>`;
     return {extract, html};
@@ -2826,6 +2837,33 @@ function openCadastroModal(kind, id){
         <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
         <button class="btn" onclick="salvarColheitaDaVenda()">Salvar</button>
       </div>`;
+  }
+
+  if(kind==='editarPush'){
+    const entrega = state.entregas.find(e=>e.id===id);
+    const fatoresExcedidos = entrega ? calcularFatoresExcedidos(entrega) : [];
+    const venda = entrega ? vendaById(entrega.vendaId) : null;
+    title.textContent = 'Editar mensagem de push';
+    if(!entrega || !fatoresExcedidos.length){
+      body.innerHTML = `<p class="small-note">Esta carga não tem nenhum fator acima do limite configurado no momento.</p>
+        <div class="actions-row" style="justify-content:flex-end;"><button class="btn ghost" onclick="closeCadastroModal()">Fechar</button></div>`;
+    }else{
+      body.innerHTML = fatoresExcedidos.map((fator,i)=>{
+        const {title:tituloMsg, body:corpoMsg} = montarMensagemAlertaPush(entrega, venda, fator);
+        return `<div class="field">
+          <label>${fator.nome} — título da notificação</label>
+          <input id="fPushTitulo-${i}" value="${tituloMsg.replace(/"/g,'&quot;')}">
+          <label style="margin-top:8px;">Mensagem</label>
+          <textarea id="fPushCorpo-${i}" rows="6">${corpoMsg}</textarea>
+          <div class="actions-row" style="justify-content:flex-end;margin-top:8px;">
+            <button class="btn sm" onclick="enviarPushEditado(${i})">🔔 Enviar esta notificação</button>
+          </div>
+        </div>`;
+      }).join('<div class="interacoes-divider"></div>') +
+      `<div class="actions-row" style="justify-content:flex-end;margin-top:6px;">
+        <button class="btn ghost" onclick="closeCadastroModal()">Fechar</button>
+      </div>`;
+    }
   }
 
   if(kind==='limitesDesconto'){
@@ -5037,7 +5075,7 @@ function renderDashboard(){
             </div>
           </h2>
           <div class="card"><div class="table-wrap"><table id="tblRomaneiosDia">
-            <thead>${filterHeaderCells('romaneiosDia',[{key:'romaneio',label:'Nº Romaneio'},{key:'motorista',label:'Motorista'},{key:'produtor',label:'Produtor'},{key:null,label:'Peso Bruto'},{key:null,label:'Tara'},{key:null,label:'Bruto s/ Tara'},{key:null,label:'Umidade'},{key:null,label:'Impureza'},{key:null,label:'Avariado'},{key:null,label:'Saldo Líquido'}])}</thead>
+            <thead>${filterHeaderCells('romaneiosDia',[{key:'romaneio',label:'Nº Romaneio'},{key:'motorista',label:'Motorista'},{key:'produtor',label:'Produtor'},{key:null,label:'Peso Bruto'},{key:null,label:'Tara'},{key:null,label:'Bruto s/ Tara'},{key:null,label:'Umidade'},{key:null,label:'Impureza'},{key:null,label:'Avariado'},{key:null,label:'Saldo Líquido'},{key:null,label:'Alerta'}])}</thead>
             <tbody id="tbodyRomaneiosDia"></tbody>
           </table></div></div>
         </section>
@@ -5314,12 +5352,36 @@ function montarMensagemAlertaPush(entrega, venda, fator){
     + `${dataHora}`;
   return { title, body };
 }
+function calcularFatoresExcedidos(entrega){
+  const base = num(entrega.pesoLiquidoSemDesc);
+  if(base<=0) return [];
+  const limites = limitesDescontoAtuais();
+  const umidadePct = num(entrega.umidade)/base*100;
+  const impurezaPct = num(entrega.impureza)/base*100;
+  const ardidoPct = num(entrega.ardido)/base*100;
+  const fatores = [];
+  if(umidadePct > limites.umidade) fatores.push({nome:'Umidade', campo:'umidade', valor:umidadePct, limite:limites.umidade});
+  if(impurezaPct > limites.impureza) fatores.push({nome:'Impureza', campo:'impureza', valor:impurezaPct, limite:limites.impureza});
+  if(ardidoPct > limites.avariado) fatores.push({nome:'Avariado', campo:'ardido', valor:ardidoPct, limite:limites.avariado});
+  return fatores;
+}
+function abrirEditorPushCarga(entregaId){
+  openCadastroModal('editarPush', entregaId);
+}
+function enviarPushEditado(indice){
+  const tituloEl = document.getElementById('fPushTitulo-'+indice);
+  const corpoEl = document.getElementById('fPushCorpo-'+indice);
+  if(!tituloEl || !corpoEl) return;
+  enviarPushAlerta(tituloEl.value.trim(), corpoEl.value.trim());
+}
 function dispararPushManualParaCarga(entregaId){
-  const d = computeDashboardDiario();
-  const x = d.joined.find(j=>j.e.id===entregaId);
-  if(!x || !x.fatoresExcedidos.length){ toast('Esta carga não tem nenhum fator acima do limite.', true); return; }
-  x.fatoresExcedidos.forEach(fator=>{
-    const {title, body} = montarMensagemAlertaPush(x.e, x.v, fator);
+  const entrega = state.entregas.find(e=>e.id===entregaId);
+  if(!entrega){ toast('Carga não encontrada.', true); return; }
+  const fatoresExcedidos = calcularFatoresExcedidos(entrega);
+  if(!fatoresExcedidos.length){ toast('Esta carga não tem nenhum fator acima do limite.', true); return; }
+  const venda = vendaById(entrega.vendaId);
+  fatoresExcedidos.forEach(fator=>{
+    const {title, body} = montarMensagemAlertaPush(entrega, venda, fator);
     enviarPushAlerta(title, body);
   });
 }
@@ -5372,14 +5434,20 @@ function updateTbodyRomaneiosDia(){
   const linhas = ultimoDashboardDiarioLista.map(x=>{
     const extract = {romaneio: x.e.nrRomaneio||'', motorista: x.e.motorista||'', produtor: x.v?produtorNome(x.v.produtorId):''};
     const estiloLinha = x.acimaDoLimite ? ' style="background:var(--red-dim);"' : '';
+    const acoes = x.acimaDoLimite ? `<div class="actions-row" style="flex-wrap:nowrap;">
+        <button class="btn ghost sm" title="Avisar por WhatsApp" onclick="avisarProdutorDescontoWhatsapp('${x.e.id}')">📲</button>
+        <button class="btn ghost sm" title="Enviar push" onclick="dispararPushManualParaCarga('${x.e.id}')">🔔</button>
+        <button class="btn ghost sm" title="Editar mensagem antes de enviar" onclick="abrirEditorPushCarga('${x.e.id}')">✏️</button>
+      </div>` : '';
     return { extract, html: `<tr${estiloLinha}>
         <td>${extract.romaneio||'—'}${x.acimaDoLimite?' <span class="tag neg" title="Desconto acima do limite">⚠️</span>':''}</td><td>${extract.motorista||'—'}</td><td>${extract.produtor||'—'}</td>
         <td>${fmtValorDiario(x.e.pesoBruto)}</td><td>${fmtValorDiario(x.e.tara)}</td><td>${fmtValorDiario(x.e.pesoLiquidoSemDesc)}</td>
         <td>${fmtValorDiario(x.e.umidade)}</td><td>${fmtValorDiario(x.e.impureza)}</td><td>${fmtValorDiario(x.e.ardido)}</td>
         <td><b>${fmtValorDiario(x.e.pesoLiquidoComDesc)}</b></td>
+        <td>${acoes}</td>
       </tr>` };
   }).filter(r=>rowMatches(r.extract, filters));
-  document.getElementById('tbodyRomaneiosDia').innerHTML = linhas.length ? linhas.map(r=>r.html).join('') : emptyRow(10, dashboardDiarioAcumulado ? '📂 Nenhum romaneio lançado ainda nesta safra.' : '📂 Nenhum romaneio lançado hoje ainda.');
+  document.getElementById('tbodyRomaneiosDia').innerHTML = linhas.length ? linhas.map(r=>r.html).join('') : emptyRow(11, dashboardDiarioAcumulado ? '📂 Nenhum romaneio lançado ainda nesta safra.' : '📂 Nenhum romaneio lançado hoje ainda.');
 }
 Object.assign(TBODY_UPDATERS, { romaneiosDia: updateTbodyRomaneiosDia });
 function exportarRomaneiosDiarioPDF(){
@@ -5441,23 +5509,7 @@ function paintDashboardDiario(){
   updateTbodyRomaneiosDia();
 
   const alertaEl = document.getElementById('alertaDescontoDiario');
-  if(!d.excedentes.length){
-    alertaEl.innerHTML = '';
-  }else{
-    alertaEl.innerHTML = `<div class="card" style="margin-bottom:14px;border-color:var(--red-dim);">
-      <p style="color:var(--red);font-weight:700;margin:0 0 8px 0;">⚠️ ${d.excedentes.length} carga(s) acima do limite configurado:</p>` +
-      d.excedentes.map(x=>{
-        const produtor = x.v ? produtorNome(x.v.produtorId) : '—';
-        const fatoresTxt = x.fatoresExcedidos.map(f=>`${f.nome} ${fmtPct(f.valor)} (limite ${fmtPct(f.limite)})`).join(' · ');
-        return `<div class="actions-row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);">
-          <span style="font-size:13px;">Romaneio <b>${x.e.nrRomaneio||'—'}</b> · ${produtor} · <b style="color:var(--red);">${fatoresTxt}</b></span>
-          <div class="actions-row">
-            <button class="btn ghost sm" onclick="avisarProdutorDescontoWhatsapp('${x.e.id}')">📲 WhatsApp</button>
-            <button class="btn ghost sm" onclick="dispararPushManualParaCarga('${x.e.id}')">🔔 Push</button>
-          </div>
-        </div>`;
-      }).join('') + `</div>`;
-  }
+  if(alertaEl) alertaEl.innerHTML = '';
 
   document.getElementById('kpisDiarioLinha1').innerHTML = `
     <div class="kpi"><div class="label">Romaneios${dashboardDiarioAcumulado?' (acumulado)':' hoje'}</div><div class="value">${d.n}</div><div class="sub">recebidos até agora</div></div>
