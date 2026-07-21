@@ -1052,6 +1052,9 @@ async function copiarTexto(texto){
   }
 }
 function linkAcessoSistema(tipo){
+  // Gerado a partir do próprio endereço onde o sistema está rodando — se o domínio, a pasta
+  // ou o nome do repositório mudar um dia, o link já sai certo sozinho, sem precisar editar nada aqui.
+  if(location.protocol === 'file:') return null; // arquivo aberto localmente, não é o site publicado
   const base = location.origin + location.pathname;
   return tipo==='motorista' ? base + '#motorista' : base;
 }
@@ -1060,7 +1063,9 @@ function textoAcessoMotorista(motoristaId){
   if(!m?.placa) return { erro: 'Cadastre a placa deste motorista antes de compartilhar o acesso.' };
   const acesso = state.usuarios.find(u=>u.papel==='motorista' && u.motoristaId===motoristaId);
   if(!acesso?.senha) return { erro: 'Defina uma senha pra este motorista em "Editar" antes de compartilhar o acesso.' };
-  return { texto: `Acesso ao sistema BRC\nLink: ${linkAcessoSistema('motorista')}\nUsuário (placa): ${normalizarPlaca(m.placa)}\nSenha: ${acesso.senha}` };
+  const link = linkAcessoSistema('motorista');
+  if(!link) return { erro: 'Você está com o arquivo aberto localmente no computador, não pelo link publicado do sistema — abra pelo endereço de verdade antes de gerar o acesso.' };
+  return { texto: `Acesso ao sistema BRC\nLink: ${link}\nUsuário (placa): ${normalizarPlaca(m.placa)}\nSenha: ${acesso.senha}` };
 }
 function compartilharAcessoMotorista(motoristaId){
   const r = textoAcessoMotorista(motoristaId);
@@ -1089,19 +1094,15 @@ function onLinkMotoristaSelectChange(){
   linkMotoristaTextoAtual = r.texto;
   wrap.innerHTML = `
     <div class="card" style="margin-top:12px;padding:12px;white-space:pre-wrap;font-size:13px;">${r.texto.replace(/</g,'&lt;')}</div>
-    <span class="choice-wrap" style="display:block;margin-top:10px;">
-      <button class="btn sm" onclick="toggleChoicePopover('popoverLinkMotorista')">📤 Compartilhar dados de acesso</button>
-      <span class="choice-popover" id="popoverLinkMotorista">
-        <button onclick="fecharChoicePopovers(); copiarTexto(linkMotoristaTextoAtual);">📋 Copiar dados de acesso</button>
-        <button onclick="fecharChoicePopovers(); enviarWhatsapp(linkMotoristaTextoAtual);">📲 Enviar via WhatsApp</button>
-      </span>
-    </span>`;
+    <button class="btn sm" style="margin-top:10px;" onclick="copiarTexto(linkMotoristaTextoAtual)">📋 Copiar dados de acesso</button>`;
 }
 function compartilharAcessoUsuario(usuarioId){
   const u = state.usuarios.find(x=>x.id===usuarioId);
   if(!u){ return; }
   if(!u.senha){ toast('Defina uma senha pra este usuário antes de compartilhar o acesso.', true); return; }
-  copiarTexto(`Acesso ao sistema BRC\nLink: ${linkAcessoSistema('usuario')}\nUsuário: ${u.usuario}\nSenha: ${u.senha}`);
+  const link = linkAcessoSistema('usuario');
+  if(!link){ toast('Você está com o arquivo aberto localmente no computador, não pelo link publicado do sistema — abra pelo endereço de verdade antes de gerar o acesso.', true); return; }
+  copiarTexto(`Acesso ao sistema BRC\nLink: ${link}\nUsuário: ${u.usuario}\nSenha: ${u.senha}`);
 }
 function toast(msg, isErr){
   const el = document.createElement('div');
@@ -1245,9 +1246,9 @@ function renderUsuarios(containerId){
               <td><div class="actions-row">
                 ${u.papel==='motorista'
                   ? `<button class="btn ghost sm" onclick="openCadastroModal('acessoMotorista','${u.motoristaId}')">Gerenciar</button>
-                     <button class="btn ghost sm" onclick="compartilharAcessoMotorista('${u.motoristaId}')">📤 Compartilhar</button>`
+                     <button class="btn ghost sm" onclick="compartilharAcessoMotorista('${u.motoristaId}')">📋 Copiar dados de acesso</button>`
                   : `<button class="btn ghost sm" onclick="openCadastroModal('usuario','${u.id}')">Editar</button>
-                     <button class="btn ghost sm" onclick="compartilharAcessoUsuario('${u.id}')">📤 Compartilhar</button>`}
+                     <button class="btn ghost sm" onclick="compartilharAcessoUsuario('${u.id}')">📋 Copiar dados de acesso</button>`}
                 <button class="btn ghost sm" onclick="excluirUsuario('${u.id}')">Excluir</button>
               </div></td>
             </tr>`;
@@ -1636,13 +1637,7 @@ function updateTbodyMotoristas(modo){
     const docCpfCnpj = m.tipo==='juridica' ? (m.cnpj||'—') : (m.cpf||'—');
     const botoesAcesso = `
         <button class="btn ghost sm cred-btn-acesso" onclick="openCadastroModal('acessoMotorista','${m.id}')">${acesso?'Gerenciar acesso':'Liberar acesso'}</button>
-        <span class="choice-wrap">
-          <button class="btn ghost sm" onclick="toggleChoicePopover('popoverAcesso-${m.id}')">📤 Compartilhar dados de acesso</button>
-          <span class="choice-popover" id="popoverAcesso-${m.id}">
-            <button onclick="fecharChoicePopovers(); compartilharAcessoMotorista('${m.id}');">📋 Copiar dados de acesso</button>
-            <button onclick="fecharChoicePopovers(); enviarAcessoMotoristaWhatsapp('${m.id}');">📲 Enviar via WhatsApp</button>
-          </span>
-        </span>`;
+        <button class="btn ghost sm" onclick="compartilharAcessoMotorista('${m.id}')">📋 Copiar dados de acesso</button>`;
     const botoesCadastro = `
         <button class="btn ghost sm" onclick="abrirDocumentosMotorista('${m.id}')">📁 Documentos${m.documentos?.length ? ' ('+m.documentos.length+')' : ''}</button>
         <button class="btn ghost sm" onclick="openCadastroModal('motorista','${m.id}')">Editar</button>
@@ -2416,7 +2411,8 @@ function bindShellEvents(){
   });
   document.getElementById('btnLinkProdutor').addEventListener('click', ()=>{
     panel.classList.remove('aberto');
-    const url = location.origin + location.pathname;
+    const url = linkAcessoSistema('produtor');
+    if(!url){ toast('Você está com o arquivo aberto localmente no computador, não pelo link publicado do sistema — abra pelo endereço de verdade antes de gerar o acesso.', true); return; }
     navigator.clipboard?.writeText(url).then(()=>{
       toast('Link copiado! O produtor acessa esse mesmo link e faz login com o usuário e senha dele.');
     }).catch(()=>{
@@ -2791,13 +2787,7 @@ function openCadastroModal(kind, id){
         </p>
         <div class="field"><label>Senha de acesso</label><input id="fAcessoMotoristaSenha" value="${acesso?.senha||''}" placeholder="defina uma senha"></div>
         <div class="field"><label>Prazo de validade deste acesso <span class="small-note">(opcional)</span></label><input type="date" id="fAcessoMotoristaExpira" value="${acesso?.expiraEm||''}"></div>
-        <span class="choice-wrap" style="display:block;width:100%;margin-bottom:4px;">
-          <button class="btn ghost sm" style="width:100%;" onclick="toggleChoicePopover('popoverAcessoModal')">📤 Compartilhar dados de acesso</button>
-          <span class="choice-popover" id="popoverAcessoModal" style="left:0;right:0;">
-            <button onclick="fecharChoicePopovers(); compartilharAcessoMotorista('${id}');">📋 Copiar dados de acesso</button>
-            <button onclick="fecharChoicePopovers(); enviarAcessoMotoristaWhatsapp('${id}');">📲 Enviar via WhatsApp</button>
-          </span>
-        </span>
+        <button class="btn ghost sm" style="width:100%;margin-bottom:4px;" onclick="compartilharAcessoMotorista('${id}')">📋 Copiar dados de acesso</button>
         <div class="actions-row" style="justify-content:flex-end;margin-top:14px;">
           ${acesso ? `<button class="btn danger" onclick="revogarAcessoMotorista('${id}')">Revogar acesso</button>` : ''}
           <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
