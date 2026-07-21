@@ -436,7 +436,7 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
           <button class="interacoes-item" id="btnToggleTema" data-item-id="tema">⚙️ Configurações</button>
         </div>
       </div>
-      <button class="interacoes-trigger" id="btnNotificacoesPush" onclick="toggleNotificacoesUsuario()" title="Ativar notificações"><span id="iconeNotificacoesPush">🔔</span><span class="texto-notificacoes"> Ativar notificações</span></button>
+      <button class="interacoes-trigger" id="btnNotificacoesPush" onclick="toggleNotificacoesUsuario()" title="Ativar notificações"><span id="iconeNotificacoesPush">🔕</span><span class="texto-notificacoes"> Ativar notificações</span></button>
       <button class="interacoes-trigger" id="btnMaximizarTela" onclick="toggleTelaMaximizada()">⛶ Maximizar</button>
       <button class="interacoes-trigger" onclick="renderTelaFiltroContexto()">← Voltar</button>
       <button class="interacoes-trigger" style="color:var(--red);font-weight:800;border-color:var(--red-dim);" onclick="logout()">Sair</button>
@@ -671,7 +671,7 @@ async function atualizarBotaoNotificacoes(){
   try{
     const reg = await navigator.serviceWorker.getRegistration('./sw.js');
     const sub = reg ? await reg.pushManager.getSubscription() : null;
-    if(icone) icone.textContent = sub ? '🔕' : '🔔';
+    if(icone) icone.textContent = sub ? '🔔' : '🔕';
     if(texto) texto.textContent = sub ? ' Desativar notificações' : ' Ativar notificações';
     btn.title = sub ? 'Desativar notificações' : 'Ativar notificações';
   }catch(e){}
@@ -4950,6 +4950,7 @@ async function submitMotorista(forcarManual){
   }
 
   await saveCadastros(); await saveVendas(); await saveEntregas();
+  if(entregaFinal) verificarLimiteEAvisarAutomatico(entregaFinal);
 
   if(motoristaFotoAtual && entregaFinal){
     try{ await window.storage.set('romaneio-foto:'+entregaFinal.id, motoristaFotoAtual, true); }
@@ -6342,6 +6343,7 @@ function handleImportLegacy(rows, colheitaId){
       entrega.status = 'completo';
       state.entregas.push(entrega);
       novasEntregas++;
+      verificarLimiteEAvisarAutomatico(entrega);
     }
   });
 
