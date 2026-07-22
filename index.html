@@ -1095,6 +1095,35 @@ function capacidadeRecebimentoJanela(fazendaId){
   }
   return { limiteKg, espacoLivreKg, umidadeMedia, precisaSecar, secadorConfigurado: secadorTonHora>0, gargalo, horas, recebidoKg: recebidoNaJanelaKg(fazendaId, horas) };
 }
+// Comprometimento do secador: das cargas que entraram na janela (24/36/48h...), quanto (em kg) chegou
+// acima da umidade segura (precisou secar), comparado com a vazão do secador nesse mesmo período.
+// É esse número que vira o medidor menor (secador), separado do medidor de espaço no armazém.
+function comprometimentoSecador(fazendaId){
+  const f = state.fazendas.find(x=>x.id===fazendaId);
+  if(!f) return null;
+  const secadorTonHora = num(f.secadorTonHora);
+  if(!secadorTonHora) return null;
+  const horas = janelaRecebimentoDaFazenda(f);
+  const umidadeSegura = num(state.config.umidadeSeguraPct ?? 14);
+  const limiteTs = Date.now() - horas*3600*1000;
+  const cargasSecador = state.romaneiosArmazem.filter(r=>{
+    if(r.fazendaId!==fazendaId) return false;
+    if(new Date(r.createdAt||r.dataEntrada).getTime() < limiteTs) return false;
+    const pesoBruto = num(r.pesoBruto);
+    if(!pesoBruto) return false;
+    return (num(r.umidade)/pesoBruto*100) > umidadeSegura;
+  });
+  const kgNoSecador = cargasSecador.reduce((s,r)=>s+num(r.pesoLiquido),0);
+  const capacidadeSecadorKg = secadorTonHora*1000*horas;
+  const umidadeMediaSecador = cargasSecador.length
+    ? cargasSecador.reduce((s,r)=> s + (num(r.umidade)/num(r.pesoBruto)*100), 0) / cargasSecador.length
+    : null;
+  return {
+    horas, capacidadeSecadorKg, kgNoSecador, umidadeMediaSecador,
+    pct: capacidadeSecadorKg>0 ? (kgNoSecador/capacidadeSecadorKg*100) : 0,
+    nCargas: cargasSecador.length
+  };
+}
 function upsertMovimentoEstoque(dados, origemTipo, refId){
   let mov = state.movimentosEstoque.find(m=>m.origem?.tipo===origemTipo && m.origem?.refId===refId);
   if(!mov){
@@ -1130,43 +1159,61 @@ function gerarSaidaEstoqueAutomatica(entrega){
 // Gauge grande (2x do tamanho original), gradiente por tema (usa as MESMAS variáveis de cor que
 // já mudam sozinhas conforme o tema ativo — Neural/Escuro=azul-ciano-verde, Black=verde-dourado, Padrão=verde claro),
 // com marcações 0/25/50/75/100 como no modelo de referência.
-function gaugeArmazemSVG(pctBruto, idSufixo){
+// Ícone simples de silo/armazém, minimalista, em traço (bate com o estilo do modelo de referência).
+function iconeSiloSVG(cx, cy, escala, cor){
+  const s = escala;
+  return `<g transform="translate(${cx-14*s},${cy-16*s}) scale(${s})" stroke="${cor}" stroke-width="2" fill="none" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M4 30 L4 10 Q14 -2 24 10 L24 30 Z"/>
+    <line x1="4" y1="18" x2="24" y2="18"/>
+    <line x1="14" y1="4" x2="14" y2="30"/>
+  </g>`;
+}
+// Gauge no formato do modelo de referência: arco inteiro sempre colorido (gradiente por tema), marcador
+// brilhante na posição do valor atual (sem ponteiro saindo do centro), selo com ícone + rótulo + % + valor.
+// `escala` permite desenhar uma versão menor (ex: 0.85 pro medidor do secador, 15% menor que o principal).
+function gaugeArmazemSVG(pctBruto, idSufixo, opts){
+  opts = opts || {};
+  const escala = opts.escala || 1;
+  const rotulo = opts.rotulo || 'CAPACIDADE DO ARMAZÉM';
+  const corValor = opts.corValor || 'var(--ink)';
   const pct = Math.max(0, Math.min(100, pctBruto||0));
   const gid = 'gaugeGrad_' + (idSufixo||Math.random().toString(36).slice(2));
-  const raio = 160, cx = 200, cy = 200, espessura = 28;
-  const circunf = Math.PI*raio;
-  const dash = (pct/100)*circunf;
+  const raio = 160, cx = 200, cy = 200, espessura = 26;
   const angRad = (180-(pct/100)*180) * Math.PI/180;
-  const nx = (cx + (raio-espessura*1.3)*Math.cos(angRad)).toFixed(1);
-  const ny = (cy - (raio-espessura*1.3)*Math.sin(angRad)).toFixed(1);
+  const gx = (cx + raio*Math.cos(angRad)).toFixed(1);
+  const gy = (cy - raio*Math.sin(angRad)).toFixed(1);
   const marcas = [0,25,50,75,100].map(v=>{
     const a = (180-(v/100)*180)*Math.PI/180;
     const xLabel = (cx + (raio+26)*Math.cos(a)).toFixed(1);
     const yLabel = (cy - (raio+26)*Math.sin(a)).toFixed(1);
     return `<text x="${xLabel}" y="${yLabel}" text-anchor="middle" font-size="13" fill="var(--ink-dim)" font-family="'JetBrains Mono',monospace">${v}</text>`;
   }).join('');
-  return `<svg viewBox="0 0 400 260" style="width:100%;max-width:440px;display:block;margin:0 auto;">
+  const fontIcone = 26, fontRotulo = 14, fontPct = 56, fontUnidade = 26;
+  return `<svg viewBox="0 0 400 260" style="width:100%;max-width:${(440*escala).toFixed(0)}px;display:block;margin:0 auto;">
     <defs>
       <linearGradient id="${gid}" x1="0%" y1="0%" x2="100%" y2="0%">
         <stop offset="0%" stop-color="var(--cyan)"/>
         <stop offset="50%" stop-color="var(--lime)"/>
         <stop offset="100%" stop-color="var(--gold)"/>
       </linearGradient>
+      <radialGradient id="${gid}_glint" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.95"/>
+        <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+      </radialGradient>
     </defs>
-    <path d="M ${cx-raio} ${cy} A ${raio} ${raio} 0 0 1 ${cx+raio} ${cy}" fill="none" stroke="var(--line)" stroke-width="${espessura}" stroke-linecap="round"/>
-    <path d="M ${cx-raio} ${cy} A ${raio} ${raio} 0 0 1 ${cx+raio} ${cy}" fill="none" stroke="url(#${gid})" stroke-width="${espessura}" stroke-linecap="round" stroke-dasharray="${dash.toFixed(1)} ${circunf.toFixed(1)}" opacity="0.94"/>
+    <path d="M ${cx-raio} ${cy} A ${raio} ${raio} 0 0 1 ${cx+raio} ${cy}" fill="none" stroke="url(#${gid})" stroke-width="${espessura}" stroke-linecap="round"/>
     ${marcas}
-    <line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="var(--ink)" stroke-width="4" stroke-linecap="round"/>
-    <circle cx="${cx}" cy="${cy}" r="9" fill="var(--ink)"/>
-    <circle cx="${nx}" cy="${ny}" r="6" fill="var(--ink)" stroke="var(--bg)" stroke-width="2"/>
-    <text x="${cx}" y="${cy-58}" text-anchor="middle" font-size="14" letter-spacing="1" fill="var(--ink-dim)" font-family="'Space Grotesk',sans-serif">CAPACIDADE DO ARMAZÉM</text>
-    <text x="${cx}" y="${cy-6}" text-anchor="middle" font-size="56" font-weight="800" fill="var(--ink)" font-family="'Space Grotesk',sans-serif">${fmt(pctBruto,0)}<tspan font-size="26">%</tspan></text>
+    <circle cx="${gx}" cy="${gy}" r="15" fill="url(#${gid}_glint)"/>
+    <circle cx="${gx}" cy="${gy}" r="5" fill="#FFFFFF"/>
+    ${iconeSiloSVG(cx, cy-95, 1.1, 'var(--ink-dim)')}
+    <text x="${cx}" y="${cy-40}" text-anchor="middle" font-size="${fontRotulo}" letter-spacing="1" fill="var(--ink-dim)" font-family="'Space Grotesk',sans-serif">${rotulo}</text>
+    <text x="${cx}" y="${cy+16}" text-anchor="middle" font-size="${fontPct}" font-weight="800" fill="${corValor}" font-family="'Space Grotesk',sans-serif">${fmt(pctBruto,0)}<tspan font-size="${fontUnidade}">%</tspan></text>
   </svg>`;
 }
-function barraProgressoCapacidade(pct){
+function barraProgressoCapacidade(pct, rotulo){
   const p = Math.max(0, Math.min(100, pct||0));
   return `<div style="margin-top:6px;">
-    <div class="small-note" style="text-align:center;letter-spacing:1px;margin-bottom:4px;">PROGRESSO DA CAPACIDADE</div>
+    <div class="small-note" style="text-align:center;letter-spacing:1px;margin-bottom:4px;">${rotulo||'PROGRESSO DA CAPACIDADE'}</div>
     <div style="background:var(--line);border-radius:20px;height:14px;overflow:hidden;position:relative;">
       <div style="width:${p}%;height:100%;background:linear-gradient(90deg, var(--cyan), var(--lime), var(--gold));border-radius:20px;"></div>
     </div>
@@ -1206,6 +1253,33 @@ function salvarLimiteRecebimentoInline(fazendaId){
   renderEstoque(); renderGaugesDashboard();
   verificarLimiteRecebimentoEAvisar(fazendaId);
 }
+// Envia push pra uma lista específica de usuários (não é broadcast) — usa a rota legada /api/push/send,
+// uma chamada por usuário. Usada pelo push programado (resumo periódico), que tem destinatários escolhidos.
+async function enviarPushParaUsuarios(usuarioIds, title, message){
+  let totalEnviados = 0;
+  for(const usuarioId of (usuarioIds||[])){
+    try{
+      const res = await fetch(`${API_BASE}/push/send`, {
+        method:'POST', headers:{'Content-Type':'application/json','x-api-key':API_KEY},
+        body: JSON.stringify({ usuarioId, title, message }),
+      });
+      const data = await res.json();
+      totalEnviados += data.enviados||0;
+    }catch(e){ console.error('Falha ao enviar push programado pro usuário '+usuarioId, e); }
+  }
+  return totalEnviados;
+}
+function salvarPushProgramadoInline(fazendaId){
+  const f = state.fazendas.find(x=>x.id===fazendaId);
+  if(!f) return;
+  const ativo = !!document.getElementById('pushProgAtivo_'+fazendaId)?.checked;
+  const periodoHoras = num(document.getElementById('pushProgPeriodo_'+fazendaId)?.value) || 12;
+  const usuarioIds = Array.from(document.querySelectorAll('.chkPushProgUsuario_'+fazendaId+':checked')).map(el=>el.value);
+  f.pushProgramado = { ativo, periodoHoras, usuarioIds };
+  saveCadastros();
+  toast(`Push programado de ${f.nome} atualizado. O envio agora é automático, feito pelo próprio servidor.`);
+  renderEstoque(); renderGaugesDashboard();
+}
 // Monitor de Capacidade Operacional — junta o que antes eram dois relógios separados (armazenagem e
 // recebimento/secador) num único painel por fazenda, no estilo do modelo de referência: caixas de
 // estatística à esquerda, o medidor grande no centro, informações + alertas à direita, e logo abaixo,
@@ -1218,6 +1292,7 @@ function monitorCapacidadeOperacional(f){
   const recebidoHoje = recebidoHojeKg(f.id);
   const infoRecebimento = capacidadeRecebimentoJanela(f.id);
   const horasJanela = janelaRecebimentoDaFazenda(f);
+  const secador = comprometimentoSecador(f.id);
 
   const culturasComSaldo = Object.entries(calcSaldoPorCulturaFazenda(f.id)).filter(([,kg])=>kg>0.01).sort((a,b)=>b[1]-a[1]);
   const culturaPrincipal = culturasComSaldo.length ? (culturasComSaldo[0][0]==='_sem_cultura' ? 'Sem cultura definida' : culturaNome(culturasComSaldo[0][0])) : (state.config.cultura||'—');
@@ -1229,72 +1304,99 @@ function monitorCapacidadeOperacional(f){
   const limiteRec = limiteRecebimentoDaFazenda(f);
   const alertas = [];
   if(pct>=limiteArm) alertas.push({cor:'var(--red)', txt:`Armazenagem acima de ${limiteArm}% (${fmtPct(pct)})`});
-  if(infoRecebimento && infoRecebimento.limiteKg>0){
-    const pctRec = infoRecebimento.recebidoKg/infoRecebimento.limiteKg*100;
-    if(pctRec>=limiteRec) alertas.push({cor:'var(--red)', txt:`Recebimento (${horasJanela}h) acima de ${limiteRec}% — gargalo: ${infoRecebimento.gargalo==='secador'?'secador':'espaço no armazém'}`});
-  }
+  if(secador && secador.pct>=limiteRec) alertas.push({cor:'var(--red)', txt:`Secador comprometido em ${fmtPct(secador.pct)} (limite ${limiteRec}%)`});
   if(umidadeMedia!==null && !umidadeOk) alertas.push({cor:'var(--gold)', txt:`Umidade média de entrada em ${fmt(umidadeMedia,1)}%, acima do ideal (${umidadeSegura}%)`});
   const alertasHtml = alertas.length
     ? alertas.map(a=>`<div class="actions-row" style="gap:8px;padding:4px 0;font-size:12.5px;"><span style="width:8px;height:8px;border-radius:50%;background:${a.cor};flex:none;"></span><span>${a.txt}</span></div>`).join('')
     : `<p class="small-note" style="margin:4px 0 0;">Nenhum alerta no momento.</p>`;
+
+  const pushProg = f.pushProgramado || { ativo:false, periodoHoras:12, usuarioIds:[] };
 
   return `<div class="card" style="padding:20px;">
     <h3 style="margin:0 0 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
       ${f.nome} — Monitor de Capacidade Operacional
       <button class="btn ghost sm" style="text-transform:none;letter-spacing:0;" onclick="toggleUnidadeGaugeArmazem()">⇄ Ver em ${unidadeGaugeArmazem==='sacas'?'toneladas':'sacas'}</button>
     </h3>
-    <div class="monitor-grid">
-      <div style="display:flex;flex-direction:column;gap:10px;">
-        <div class="card" style="padding:10px 12px;">
-          <div class="small-note">CAPACIDADE TOTAL</div>
-          <div style="font-size:19px;font-weight:700;">${capacidadeKg ? fmtUnidade(capacidadeKg) : '—'}</div>
-          <div class="small-note">100%</div>
-        </div>
-        <div class="card" style="padding:10px 12px;">
-          <div class="small-note">RECEBIDO HOJE</div>
-          <div style="font-size:19px;font-weight:700;">${fmtUnidade(recebidoHoje)}</div>
-          <div class="small-note">${capacidadeKg?fmt(recebidoHoje/capacidadeKg*100,1):'0'}% da capacidade</div>
-        </div>
-        <div class="card" style="padding:10px 12px;">
-          <div class="small-note">RECEBIDO (${horasJanela}H)</div>
-          <div style="font-size:19px;font-weight:700;">${infoRecebimento ? fmtUnidade(infoRecebimento.recebidoKg) : '—'}</div>
-          <div class="small-note">${infoRecebimento && capacidadeKg ? fmt(infoRecebimento.recebidoKg/capacidadeKg*100,1) : '0'}% da capacidade</div>
-        </div>
-        <div class="card" style="padding:10px 12px;">
-          <div class="small-note">DISPONÍVEL P/ DEPÓSITO</div>
-          <div style="font-size:19px;font-weight:700;">${capacidadeKg ? fmtUnidade(disponivelKg) : '—'}</div>
-          <div class="small-note">${capacidadeKg?fmt(disponivelKg/capacidadeKg*100,1):'0'}% livre</div>
-        </div>
-      </div>
 
-      <div>
-        ${capacidadeKg ? gaugeArmazemSVG(pct, f.id) : '<p class="small-note" style="text-align:center;padding:30px 0;">Defina a capacidade do armazém no cadastro desta fazenda pra ver o medidor.</p>'}
+    <div class="grid cols-4" style="margin-bottom:18px;">
+      <div class="card" style="padding:10px 12px;">
+        <div class="small-note">CAPACIDADE TOTAL</div>
+        <div style="font-size:19px;font-weight:700;">${capacidadeKg ? fmtUnidade(capacidadeKg) : '—'}</div>
+        <div class="small-note">100%</div>
+      </div>
+      <div class="card" style="padding:10px 12px;">
+        <div class="small-note">RECEBIDO HOJE</div>
+        <div style="font-size:19px;font-weight:700;">${fmtUnidade(recebidoHoje)}</div>
+        <div class="small-note">${capacidadeKg?fmt(recebidoHoje/capacidadeKg*100,1):'0'}% da capacidade</div>
+      </div>
+      <div class="card" style="padding:10px 12px;">
+        <div class="small-note">RECEBIDO (${horasJanela}H)</div>
+        <div style="font-size:19px;font-weight:700;">${infoRecebimento ? fmtUnidade(infoRecebimento.recebidoKg) : '—'}</div>
+        <div class="small-note">${infoRecebimento && capacidadeKg ? fmt(infoRecebimento.recebidoKg/capacidadeKg*100,1) : '0'}% da capacidade</div>
+      </div>
+      <div class="card" style="padding:10px 12px;">
+        <div class="small-note">DISPONÍVEL P/ DEPÓSITO</div>
+        <div style="font-size:19px;font-weight:700;">${capacidadeKg ? fmtUnidade(disponivelKg) : '—'}</div>
+        <div class="small-note">${capacidadeKg?fmt(disponivelKg/capacidadeKg*100,1):'0'}% livre</div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-wrap:wrap;gap:24px;justify-content:center;align-items:flex-start;margin-bottom:18px;">
+      <div style="flex:1;min-width:280px;max-width:440px;">
+        ${capacidadeKg ? gaugeArmazemSVG(pct, f.id+'_arm', {rotulo:'CAPACIDADE DO ARMAZÉM'}) : '<p class="small-note" style="text-align:center;padding:30px 0;">Defina a capacidade do armazém no cadastro desta fazenda pra ver o medidor.</p>'}
         <div style="text-align:center;margin-top:-6px;margin-bottom:10px;">
           <span style="font-size:15px;font-weight:700;color:var(--gold);">${fmtUnidade(saldoKg)}</span>
           <span class="small-note"> depositadas</span>
         </div>
-        ${capacidadeKg ? barraProgressoCapacidade(pct) : ''}
+        ${capacidadeKg ? barraProgressoCapacidade(pct, 'PROGRESSO DA CAPACIDADE') : ''}
       </div>
+      <div style="flex:0 1 ${(440*0.85).toFixed(0)}px;min-width:240px;max-width:${(440*0.85).toFixed(0)}px;">
+        ${secador ? gaugeArmazemSVG(secador.pct, f.id+'_sec', {escala:0.85, rotulo:`SECADOR (${horasJanela}H)`}) : '<p class="small-note" style="text-align:center;padding:30px 0;">Cadastre a capacidade do secador (t/h) na fazenda pra ver este medidor.</p>'}
+        ${secador ? `<div style="text-align:center;margin-top:-6px;margin-bottom:10px;">
+          <span style="font-size:15px;font-weight:700;color:var(--gold);">${fmtUnidade(secador.kgNoSecador)}</span>
+          <span class="small-note"> secadas de ${fmtUnidade(secador.capacidadeSecadorKg)}</span>
+        </div>
+        ${barraProgressoCapacidade(secador.pct, 'COMPROMETIMENTO DO SECADOR')}
+        <p class="small-note" style="text-align:center;margin-top:6px;">${secador.nCargas} carga(s) acima da umidade segura · umidade média ${secador.umidadeMediaSecador!==null?fmt(secador.umidadeMediaSecador,1)+'%':'—'}</p>` : ''}
+      </div>
+    </div>
 
-      <div style="display:flex;flex-direction:column;gap:10px;">
-        <div class="card" style="padding:10px 12px;">
-          <div class="small-note">UMIDADE MÉDIA (24H)</div>
-          <div style="font-size:19px;font-weight:700;">${umidadeMedia!==null ? fmt(umidadeMedia,1)+'%' : '—'}</div>
-          <div class="small-note" style="color:${umidadeOk?'var(--lime)':'var(--gold)'};">${umidadeMedia===null?'sem entradas recentes':(umidadeOk?'dentro do ideal':'acima do ideal')}</div>
-        </div>
-        <div class="card" style="padding:10px 12px;">
-          <div class="small-note">GRÃO ARMAZENADO</div>
-          <div style="font-size:16px;font-weight:700;">${culturaPrincipal}</div>
-          <div class="small-note">Safra ${state.config.safra||'—'}</div>
-        </div>
-        <div class="card" style="padding:10px 12px;">
-          <div class="small-note" style="margin-bottom:2px;">ALERTAS</div>
-          ${alertasHtml}
-        </div>
+    <div class="grid cols-3" style="margin-bottom:4px;">
+      <div class="card" style="padding:10px 12px;">
+        <div class="small-note">UMIDADE MÉDIA (24H)</div>
+        <div style="font-size:19px;font-weight:700;">${umidadeMedia!==null ? fmt(umidadeMedia,1)+'%' : '—'}</div>
+        <div class="small-note" style="color:${umidadeOk?'var(--lime)':'var(--gold)'};">${umidadeMedia===null?'sem entradas recentes':(umidadeOk?'dentro do ideal':'acima do ideal')}</div>
+      </div>
+      <div class="card" style="padding:10px 12px;">
+        <div class="small-note">GRÃO ARMAZENADO</div>
+        <div style="font-size:16px;font-weight:700;">${culturaPrincipal}</div>
+        <div class="small-note">Safra ${state.config.safra||'—'}</div>
+      </div>
+      <div class="card" style="padding:10px 12px;">
+        <div class="small-note" style="margin-bottom:2px;">ALERTAS</div>
+        ${alertasHtml}
       </div>
     </div>
 
     <div class="monitor-push-grid">
+      <div class="card" style="padding:12px 14px;">
+        <div style="font-size:13px;font-weight:700;margin-bottom:6px;">🕒 Push programado — resumo periódico</div>
+        <p class="small-note" style="margin:0 0 8px;">Envia de tempos em tempos: total armazenado, espaço livre, comprometimento do secador e umidade média das cargas que precisaram secar.</p>
+        <label class="small-note" style="display:flex;align-items:center;gap:6px;margin-bottom:8px;cursor:pointer;">
+          <input type="checkbox" id="pushProgAtivo_${f.id}" ${pushProg.ativo?'checked':''}> ativar envio periódico
+        </label>
+        <div class="actions-row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+          <span class="small-note">a cada</span>
+          <select id="pushProgPeriodo_${f.id}">
+            ${[6,12,24,48].map(h=>`<option value="${h}" ${h===(num(pushProg.periodoHoras)||12)?'selected':''}>${h}h</option>`).join('')}
+          </select>
+        </div>
+        <div class="small-note" style="margin-bottom:4px;">Quem recebe:</div>
+        <div style="max-height:110px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin-bottom:8px;">
+          ${optionsUsuariosChecklist(pushProg.usuarioIds||[], f.id)}
+        </div>
+        <button class="btn ghost sm" onclick="salvarPushProgramadoInline('${f.id}')">Salvar</button>
+      </div>
       <div class="card" style="padding:12px 14px;">
         <div style="font-size:13px;font-weight:700;margin-bottom:6px;">🔔 Aviso de armazenagem</div>
         <p class="small-note" style="margin:0 0 8px;">Avisa por push quando ultrapassar esse percentual — e avisa de novo quando voltar abaixo dele.</p>
@@ -1305,7 +1407,7 @@ function monitorCapacidadeOperacional(f){
       </div>
       <div class="card" style="padding:12px 14px;">
         <div style="font-size:13px;font-weight:700;margin-bottom:6px;">🔔 Aviso de recebimento / secador</div>
-        <p class="small-note" style="margin:0 0 8px;">Mesma lógica, aplicada à capacidade de absorver novas cargas na janela escolhida.</p>
+        <p class="small-note" style="margin:0 0 8px;">Mesma lógica, aplicada ao comprometimento do secador na janela escolhida.</p>
         <div class="actions-row" style="gap:6px;flex-wrap:wrap;">
           <input id="limRec_${f.id}" type="number" min="1" max="100" step="1" value="${limiteRec}" style="width:80px;"><span class="small-note">%</span>
           <select id="janRec_${f.id}" style="width:auto;">
@@ -1329,6 +1431,10 @@ function renderEstoque(){
   const movsOrdenados = [...state.movimentosEstoque].sort((a,b)=>(b.data||'').localeCompare(a.data||'') || (b.createdAt||'').localeCompare(a.createdAt||''));
   const nAguardando = state.romaneiosArmazem.filter(r=>r.status==='aguardando_aprovacao').length;
   el.innerHTML = `
+    <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+      <span>Estoque de Armazém</span>
+      <button class="btn pdf sm" id="pdfBtnEstoque" onclick="exportarMonitoresEstoquePDF()">⬇ Exportar PDF</button>
+    </div>
     <div class="card" style="margin-bottom:24px;">
       <h2>Romaneios de Armazém <small>${state.romaneiosArmazem.length} romaneio(s)${nAguardando>0?' — '+nAguardando+' aguardando aprovação':''}</small>
         <span class="choice-wrap">
@@ -1358,7 +1464,7 @@ function renderEstoque(){
     </div>
 
     <div class="section-title">Monitor de Capacidade Operacional</div>
-    <div style="display:flex;flex-direction:column;gap:18px;margin-bottom:24px;">
+    <div id="monitoresEstoquePDF" style="display:flex;flex-direction:column;gap:18px;margin-bottom:24px;background:var(--bg);padding:2px;">
       ${fazendas.map(f=>monitorCapacidadeOperacional(f)).join('')}
     </div>
 
@@ -4147,6 +4253,28 @@ function verificarLimiteRecebimentoEAvisar(fazendaId){
     }
   }catch(e){ console.error('Falha ao checar limite de recebimento:', e); }
 }
+// Exporta o Monitor de Capacidade Operacional como PDF de verdade (mesmo padrão dos dashboards:
+// html2canvas + jsPDF, baixa o arquivo), em vez de abrir uma aba pra imprimir.
+async function exportarMonitoresEstoquePDF(){
+  const btn = document.getElementById('pdfBtnEstoque');
+  const originalLabel = btn.innerHTML;
+  btn.classList.add('loading'); btn.innerHTML = '⏳ Gerando PDF...';
+  try{
+    const alvo = document.getElementById('monitoresEstoquePDF');
+    const bgCor = getComputedStyle(document.body).getPropertyValue('--bg').trim() || '#0B0E0C';
+    const canvas = await html2canvas(alvo, {backgroundColor: bgCor, scale:2, useCORS:true});
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p','mm','a4');
+    addFittedPage(pdf, canvas, true);
+    const fazenda = (state.config.fazenda||'').trim().replace(/\s+/g,'_') || 'fazenda';
+    pdf.save(`monitor_capacidade_operacional_${fazenda}_${todayISO()}.pdf`);
+  }catch(err){
+    toast('Erro ao gerar o PDF: ' + err.message, true);
+    console.error(err);
+  }finally{
+    btn.classList.remove('loading'); btn.innerHTML = originalLabel;
+  }
+}
 function exportarRelatorioEstoquePDF(){
   const fazendas = armazensCadastradosNoContexto();
   const movs = [...state.movimentosEstoque].sort((a,b)=>(b.data||'').localeCompare(a.data||'') || (b.createdAt||'').localeCompare(a.createdAt||''));
@@ -5047,6 +5175,10 @@ function removerLinhaVariedadeColheita(idx){
   if(linhas.length<=1){ toast('Deixe pelo menos uma variedade.', true); return; }
   document.querySelector(`.linha-variedade-colheita[data-idx="${idx}"]`)?.remove();
   atualizarInfoAreaColheita();
+}
+function optionsUsuariosChecklist(selecionados, sufixo){
+  if(!state.usuarios.length) return '<p class="small-note">Nenhum usuário cadastrado.</p>';
+  return state.usuarios.map(u=>`<label class="col-filter-item"><input type="checkbox" class="chkPushProgUsuario_${sufixo}" value="${u.id}" ${selecionados.includes(u.id)?'checked':''}><span>${u.usuario} (${labelPapel(u.papel)})</span></label>`).join('');
 }
 function optionsProdutoresContextoChecklist(selecionados){
   const idsContexto = state.config.contextoProdutores || [];
@@ -8147,6 +8279,7 @@ function entrarNoApp(tabInicial){
   if(s.papel==='admin'){
     syncGoogleSheet();
     syncERPWebhook();
+    // push programado (resumo periódico) roda sozinho no servidor agora — não depende do navegador aberto.
     setInterval(syncGoogleSheet, 5*60*1000);
     setInterval(syncERPWebhook, 5*60*1000);
   }
