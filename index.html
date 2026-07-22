@@ -1160,17 +1160,9 @@ function gerarSaidaEstoqueAutomatica(entrega){
 // já mudam sozinhas conforme o tema ativo — Neural/Escuro=azul-ciano-verde, Black=verde-dourado, Padrão=verde claro),
 // com marcações 0/25/50/75/100 como no modelo de referência.
 // Ícone simples de silo/armazém, minimalista, em traço (bate com o estilo do modelo de referência).
-function iconeSiloSVG(cx, cy, escala, cor){
-  const s = escala;
-  return `<g transform="translate(${cx-14*s},${cy-16*s}) scale(${s})" stroke="${cor}" stroke-width="2" fill="none" stroke-linejoin="round" stroke-linecap="round">
-    <path d="M4 30 L4 10 Q14 -2 24 10 L24 30 Z"/>
-    <line x1="4" y1="18" x2="24" y2="18"/>
-    <line x1="14" y1="4" x2="14" y2="30"/>
-  </g>`;
-}
-// Gauge no formato do modelo de referência: arco inteiro sempre colorido (gradiente por tema), marcador
-// brilhante na posição do valor atual (sem ponteiro saindo do centro), selo com ícone + rótulo + % + valor.
-// `escala` permite desenhar uma versão menor (ex: 0.85 pro medidor do secador, 15% menor que o principal).
+// Gauge no formato do modelo de referência: arco em blocos/segmentos (efeito "LED"), gradiente por
+// tema, marcador brilhante na posição do valor atual (sem ponteiro, sem ícone acima do texto).
+// `escala` permite desenhar uma versão menor (ex: 0.85 pro medidor do secador).
 function gaugeArmazemSVG(pctBruto, idSufixo, opts){
   opts = opts || {};
   const escala = opts.escala || 1;
@@ -1179,6 +1171,7 @@ function gaugeArmazemSVG(pctBruto, idSufixo, opts){
   const pct = Math.max(0, Math.min(100, pctBruto||0));
   const gid = 'gaugeGrad_' + (idSufixo||Math.random().toString(36).slice(2));
   const raio = 160, cx = 200, cy = 200, espessura = 26;
+  const circunf = Math.PI*raio;
   const angRad = (180-(pct/100)*180) * Math.PI/180;
   const gx = (cx + raio*Math.cos(angRad)).toFixed(1);
   const gy = (cy - raio*Math.sin(angRad)).toFixed(1);
@@ -1188,8 +1181,8 @@ function gaugeArmazemSVG(pctBruto, idSufixo, opts){
     const yLabel = (cy - (raio+26)*Math.sin(a)).toFixed(1);
     return `<text x="${xLabel}" y="${yLabel}" text-anchor="middle" font-size="13" fill="var(--ink-dim)" font-family="'JetBrains Mono',monospace">${v}</text>`;
   }).join('');
-  const fontIcone = 26, fontRotulo = 14, fontPct = 56, fontUnidade = 26;
-  return `<svg viewBox="0 0 400 260" style="width:100%;max-width:${(440*escala).toFixed(0)}px;display:block;margin:0 auto;">
+  const fontRotulo = 14, fontPct = 45, fontUnidade = 21; // fontPct = 56 * 0.8 (20% menor), mesma proporção pro símbolo %
+  return `<svg viewBox="0 0 400 222" style="width:100%;max-width:${(440*escala).toFixed(0)}px;display:block;">
     <defs>
       <linearGradient id="${gid}" x1="0%" y1="0%" x2="100%" y2="0%">
         <stop offset="0%" stop-color="var(--cyan)"/>
@@ -1201,13 +1194,12 @@ function gaugeArmazemSVG(pctBruto, idSufixo, opts){
         <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
       </radialGradient>
     </defs>
-    <path d="M ${cx-raio} ${cy} A ${raio} ${raio} 0 0 1 ${cx+raio} ${cy}" fill="none" stroke="url(#${gid})" stroke-width="${espessura}" stroke-linecap="round"/>
+    <path d="M ${cx-raio} ${cy} A ${raio} ${raio} 0 0 1 ${cx+raio} ${cy}" fill="none" stroke="url(#${gid})" stroke-width="${espessura}" stroke-linecap="round" stroke-dasharray="9 4.2" pathLength="${circunf.toFixed(0)}"/>
     ${marcas}
     <circle cx="${gx}" cy="${gy}" r="15" fill="url(#${gid}_glint)"/>
     <circle cx="${gx}" cy="${gy}" r="5" fill="#FFFFFF"/>
-    ${iconeSiloSVG(cx, cy-95, 1.1, 'var(--ink-dim)')}
-    <text x="${cx}" y="${cy-40}" text-anchor="middle" font-size="${fontRotulo}" letter-spacing="1" fill="var(--ink-dim)" font-family="'Space Grotesk',sans-serif">${rotulo}</text>
-    <text x="${cx}" y="${cy+16}" text-anchor="middle" font-size="${fontPct}" font-weight="800" fill="${corValor}" font-family="'Space Grotesk',sans-serif">${fmt(pctBruto,0)}<tspan font-size="${fontUnidade}">%</tspan></text>
+    <text x="${cx}" y="${cy-46}" text-anchor="middle" font-size="${fontRotulo}" letter-spacing="1" fill="var(--ink-dim)" font-family="'Space Grotesk',sans-serif">${rotulo}</text>
+    <text x="${cx}" y="${cy+10}" text-anchor="middle" font-size="${fontPct}" font-weight="800" fill="${corValor}" font-family="'Space Grotesk',sans-serif">${fmt(pctBruto,0)}<tspan font-size="${fontUnidade}">%</tspan></text>
   </svg>`;
 }
 function barraProgressoCapacidade(pct, rotulo){
@@ -1215,7 +1207,7 @@ function barraProgressoCapacidade(pct, rotulo){
   return `<div style="margin-top:6px;">
     <div class="small-note" style="text-align:center;letter-spacing:1px;margin-bottom:4px;">${rotulo||'PROGRESSO DA CAPACIDADE'}</div>
     <div style="background:var(--line);border-radius:20px;height:14px;overflow:hidden;position:relative;">
-      <div style="width:${p}%;height:100%;background:linear-gradient(90deg, var(--cyan), var(--lime), var(--gold));border-radius:20px;"></div>
+      <div style="width:${p}%;height:100%;background:repeating-linear-gradient(90deg, var(--cyan) 0 8px, transparent 8px 11px), linear-gradient(90deg, var(--cyan), var(--lime), var(--gold));background-blend-mode:normal;border-radius:20px;"></div>
     </div>
     <div class="small-note" style="text-align:right;margin-top:2px;">${fmt(pct,0)}%</div>
   </div>`;
@@ -1238,6 +1230,7 @@ function salvarLimiteArmazemInline(fazendaId){
   const f = state.fazendas.find(x=>x.id===fazendaId);
   if(!f) return;
   f.limiteArmazemPct = num(document.getElementById('limArm_'+fazendaId)?.value) || 80;
+  f.avisoArmazenagemUsuarios = Array.from(document.querySelectorAll('.chkPushProgUsuario_arm_'+fazendaId+':checked')).map(el=>el.value);
   saveCadastros();
   toast(`Aviso de armazenagem de ${f.nome} atualizado.`);
   renderEstoque(); renderGaugesDashboard();
@@ -1248,6 +1241,7 @@ function salvarLimiteRecebimentoInline(fazendaId){
   if(!f) return;
   f.limiteRecebimentoPct = num(document.getElementById('limRec_'+fazendaId)?.value) || 90;
   f.janelaRecebimentoHoras = num(document.getElementById('janRec_'+fazendaId)?.value) || 24;
+  f.avisoRecebimentoUsuarios = Array.from(document.querySelectorAll('.chkPushProgUsuario_rec_'+fazendaId+':checked')).map(el=>el.value);
   saveCadastros();
   toast(`Aviso de recebimento/secador de ${f.nome} atualizado.`);
   renderEstoque(); renderGaugesDashboard();
@@ -1274,11 +1268,55 @@ function salvarPushProgramadoInline(fazendaId){
   if(!f) return;
   const ativo = !!document.getElementById('pushProgAtivo_'+fazendaId)?.checked;
   const periodoHoras = num(document.getElementById('pushProgPeriodo_'+fazendaId)?.value) || 12;
-  const usuarioIds = Array.from(document.querySelectorAll('.chkPushProgUsuario_'+fazendaId+':checked')).map(el=>el.value);
+  const usuarioIds = Array.from(document.querySelectorAll('.chkPushProgUsuario_prog_'+fazendaId+':checked')).map(el=>el.value);
   f.pushProgramado = { ativo, periodoHoras, usuarioIds };
   saveCadastros();
   toast(`Push programado de ${f.nome} atualizado. O envio agora é automático, feito pelo próprio servidor.`);
   renderEstoque(); renderGaugesDashboard();
+}
+// Disparo manual (botão 🔔) — envia na hora, pros destinatários marcados na tela nesse momento
+// (mesmo que ainda não tenham sido salvos), sem esperar o horário programado nem cruzar limite nenhum.
+async function dispararPushManualProgramado(fazendaId){
+  const f = state.fazendas.find(x=>x.id===fazendaId);
+  if(!f) return;
+  const usuarioIds = Array.from(document.querySelectorAll('.chkPushProgUsuario_prog_'+fazendaId+':checked')).map(el=>el.value);
+  if(!usuarioIds.length){ toast('Selecione ao menos um destinatário em "Quem recebe".', true); return; }
+  const saldoKg = calcSaldoFazendaKg(f.id);
+  const capacidadeKg = num(f.armazemKg);
+  const disponivelKg = Math.max(0, capacidadeKg - saldoKg);
+  const secador = comprometimentoSecador(f.id);
+  const title = `📋 Resumo periódico — ${f.nome}`;
+  const message = `Armazenado: ${fmt(saldoKg/1000,1)} t · Livre: ${fmt(disponivelKg/1000,1)} t` +
+    (secador ? ` · Secador: ${fmtPct(secador.pct)} comprometido · Umidade média: ${secador.umidadeMediaSecador!==null?fmt(secador.umidadeMediaSecador,1)+'%':'—'}` : '');
+  const n = await enviarPushParaUsuarios(usuarioIds, title, message);
+  toast(`Push enviado pra ${n} aparelho(s).`);
+}
+async function dispararPushManualArmazenagem(fazendaId){
+  const f = state.fazendas.find(x=>x.id===fazendaId);
+  if(!f) return;
+  const capacidadeKg = num(f.armazemKg);
+  if(!capacidadeKg){ toast('Defina a capacidade do armazém antes de disparar este aviso.', true); return; }
+  const saldoKg = calcSaldoFazendaKg(f.id);
+  const pct = saldoKg/capacidadeKg*100;
+  const sacasDisponiveis = Math.max(0, Math.round((capacidadeKg-saldoKg)/60));
+  const usuarioIds = Array.from(document.querySelectorAll('.chkPushProgUsuario_arm_'+fazendaId+':checked')).map(el=>el.value);
+  const title = 'ℹ️ Situação do armazém';
+  const message = `Painel de alerta BRC informa:\n${f.nome}, o armazém está com ${fmtPct(pct)} da capacidade de armazenagem neste momento, temos espaço disponível para ${fmtInt(sacasDisponiveis)} sacas.`;
+  const n = usuarioIds.length ? await enviarPushParaUsuarios(usuarioIds, title, message) : (await enviarPushAlerta(title, message), null);
+  if(n!==null) toast(`Push enviado pra ${n} aparelho(s).`);
+}
+async function dispararPushManualRecebimento(fazendaId){
+  const f = state.fazendas.find(x=>x.id===fazendaId);
+  if(!f) return;
+  const info = capacidadeRecebimentoJanela(f.id);
+  if(!info || !info.limiteKg){ toast('Sem dados suficientes de recebimento pra esta fazenda ainda.', true); return; }
+  const pct = info.recebidoKg/info.limiteKg*100;
+  const gargaloTxt = info.gargalo==='secador' ? 'do secador' : 'de espaço no armazém';
+  const usuarioIds = Array.from(document.querySelectorAll('.chkPushProgUsuario_rec_'+fazendaId+':checked')).map(el=>el.value);
+  const title = 'ℹ️ Situação de recebimento / secador';
+  const message = `Painel de alerta BRC informa:\n${f.nome} está com ${fmtPct(pct)} da capacidade de recebimento ${gargaloTxt} nas últimas ${info.horas}h.`;
+  const n = usuarioIds.length ? await enviarPushParaUsuarios(usuarioIds, title, message) : (await enviarPushAlerta(title, message), null);
+  if(n!==null) toast(`Push enviado pra ${n} aparelho(s).`);
 }
 // Monitor de Capacidade Operacional — junta o que antes eram dois relógios separados (armazenagem e
 // recebimento/secador) num único painel por fazenda, no estilo do modelo de referência: caixas de
@@ -1341,20 +1379,26 @@ function monitorCapacidadeOperacional(f){
       </div>
     </div>
 
-    <div style="display:flex;flex-wrap:wrap;gap:24px;justify-content:center;align-items:flex-start;margin-bottom:18px;">
+    <div style="display:flex;flex-wrap:wrap;gap:24px;justify-content:center;align-items:flex-end;">
       <div style="flex:1;min-width:280px;max-width:440px;">
         ${capacidadeKg ? gaugeArmazemSVG(pct, f.id+'_arm', {rotulo:'CAPACIDADE DO ARMAZÉM'}) : '<p class="small-note" style="text-align:center;padding:30px 0;">Defina a capacidade do armazém no cadastro desta fazenda pra ver o medidor.</p>'}
+      </div>
+      <div style="flex:0 1 ${(440*0.85).toFixed(0)}px;min-width:240px;max-width:${(440*0.85).toFixed(0)}px;">
+        ${secador ? gaugeArmazemSVG(secador.pct, f.id+'_sec', {escala:0.85, rotulo:`SECADOR (${horasJanela}H)`}) : '<p class="small-note" style="text-align:center;padding:30px 0;">Cadastre a capacidade do secador (t/h) na fazenda pra ver este medidor.</p>'}
+      </div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:24px;justify-content:center;margin-bottom:18px;">
+      <div style="flex:1;min-width:280px;max-width:440px;">
         <div style="text-align:center;margin-top:-6px;margin-bottom:10px;">
-          <span style="font-size:15px;font-weight:700;color:var(--gold);">${fmtUnidade(saldoKg)}</span>
-          <span class="small-note"> depositadas</span>
+          <span style="font-size:22px;font-weight:800;color:var(--gold);">${fmtUnidade(saldoKg)}</span>
+          <span class="small-note" style="font-size:13px;"> depositadas</span>
         </div>
         ${capacidadeKg ? barraProgressoCapacidade(pct, 'PROGRESSO DA CAPACIDADE') : ''}
       </div>
       <div style="flex:0 1 ${(440*0.85).toFixed(0)}px;min-width:240px;max-width:${(440*0.85).toFixed(0)}px;">
-        ${secador ? gaugeArmazemSVG(secador.pct, f.id+'_sec', {escala:0.85, rotulo:`SECADOR (${horasJanela}H)`}) : '<p class="small-note" style="text-align:center;padding:30px 0;">Cadastre a capacidade do secador (t/h) na fazenda pra ver este medidor.</p>'}
         ${secador ? `<div style="text-align:center;margin-top:-6px;margin-bottom:10px;">
-          <span style="font-size:15px;font-weight:700;color:var(--gold);">${fmtUnidade(secador.kgNoSecador)}</span>
-          <span class="small-note"> secadas de ${fmtUnidade(secador.capacidadeSecadorKg)}</span>
+          <span style="font-size:22px;font-weight:800;color:var(--gold);">${fmtUnidade(secador.kgNoSecador)}</span>
+          <span class="small-note" style="font-size:13px;"> secadas de ${fmtUnidade(secador.capacidadeSecadorKg)}</span>
         </div>
         ${barraProgressoCapacidade(secador.pct, 'COMPROMETIMENTO DO SECADOR')}
         <p class="small-note" style="text-align:center;margin-top:6px;">${secador.nCargas} carga(s) acima da umidade segura · umidade média ${secador.umidadeMediaSecador!==null?fmt(secador.umidadeMediaSecador,1)+'%':'—'}</p>` : ''}
@@ -1380,41 +1424,64 @@ function monitorCapacidadeOperacional(f){
 
     <div class="monitor-push-grid">
       <div class="card" style="padding:12px 14px;">
-        <div style="font-size:13px;font-weight:700;margin-bottom:6px;">🕒 Push programado — resumo periódico</div>
-        <p class="small-note" style="margin:0 0 8px;">Envia de tempos em tempos: total armazenado, espaço livre, comprometimento do secador e umidade média das cargas que precisaram secar.</p>
+        <div style="font-size:13px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:6px;">
+          <span>🕒 Push programado</span>
+          <button class="btn ghost sm" title="Disparar agora" onclick="dispararPushManualProgramado('${f.id}')">🔔</button>
+        </div>
+        <p class="small-note" style="margin:0 0 8px;">Resumo periódico: armazenado, livre, comprometimento do secador e umidade média.</p>
         <label class="small-note" style="display:flex;align-items:center;gap:6px;margin-bottom:8px;cursor:pointer;">
           <input type="checkbox" id="pushProgAtivo_${f.id}" ${pushProg.ativo?'checked':''}> ativar envio periódico
         </label>
         <div class="actions-row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px;">
           <span class="small-note">a cada</span>
-          <select id="pushProgPeriodo_${f.id}">
+          <select id="pushProgPeriodo_${f.id}" style="width:auto;">
             ${[6,12,24,48].map(h=>`<option value="${h}" ${h===(num(pushProg.periodoHoras)||12)?'selected':''}>${h}h</option>`).join('')}
           </select>
         </div>
-        <div class="small-note" style="margin-bottom:4px;">Quem recebe:</div>
-        <div style="max-height:110px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin-bottom:8px;">
-          ${optionsUsuariosChecklist(pushProg.usuarioIds||[], f.id)}
-        </div>
+        <details style="margin-bottom:8px;">
+          <summary class="small-note" style="cursor:pointer;">Quem recebe (${(pushProg.usuarioIds||[]).length} selecionado(s))</summary>
+          <div style="max-height:110px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin-top:6px;">
+            ${optionsUsuariosChecklist(pushProg.usuarioIds||[], 'prog_'+f.id)}
+          </div>
+        </details>
         <button class="btn ghost sm" onclick="salvarPushProgramadoInline('${f.id}')">Salvar</button>
       </div>
       <div class="card" style="padding:12px 14px;">
-        <div style="font-size:13px;font-weight:700;margin-bottom:6px;">🔔 Aviso de armazenagem</div>
-        <p class="small-note" style="margin:0 0 8px;">Avisa por push quando ultrapassar esse percentual — e avisa de novo quando voltar abaixo dele.</p>
-        <div class="actions-row" style="gap:6px;">
-          <input id="limArm_${f.id}" type="number" min="1" max="100" step="1" value="${limiteArm}" style="width:80px;"><span class="small-note">%</span>
-          <button class="btn ghost sm" onclick="salvarLimiteArmazemInline('${f.id}')">Salvar</button>
+        <div style="font-size:13px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:6px;">
+          <span>🔔 Aviso de armazenagem</span>
+          <button class="btn ghost sm" title="Disparar agora" onclick="dispararPushManualArmazenagem('${f.id}')">🔔</button>
         </div>
+        <p class="small-note" style="margin:0 0 8px;">Avisa subindo e descendo do percentual.</p>
+        <div class="actions-row" style="gap:6px;margin-bottom:8px;">
+          <input id="limArm_${f.id}" type="number" min="1" max="100" step="1" value="${limiteArm}" style="width:70px;"><span class="small-note">%</span>
+        </div>
+        <details style="margin-bottom:8px;">
+          <summary class="small-note" style="cursor:pointer;">Quem recebe (${(f.avisoArmazenagemUsuarios||[]).length ? (f.avisoArmazenagemUsuarios||[]).length+' selecionado(s)' : 'todos com push ativo'})</summary>
+          <div style="max-height:110px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin-top:6px;">
+            ${optionsUsuariosChecklist(f.avisoArmazenagemUsuarios||[], 'arm_'+f.id)}
+          </div>
+        </details>
+        <button class="btn ghost sm" onclick="salvarLimiteArmazemInline('${f.id}')">Salvar</button>
       </div>
       <div class="card" style="padding:12px 14px;">
-        <div style="font-size:13px;font-weight:700;margin-bottom:6px;">🔔 Aviso de recebimento / secador</div>
-        <p class="small-note" style="margin:0 0 8px;">Mesma lógica, aplicada ao comprometimento do secador na janela escolhida.</p>
-        <div class="actions-row" style="gap:6px;flex-wrap:wrap;">
-          <input id="limRec_${f.id}" type="number" min="1" max="100" step="1" value="${limiteRec}" style="width:80px;"><span class="small-note">%</span>
+        <div style="font-size:13px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:6px;">
+          <span>🔔 Aviso de recebimento / secador</span>
+          <button class="btn ghost sm" title="Disparar agora" onclick="dispararPushManualRecebimento('${f.id}')">🔔</button>
+        </div>
+        <p class="small-note" style="margin:0 0 8px;">Mesma lógica, aplicada ao comprometimento do secador.</p>
+        <div class="actions-row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+          <input id="limRec_${f.id}" type="number" min="1" max="100" step="1" value="${limiteRec}" style="width:70px;"><span class="small-note">%</span>
           <select id="janRec_${f.id}" style="width:auto;">
             ${[24,36,48,72].map(h=>`<option value="${h}" ${h===horasJanela?'selected':''}>${h}h</option>`).join('')}
           </select>
-          <button class="btn ghost sm" onclick="salvarLimiteRecebimentoInline('${f.id}')">Salvar</button>
         </div>
+        <details style="margin-bottom:8px;">
+          <summary class="small-note" style="cursor:pointer;">Quem recebe (${(f.avisoRecebimentoUsuarios||[]).length ? (f.avisoRecebimentoUsuarios||[]).length+' selecionado(s)' : 'todos com push ativo'})</summary>
+          <div style="max-height:110px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin-top:6px;">
+            ${optionsUsuariosChecklist(f.avisoRecebimentoUsuarios||[], 'rec_'+f.id)}
+          </div>
+        </details>
+        <button class="btn ghost sm" onclick="salvarLimiteRecebimentoInline('${f.id}')">Salvar</button>
       </div>
     </div>
   </div>`;
@@ -4208,6 +4275,11 @@ function salvarLimiteArmazem(){
 }
 // Dispara um push automático quando o armazém cruza (pra cima) o percentual configurado — e "reseta" o
 // aviso quando o nível volta pra baixo do limite, pra poder avisar de novo numa próxima vez que encher.
+// Envia pros destinatários escolhidos (se houver), senão cai no broadcast de sempre (todos com push ativo).
+async function enviarAlertaOuBroadcast(usuarioIds, title, message){
+  if(usuarioIds && usuarioIds.length) await enviarPushParaUsuarios(usuarioIds, title, message);
+  else await enviarPushAlerta(title, message);
+}
 function verificarLimiteArmazemEAvisar(fazendaId){
   try{
     const f = state.fazendas.find(x=>x.id===fazendaId);
@@ -4220,12 +4292,12 @@ function verificarLimiteArmazemEAvisar(fazendaId){
     if(pct >= limite && !f.alertaArmazemDisparado){
       f.alertaArmazemDisparado = true;
       saveCadastros();
-      enviarPushAlerta('⚠️ Armazém próximo do limite máximo',
+      enviarAlertaOuBroadcast(f.avisoArmazenagemUsuarios, '⚠️ Armazém próximo do limite máximo',
         `Painel de alerta BRC informa:\n${f.nome}, o armazém está com ${fmtPct(pct)} da capacidade de armazenagem neste momento, temos espaço disponível para ${fmtInt(sacasDisponiveis)} sacas.`);
     } else if(pct < limite && f.alertaArmazemDisparado){
       f.alertaArmazemDisparado = false;
       saveCadastros();
-      enviarPushAlerta('✅ Armazém voltou abaixo do limite',
+      enviarAlertaOuBroadcast(f.avisoArmazenagemUsuarios, '✅ Armazém voltou abaixo do limite',
         `Painel de alerta BRC informa:\n${f.nome}, o armazém baixou para ${fmtPct(pct)} da capacidade de armazenagem, temos espaço disponível para ${fmtInt(sacasDisponiveis)} sacas.`);
     }
   }catch(e){ console.error('Falha ao checar limite do armazém:', e); }
@@ -4243,12 +4315,12 @@ function verificarLimiteRecebimentoEAvisar(fazendaId){
     if(pct >= limite && !f.alertaRecebimentoDisparado){
       f.alertaRecebimentoDisparado = true;
       saveCadastros();
-      enviarPushAlerta('⚠️ Capacidade de recebimento no limite',
+      enviarAlertaOuBroadcast(f.avisoRecebimentoUsuarios, '⚠️ Capacidade de recebimento no limite',
         `Painel de alerta BRC informa:\n${f.nome} está com ${fmtPct(pct)} da capacidade de recebimento ${gargaloTxt} nas últimas ${info.horas}h.`);
     } else if(pct < limite && f.alertaRecebimentoDisparado){
       f.alertaRecebimentoDisparado = false;
       saveCadastros();
-      enviarPushAlerta('✅ Capacidade de recebimento normalizada',
+      enviarAlertaOuBroadcast(f.avisoRecebimentoUsuarios, '✅ Capacidade de recebimento normalizada',
         `Painel de alerta BRC informa:\n${f.nome} voltou para ${fmtPct(pct)} da capacidade de recebimento ${gargaloTxt} nas últimas ${info.horas}h.`);
     }
   }catch(e){ console.error('Falha ao checar limite de recebimento:', e); }
