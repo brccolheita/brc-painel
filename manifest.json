@@ -1,13 +1,13 @@
 {
-  "name": "BRC - Colheita e Comercialização",
-  "short_name": "BRC Colheita",
-  "description": "Colheita e comercialização — cadastros, cargas, romaneios e contratos.",
+  "name": "BRC - Smart Agribusiness Solutions",
+  "short_name": "BRC",
+  "description": "Colheita e comercialização — cadastros, cargas, romaneios, contratos e estoque de armazém.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#F3F6EF",
-  "theme_color": "#2F8F44",
+  "background_color": "#0A121C",
+  "theme_color": "#0A121C",
   "icons": [
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
