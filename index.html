@@ -194,6 +194,14 @@ tr:last-child td{ border-bottom:none; }
 .table-scroll-top-inner{ height:1px; }
 .tbl-icon-cell{ white-space:nowrap; text-align:right; width:1%; }
 .tbl-icon-cell button{ width:26px; height:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; }
+/* Ações da linha (Visualizar/Editar/Aprovar/Excluir): sempre em UMA linha só, nunca quebrando —
+   é isso que compacta a altura da linha e mantém os ícones alinhados entre uma linha e outra. */
+.actions-row.row-actions{ flex-wrap:nowrap; white-space:nowrap; }
+td .actions-row{ flex-wrap:nowrap; }
+/* Cabeçalho da planilha (com as lupas de filtro) travado logo abaixo do cabeçalho geral — e a
+   barra de rolagem espelhada fica colada embaixo dele, também travada, com as linhas rolando por baixo. */
+thead.thead-sticky th{ position:sticky; z-index:6; background:var(--bg-2); box-shadow:0 1px 0 var(--line); }
+tr.scroll-mirror-row td{ position:sticky; z-index:5; padding:0 !important; border:none !important; background:var(--bg-2); }
 .tag{ display:inline-block; padding:3px 9px; border-radius:20px; font-size:11px; font-weight:600; font-family:'JetBrains Mono',monospace; }
 .tag.pending{ background:var(--amber-glow); color:var(--gold); }
 .tag.ok{ background:rgba(198,255,61,.14); color:var(--lime); }
@@ -2160,14 +2168,14 @@ function renderEstoque(){
         <button class="btn ghost sm" onclick="exportarEstoqueXlsx()">📤 Exportar planilha</button>
         <button class="btn ghost sm" onclick="exportarRelatorioEstoquePDF()">🖨️ Gerar relatório</button>
         <button class="btn sm" onclick="openCadastroModal('romaneioArmazem')">➕ Nova entrada</button>
+        <button class="btn ghost sm" onclick="abrirGerenciarColunas('table-romaneiosArmazem')">⚙ Colunas</button>
         <input type="file" id="importArmazemInput" accept=".xlsx,.xls" style="display:none">
         <input type="file" id="importArmazemInputPDF" accept=".pdf" style="display:none">
       </h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:10px;">Mesmo padrão de Cargas &amp; Romaneios — caminhão saindo do campo direto pro silo, sem comprador ainda. O produtor pode acompanhar seus próprios romaneios e a conferência aqui é feita pelo botão "Aprovar" (romaneios importados por planilha/PDF/webhook entram como "aguardando aprovação" até a conferência).
         Importar aceita tanto planilha Excel quanto relatório em PDF (lido por IA).</p>
-      <div class="table-scroll-top" data-sync="wrap-romaneiosArmazem"><div class="table-scroll-top-inner"></div></div>
       <div class="table-wrap" id="wrap-romaneiosArmazem"><table id="table-romaneiosArmazem">
-        <thead>${filterHeaderCells('romaneiosArmazem',[
+        <thead class="thead-sticky">${filterHeaderCells('romaneiosArmazem',[
           {key:'armazem',label:'Armazém'},{key:'produtor',label:'Produtor'},{key:'cultura',label:'Cultura'},{key:'safra',label:'Safra'},
           {key:'motorista',label:'Motorista'},{key:'placa',label:'Placa'},{key:'romaneio',label:'Nº Romaneio'},{key:'data',label:'Data'},
           {key:'pesoBruto',label:'Peso Bruto (Kg)'},{key:'tara',label:'Tara (kg)'},{key:'umidade',label:'Umidade (kg)'},{key:'impureza',label:'Impureza (kg)'},
@@ -2189,6 +2197,7 @@ function renderEstoque(){
     <div class="card">
       <div class="actions-row" style="margin-bottom:14px;">
         <button class="btn ghost sm" onclick="openCadastroModal('ajusteEstoque')">⚖️ Ajuste manual</button>
+        <button class="btn ghost sm" onclick="abrirGerenciarColunas('table-movimentosEstoque')">⚙ Colunas</button>
         <button class="btn ghost sm" onclick="openCadastroModal('limiteArmazem')">⚙️ Padrão global</button>
       </div>
       <div class="field" style="background:var(--bg-soft,rgba(0,0,0,.03));padding:12px;border-radius:8px;margin-bottom:16px;">
@@ -2199,9 +2208,11 @@ function renderEstoque(){
         </div>
         <button class="btn ghost sm" style="margin-top:8px;" onclick="imprimirExtratoDepositoProdutor()">🖨️ Gerar extrato</button>
       </div>
-      <div class="table-scroll-top" data-sync="wrap-movimentosEstoque"><div class="table-scroll-top-inner"></div></div>
-      <div class="table-wrap" id="wrap-movimentosEstoque"><table>
-        <thead><tr><th>Data</th><th>Tipo</th><th>Armazém</th><th>Cultura</th><th>Produtor</th><th>Kg</th><th>Sacas</th><th>Origem</th><th>Obs.</th><th>Comprovante</th></tr></thead>
+      <div class="table-wrap" id="wrap-movimentosEstoque"><table id="table-movimentosEstoque">
+        <thead class="thead-sticky">
+          <tr><th>Data</th><th>Tipo</th><th>Armazém</th><th>Cultura</th><th>Produtor</th><th>Kg</th><th>Sacas</th><th>Origem</th><th>Obs.</th><th>Comprovante</th></tr>
+          <tr class="scroll-mirror-row"><td colspan="10"><div class="table-scroll-top" data-sync="wrap-movimentosEstoque"><div class="table-scroll-top-inner"></div></div></td></tr>
+        </thead>
         <tbody>
           ${!movsOrdenados.length ? emptyRow(10,'Nenhuma movimentação registrada ainda.') : movsOrdenados.map(m=>{
             const tipoTag = m.tipo==='entrada' ? '<span class="tag ok">Entrada</span>' : m.tipo==='saida' ? '<span class="tag neg">Saída</span>' : '<span class="tag pending">Ajuste</span>';
@@ -2437,13 +2448,32 @@ function compartilharAcessoUsuario(usuarioId){
 // linhas, sem isso só dava pra rolar pro lado descendo até o fim. Um div fino e translúcido
 // (.table-scroll-top) fica sincronizado com o scroll real do .table-wrap logo abaixo.
 function montarScrollDuploTabelas(){
+  ['table-romaneiosArmazem','table-movimentosEstoque','table-cargas','table-conferencia'].forEach(id=>{
+    if(document.getElementById(id)) aplicarColunasOcultas(id);
+  });
+
+  const hero = document.getElementById('heroBanner');
+  const heroH = hero ? hero.getBoundingClientRect().height : 0;
+
+  document.querySelectorAll('thead.thead-sticky').forEach(thead=>{
+    const headerRow = thead.querySelector('tr:not(.scroll-mirror-row)');
+    const mirrorRow = thead.querySelector('tr.scroll-mirror-row');
+    if(!headerRow) return;
+    headerRow.querySelectorAll('th').forEach(th=>{ th.style.top = heroH + 'px'; });
+    if(mirrorRow){
+      const headerH = headerRow.getBoundingClientRect().height;
+      const td = mirrorRow.querySelector('td');
+      if(td) td.style.top = (heroH + headerH) + 'px';
+    }
+  });
+
   document.querySelectorAll('.table-scroll-top[data-sync]').forEach(top=>{
     const wrap = document.getElementById(top.dataset.sync);
     const inner = top.querySelector('.table-scroll-top-inner');
     const table = wrap ? wrap.querySelector('table') : null;
     if(!wrap || !inner || !table) return;
     inner.style.width = table.scrollWidth + 'px';
-    if(top.dataset.bound) return; // só recalcula a largura nas próximas chamadas, sem duplicar os listeners
+    if(top.dataset.bound) return; // só recalcula a largura/posição nas próximas chamadas, sem duplicar os listeners
     top.dataset.bound = '1';
     let sincronizando = false;
     top.addEventListener('scroll', ()=>{ if(sincronizando) return; sincronizando=true; wrap.scrollLeft = top.scrollLeft; sincronizando=false; });
@@ -2711,13 +2741,59 @@ function rowMatches(extract, filters){
     return stripAccents(String(extract[k]??'')).includes(stripAccents(f));
   });
 }
+const TABELAS_COM_SCROLL_DUPLO = ['romaneiosArmazem','cargas','conferencia'];
 function filterHeaderCells(tableKey, cols){
   // cols: [{key, label}] — key null = coluna sem filtro (ex: ações)
-  const ths = cols.map(c=>{
-    if(!c.key) return `<th>${c.label}</th>`;
-    return `<th><div class="th-flex"><span>${c.label}</span><button type="button" class="th-filter-btn" onclick="toggleColFilter(this)" title="Filtrar esta coluna">🔍</button></div><input type="text" class="filter-input mini" data-ftable="${tableKey}" data-fkey="${c.key}" placeholder="filtrar" style="display:none;" oninput="onFilterInput('${tableKey}'); this.previousElementSibling.querySelector('.th-filter-btn').classList.toggle('active', !!this.value)"></th>`;
+  const ths = cols.map((c,i)=>{
+    const label = c.key
+      ? `<div class="th-flex"><span>${c.label}</span><button type="button" class="th-filter-btn" onclick="toggleColFilter(this)" title="Filtrar esta coluna">🔍</button></div><input type="text" class="filter-input mini" data-ftable="${tableKey}" data-fkey="${c.key}" placeholder="filtrar" style="display:none;" oninput="onFilterInput('${tableKey}'); this.previousElementSibling.querySelector('.th-filter-btn').classList.toggle('active', !!this.value)">`
+      : c.label;
+    return `<th data-colidx="${i}">${label}</th>`;
   }).join('');
-  return `<tr>${ths}</tr>`;
+  const nCols = cols.length;
+  const scrollRow = TABELAS_COM_SCROLL_DUPLO.includes(tableKey)
+    ? `<tr class="scroll-mirror-row"><td colspan="${nCols}"><div class="table-scroll-top" data-sync="wrap-${tableKey}"><div class="table-scroll-top-inner"></div></div></td></tr>`
+    : '';
+  return `<tr>${ths}</tr>${scrollRow}`;
+}
+function colunasOcultasChave(tableId){ return 'brc_colunas_ocultas_'+tableId; }
+function aplicarColunasOcultas(tableId){
+  const ocultas = JSON.parse(localStorage.getItem(colunasOcultasChave(tableId))||'[]');
+  let styleEl = document.getElementById('style-cols-'+tableId);
+  if(!styleEl){ styleEl = document.createElement('style'); styleEl.id = 'style-cols-'+tableId; document.head.appendChild(styleEl); }
+  styleEl.textContent = ocultas.map(i=>`#${tableId} > thead > tr:not(.scroll-mirror-row) > *:nth-child(${i+1}), #${tableId} > tbody > tr > *:nth-child(${i+1}){display:none;}`).join('\n');
+}
+function abrirGerenciarColunas(tableId){
+  const ths = [...document.querySelectorAll(`#${tableId} > thead > tr:not(.scroll-mirror-row) > th`)];
+  const colunas = ths.map(th=>(th.querySelector('span')?.textContent || th.textContent || '').trim());
+  const ocultas = new Set(JSON.parse(localStorage.getItem(colunasOcultasChave(tableId))||'[]'));
+  const overlay = document.createElement('div');
+  overlay.id = 'colunasOverlay';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:360px;">
+      <div class="modal-head"><h3>⚙ Colunas visíveis</h3><button class="modal-close" onclick="document.getElementById('colunasOverlay').remove()">✕</button></div>
+      <p class="small-note" style="margin-top:-4px;">Desmarque para ocultar — fica salvo só neste aparelho.</p>
+      <div style="max-height:50vh;overflow-y:auto;">
+        ${colunas.map((label,i)=>label ? `
+          <label style="display:flex;align-items:center;gap:8px;font-weight:400;padding:5px 0;cursor:pointer;">
+            <input type="checkbox" style="width:auto;" ${ocultas.has(i)?'':'checked'} onchange="toggleColunaOculta('${tableId}',${i},!this.checked)">
+            ${label}
+          </label>` : '').join('')}
+      </div>
+      <div class="actions-row" style="justify-content:flex-end;margin-top:14px;">
+        <button class="btn ghost sm" onclick="localStorage.removeItem(colunasOcultasChave('${tableId}')); aplicarColunasOcultas('${tableId}'); document.getElementById('colunasOverlay').remove();">Mostrar todas</button>
+        <button class="btn" onclick="document.getElementById('colunasOverlay').remove()">Fechar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+function toggleColunaOculta(tableId, idx, ocultar){
+  const chave = colunasOcultasChave(tableId);
+  const ocultas = new Set(JSON.parse(localStorage.getItem(chave)||'[]'));
+  if(ocultar) ocultas.add(idx); else ocultas.delete(idx);
+  localStorage.setItem(chave, JSON.stringify([...ocultas]));
+  aplicarColunasOcultas(tableId);
 }
 function toggleColFilter(btn){
   const th = btn.closest('th');
@@ -3106,6 +3182,7 @@ function renderCargasAtivas(){
         </span>
         <button class="btn ghost sm" onclick="openCadastroModal('filtroRelatorioCargas')">📤 Gerar relatório</button>
         <button class="btn sm" id="btnNovaCarga">➕ Nova entrega</button>
+        <button class="btn ghost sm" onclick="abrirGerenciarColunas('table-cargas')">⚙ Colunas</button>
       </h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:10px;">Dados da NF (importados) e dados do romaneio (foto/manual) na mesma linha, assim que cada carga é pesada.
         Quando um contrato tem NF de venda <b>e</b> NF de remessa/complemento, só a venda entra no confronto com o romaneio — a remessa vira só comprovante de entrega.
@@ -3113,9 +3190,8 @@ function renderCargasAtivas(){
       <label class="small-note" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:14px;cursor:pointer;">
         <input type="checkbox" ${mostrarComprovantes?'checked':''} onchange="toggleComprovantes()"> mostrar também os comprovantes de remessa/complemento (fora do confronto)
       </label>
-      <div class="table-scroll-top" data-sync="wrap-cargas"><div class="table-scroll-top-inner"></div></div>
       <div class="table-wrap resizable-wrap" id="wrap-cargas"><table id="table-cargas">
-        <thead>${filterHeaderCells('cargas',[
+        <thead class="thead-sticky">${filterHeaderCells('cargas',[
           {key:'empresa',label:'Empresa'},{key:'produtor',label:'Proprietário'},{key:'natureza',label:'Natureza'},
           {key:'contrato',label:'Contrato nº'},{key:'nfVenda',label:'Nº NF'},{key:'data',label:'Data saída'},{key:'colheita',label:'Colheita'},
           {key:'pesoFiscal',label:'Peso fiscal'},{key:'valorFiscal',label:'Valor fiscal'},{key:'motorista',label:'Motorista'},{key:'placa',label:'Placa'},
@@ -3274,6 +3350,7 @@ function renderConferencia(){
       <button class="btn ${conferenciaModo==='motoristas'?'':'ghost'} sm" onclick="setConferenciaModo('motoristas')">Conferência de motoristas</button>
       <button class="btn ${conferenciaModo==='conciliacao'?'':'ghost'} sm" onclick="setConferenciaModo('conciliacao')">Conciliação com empresa compradora</button>
       <button class="btn ghost sm" onclick="forcarSincronizacao()">🔄 Forçar sincronização</button>
+      <button class="btn ghost sm" onclick="abrirGerenciarColunas('table-conferencia')">⚙ Colunas</button>
     </div>
     <div id="conferenciaConteudo"></div>
   `;
@@ -3289,9 +3366,8 @@ function renderConferenciaMotoristas(){
       <p class="small-note" style="margin-top:-6px;margin-bottom:16px;">
         Lançamentos feitos pelo link do motorista caem aqui primeiro. Confira os dados antes de lançar oficialmente no dashboard.
       </p>
-      <div class="table-scroll-top" data-sync="wrap-conferencia"><div class="table-scroll-top-inner"></div></div>
       <div class="table-wrap resizable-wrap" id="wrap-conferencia"><table id="table-conferencia">
-        <thead>${filterHeaderCells('conferencia',[
+        <thead class="thead-sticky">${filterHeaderCells('conferencia',[
           {key:'recebido',label:'Recebido em'},{key:'empresa',label:'Empresa venda'},{key:'produtor',label:'Produtor'},
           {key:'nfRemessa',label:'Nº NF'},{key:'motorista',label:'Motorista'},{key:'romaneio',label:'Nº Romaneio'},{key:'data',label:'Data saída'},
           {key:'pesoBruto',label:'Peso Bruto (Kg)'},{key:'umidade',label:'Umidade (kg)'},{key:'impureza',label:'Impureza'},{key:'ardido',label:'Ardido/Avariado'},
