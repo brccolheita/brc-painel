@@ -177,11 +177,23 @@ body.tela-maximizada main{ max-width:100%; }
 .kpi .value.gold{ color:var(--gold); } .kpi .value.lime{ color:var(--lime); } .kpi .value.red{ color:var(--red); }
 
 table{ width:100%; border-collapse:collapse; font-size:13px; }
-th{ text-align:left; color:var(--ink-dim); font-weight:600; font-size:11px; letter-spacing:.5px; text-transform:uppercase; padding:8px 10px; border-bottom:1px solid var(--line); font-family:'JetBrains Mono',monospace; }
-td{ padding:9px 10px; border-bottom:1px solid var(--line); }
+th{ text-align:left; color:var(--ink-dim); font-weight:600; font-size:11px; letter-spacing:.5px; text-transform:uppercase; padding:6px 8px; border-bottom:1px solid var(--line); font-family:'JetBrains Mono',monospace; }
+td{ padding:5px 8px; border-bottom:1px solid var(--line); line-height:1.25; }
 tr:last-child td{ border-bottom:none; }
 .total-row td{ font-weight:700; color:var(--gold); border-top:1px solid var(--line); }
-.table-wrap{ overflow-x:auto; }
+.table-wrap{ overflow-x:auto; scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.25) transparent; }
+.table-wrap::-webkit-scrollbar{ height:10px; }
+.table-wrap::-webkit-scrollbar-track{ background:transparent; }
+.table-wrap::-webkit-scrollbar-thumb{ background:rgba(255,255,255,.22); border-radius:10px; }
+.table-wrap::-webkit-scrollbar-thumb:hover{ background:rgba(255,255,255,.36); }
+.table-scroll-top{ overflow-x:auto; overflow-y:hidden; height:14px; margin-bottom:2px; scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.25) transparent; }
+.table-scroll-top::-webkit-scrollbar{ height:10px; }
+.table-scroll-top::-webkit-scrollbar-track{ background:transparent; }
+.table-scroll-top::-webkit-scrollbar-thumb{ background:rgba(255,255,255,.22); border-radius:10px; }
+.table-scroll-top::-webkit-scrollbar-thumb:hover{ background:rgba(255,255,255,.36); }
+.table-scroll-top-inner{ height:1px; }
+.tbl-icon-cell{ white-space:nowrap; text-align:right; width:1%; }
+.tbl-icon-cell button{ width:26px; height:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; }
 .tag{ display:inline-block; padding:3px 9px; border-radius:20px; font-size:11px; font-weight:600; font-family:'JetBrains Mono',monospace; }
 .tag.pending{ background:var(--amber-glow); color:var(--gold); }
 .tag.ok{ background:rgba(198,255,61,.14); color:var(--lime); }
@@ -2153,7 +2165,8 @@ function renderEstoque(){
       </h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:10px;">Mesmo padrão de Cargas &amp; Romaneios — caminhão saindo do campo direto pro silo, sem comprador ainda. O produtor pode acompanhar seus próprios romaneios e a conferência aqui é feita pelo botão "Aprovar" (romaneios importados por planilha/PDF/webhook entram como "aguardando aprovação" até a conferência).
         Importar aceita tanto planilha Excel quanto relatório em PDF (lido por IA).</p>
-      <div class="table-wrap"><table id="table-romaneiosArmazem">
+      <div class="table-scroll-top" data-sync="wrap-romaneiosArmazem"><div class="table-scroll-top-inner"></div></div>
+      <div class="table-wrap" id="wrap-romaneiosArmazem"><table id="table-romaneiosArmazem">
         <thead>${filterHeaderCells('romaneiosArmazem',[
           {key:'armazem',label:'Armazém'},{key:'produtor',label:'Produtor'},{key:'cultura',label:'Cultura'},{key:'safra',label:'Safra'},
           {key:'motorista',label:'Motorista'},{key:'placa',label:'Placa'},{key:'romaneio',label:'Nº Romaneio'},{key:'data',label:'Data'},
@@ -2186,7 +2199,8 @@ function renderEstoque(){
         </div>
         <button class="btn ghost sm" style="margin-top:8px;" onclick="imprimirExtratoDepositoProdutor()">🖨️ Gerar extrato</button>
       </div>
-      <div class="table-wrap"><table>
+      <div class="table-scroll-top" data-sync="wrap-movimentosEstoque"><div class="table-scroll-top-inner"></div></div>
+      <div class="table-wrap" id="wrap-movimentosEstoque"><table>
         <thead><tr><th>Data</th><th>Tipo</th><th>Armazém</th><th>Cultura</th><th>Produtor</th><th>Kg</th><th>Sacas</th><th>Origem</th><th>Obs.</th><th>Comprovante</th></tr></thead>
         <tbody>
           ${!movsOrdenados.length ? emptyRow(10,'Nenhuma movimentação registrada ainda.') : movsOrdenados.map(m=>{
@@ -2211,6 +2225,7 @@ function renderEstoque(){
   updateTbodyRomaneiosArmazem();
   document.getElementById('importArmazemInput').addEventListener('change', (e)=>{ if(e.target.files[0]) handleImportArmazemXlsx(e.target.files[0]); e.target.value=''; });
   document.getElementById('importArmazemInputPDF').addEventListener('change', (e)=>{ if(e.target.files[0]) handleImportArmazemPDF(e.target.files[0]); e.target.value=''; });
+  montarScrollDuploTabelas();
 }
 function updateTbodyRomaneiosArmazem(){
   const filters = getFilterValues('romaneiosArmazem');
@@ -2229,7 +2244,7 @@ function updateTbodyRomaneiosArmazem(){
       <td>${extract.ardido} kg</td><td><b>${extract.pesoLiquido} kg</b></td><td>${extract.sacas}</td>
       <td>${extract.comprovante} ${r.tipoOperacao==='saida' ? '<span class="tag" style="color:var(--red);border-color:var(--red-dim);">⬆️ saída</span>' : ''}</td><td>${statusRomaneioArmazemTag(r.status)}</td>
       <td><div class="actions-row">
-        ${r.status==='aguardando_aprovacao' ? `<button class="btn ghost sm" onclick="aprovarRomaneioArmazem('${r.id}')">✓ Aprovar</button>` : ''}
+        ${r.status==='aguardando_aprovacao' ? `<button class="btn ghost sm" onclick="aprovarRomaneioArmazem('${r.id}')">✓ Aprovar</button>` : `<button class="btn ghost sm" style="visibility:hidden;" tabindex="-1" aria-hidden="true">✓ Aprovar</button>`}
         <button class="btn ghost sm leitura-ok" onclick="visualizarRomaneioArmazem('${r.id}')">👁️ Visualizar</button>
         <button class="btn ghost sm" onclick="openCadastroModal('romaneioArmazem','${r.id}')">Editar</button>
         <button class="btn ghost sm" onclick="imprimirComprovanteDeposito('${r.id}')">🖨️</button>
@@ -2239,6 +2254,7 @@ function updateTbodyRomaneiosArmazem(){
     return {extract, html};
   }).filter(r=>rowMatches(r.extract, filters));
   document.getElementById('tbody-romaneiosArmazem').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(18,'Nenhum romaneio de armazém registrado ainda.');
+  montarScrollDuploTabelas();
 }
 
 /* ---------------- AGREGAÇÕES PARA O DASHBOARD ---------------- */
@@ -2417,6 +2433,24 @@ function compartilharAcessoUsuario(usuarioId){
   if(!link){ toast('Você está com o arquivo aberto localmente no computador, não pelo link publicado do sistema — abra pelo endereço de verdade antes de gerar o acesso.', true); return; }
   copiarTexto(`Acesso ao sistema BRC - Smart Agribusiness Solutions\nLink: ${link}\nUsuário: ${u.usuario}\nSenha: ${u.senha}`);
 }
+// Espelha a barra de rolagem horizontal no topo da tabela também — em planilhas com muitas
+// linhas, sem isso só dava pra rolar pro lado descendo até o fim. Um div fino e translúcido
+// (.table-scroll-top) fica sincronizado com o scroll real do .table-wrap logo abaixo.
+function montarScrollDuploTabelas(){
+  document.querySelectorAll('.table-scroll-top[data-sync]').forEach(top=>{
+    const wrap = document.getElementById(top.dataset.sync);
+    const inner = top.querySelector('.table-scroll-top-inner');
+    const table = wrap ? wrap.querySelector('table') : null;
+    if(!wrap || !inner || !table) return;
+    inner.style.width = table.scrollWidth + 'px';
+    if(top.dataset.bound) return; // só recalcula a largura nas próximas chamadas, sem duplicar os listeners
+    top.dataset.bound = '1';
+    let sincronizando = false;
+    top.addEventListener('scroll', ()=>{ if(sincronizando) return; sincronizando=true; wrap.scrollLeft = top.scrollLeft; sincronizando=false; });
+    wrap.addEventListener('scroll', ()=>{ if(sincronizando) return; sincronizando=true; top.scrollLeft = wrap.scrollLeft; sincronizando=false; });
+  });
+}
+window.addEventListener('resize', ()=>montarScrollDuploTabelas());
 function toast(msg, isErr){
   const el = document.createElement('div');
   el.className = 'toast' + (isErr ? ' err' : '');
@@ -3079,7 +3113,8 @@ function renderCargasAtivas(){
       <label class="small-note" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:14px;cursor:pointer;">
         <input type="checkbox" ${mostrarComprovantes?'checked':''} onchange="toggleComprovantes()"> mostrar também os comprovantes de remessa/complemento (fora do confronto)
       </label>
-      <div class="table-wrap resizable-wrap"><table id="table-cargas">
+      <div class="table-scroll-top" data-sync="wrap-cargas"><div class="table-scroll-top-inner"></div></div>
+      <div class="table-wrap resizable-wrap" id="wrap-cargas"><table id="table-cargas">
         <thead>${filterHeaderCells('cargas',[
           {key:'empresa',label:'Empresa'},{key:'produtor',label:'Proprietário'},{key:'natureza',label:'Natureza'},
           {key:'contrato',label:'Contrato nº'},{key:'nfVenda',label:'Nº NF'},{key:'data',label:'Data saída'},{key:'colheita',label:'Colheita'},
@@ -3096,6 +3131,7 @@ function renderCargasAtivas(){
   updateTbodyCargas();
   tornarColunasRedimensionaveis('table-cargas');
   document.getElementById('btnNovaCarga').addEventListener('click', ()=>openEntregaModal());
+  montarScrollDuploTabelas();
 }
 
 function renderCargasRejeitadas(){
@@ -3127,7 +3163,7 @@ function updateTbodyCargasRejeitadas(){
       <td>${extract.rejeitadoEm}</td><td>${e.motorista||'—'}${e.placa?` (${e.placa})`:''}</td><td>${extract.romaneio||'—'}</td>
       <td style="max-width:320px;white-space:normal;">${extract.motivo||'—'}</td>
       <td><div class="actions-row">
-        ${e.temFoto ? `<button class="btn ghost sm" onclick="visualizarFotoRomaneio('${e.id}')">👁️ Visualizar</button>` : ''}
+        ${e.temFoto ? `<button class="btn ghost sm" onclick="visualizarFotoRomaneio('${e.id}')">👁️ Visualizar</button>` : `<button class="btn ghost sm" style="visibility:hidden;" tabindex="-1" aria-hidden="true">👁️ Visualizar</button>`}
         <button class="btn danger sm" onclick="deleteEntrega('${e.id}')">Excluir definitivamente</button>
       </div></td>
     </tr>`;
@@ -3205,7 +3241,7 @@ function updateTbodyCargas(){
       <td>${statusTag(e.status)} ${e.saiuDoArmazem ? '<span class="tag ok" title="Esta carga saiu do armazém próprio — foi descontada do estoque">🏠 armazém</span>' : ''}</td>
       <td><div class="actions-row">
         ${incompleta ? `<button class="btn ghost sm" onclick="openCadastroModal('completarVenda','${v.id}')">Completar produtor</button>` : ''}
-        ${e.temFoto ? `<button class="btn ghost sm" onclick="visualizarFotoRomaneio('${e.id}')">👁️ Visualizar</button>` : ''}
+        ${e.temFoto ? `<button class="btn ghost sm" onclick="visualizarFotoRomaneio('${e.id}')">👁️ Visualizar</button>` : `<button class="btn ghost sm" style="visibility:hidden;" tabindex="-1" aria-hidden="true">👁️ Visualizar</button>`}
         <button class="btn ghost sm" onclick="openEntregaModal('${e.id}'${e.status==='pendente'?", {completar:true}":''})">${e.status==='pendente'?'Lançar pesagem':'Editar'}</button>
         <button class="btn danger sm" onclick="deleteEntrega('${e.id}')">Excluir</button>
       </div></td>
@@ -3213,6 +3249,7 @@ function updateTbodyCargas(){
     return {extract, html};
   }).filter(r=>rowMatches(r.extract, filters));
   document.getElementById('tbody-cargas').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(24,'Nenhuma carga encontrada. Importe o relatório de NFs para começar.');
+  montarScrollDuploTabelas();
 }
 Object.assign(TBODY_UPDATERS, { cargas: updateTbodyCargas });
 
@@ -3252,7 +3289,8 @@ function renderConferenciaMotoristas(){
       <p class="small-note" style="margin-top:-6px;margin-bottom:16px;">
         Lançamentos feitos pelo link do motorista caem aqui primeiro. Confira os dados antes de lançar oficialmente no dashboard.
       </p>
-      <div class="table-wrap resizable-wrap"><table id="table-conferencia">
+      <div class="table-scroll-top" data-sync="wrap-conferencia"><div class="table-scroll-top-inner"></div></div>
+      <div class="table-wrap resizable-wrap" id="wrap-conferencia"><table id="table-conferencia">
         <thead>${filterHeaderCells('conferencia',[
           {key:'recebido',label:'Recebido em'},{key:'empresa',label:'Empresa venda'},{key:'produtor',label:'Produtor'},
           {key:'nfRemessa',label:'Nº NF'},{key:'motorista',label:'Motorista'},{key:'romaneio',label:'Nº Romaneio'},{key:'data',label:'Data saída'},
@@ -3267,6 +3305,7 @@ function renderConferenciaMotoristas(){
   `;
   updateTbodyConferencia();
   tornarColunasRedimensionaveis('table-conferencia');
+  montarScrollDuploTabelas();
 }
 function updateTbodyConferencia(){
   const filters = getFilterValues('conferencia');
@@ -3298,7 +3337,7 @@ function updateTbodyConferencia(){
       <td>${extract.scsBruto}</td><td>${extract.scsLiqCom}</td><td>${extract.scsLiqSem}</td>
       <td><div class="actions-row" style="flex-wrap:nowrap;">
         <button class="btn ghost sm" onclick="openEntregaModal('${e.id}')">Revisar</button>
-        ${e.temFoto ? `<button class="btn ghost sm" onclick="visualizarFotoRomaneio('${e.id}')">👁️</button>` : ''}
+        ${e.temFoto ? `<button class="btn ghost sm" onclick="visualizarFotoRomaneio('${e.id}')">👁️</button>` : `<button class="btn ghost sm" style="visibility:hidden;" tabindex="-1" aria-hidden="true">👁️</button>`}
         <button class="btn sm" onclick="confirmarEntrega('${e.id}')">✓ Confirmar</button>
         <button class="btn danger sm" onclick="rejeitarEntrega('${e.id}')">Rejeitar</button>
       </div></td>
@@ -3311,6 +3350,7 @@ function updateTbodyConferencia(){
     return {extract, html};
   }).filter(r=>rowMatches(r.extract, filters));
   document.getElementById('tbody-conferencia').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(19,'Nenhum envio de motorista aguardando conferência.');
+  montarScrollDuploTabelas();
 }
 Object.assign(TBODY_UPDATERS, { conferencia: updateTbodyConferencia });
 
@@ -4708,8 +4748,16 @@ function openCadastroModal(kind, id){
   if(kind==='romaneioArmazem'){
     const r = id ? state.romaneiosArmazem.find(x=>x.id===id) : null;
     title.textContent = r ? 'Editar entrada de armazém' : 'Nova entrada no armazém';
+    romArmazemModalFotoAtual = null;
     body.innerHTML = `
       <p class="small-note" style="margin-top:-4px;">Registra o caminhão que sai do campo direto pro silo, sem comprador definido ainda. Gera uma entrada de estoque automaticamente.</p>
+      <div class="dropzone" id="dropzoneRomArmazemModal">
+        <input type="file" id="fotoRomArmazemModalInput" accept="image/*" capture="environment">
+        <div class="icon">📷</div>
+        <div><b>Envie a foto do romaneio</b> — a IA lê e preenche os campos abaixo</div>
+        <small>Arraste, cole (Ctrl+V) ou clique para escolher${r?.temFoto ? ' • já existe uma foto salva neste romaneio' : ''}</small>
+      </div>
+      <div id="ocrStatusWrapRomArmazemModal">${r?.temFoto ? `<button type="button" class="btn ghost sm" onclick="visualizarFotoRomaneioArmazem('${r.id}')">👁️ Ver foto já anexada</button>` : ''}</div>
       <div class="form-grid">
         <div class="field"><label>Armazém (fazenda)</label><select id="fRomArmazemFazenda">${optionsFazendas(r?.fazendaId)}</select></div>
         <div class="field"><label>Produtor</label><select id="fRomArmazemProdutor">${optionsProdutores(r?.produtorId)}</select></div>
@@ -4742,6 +4790,7 @@ function openCadastroModal(kind, id){
         <button class="btn" onclick="salvarRomaneioArmazem()">Salvar</button>
       </div>`;
     setTimeout(atualizarPesoLiquidoRomaneioArmazem, 0);
+    bindDropzoneRomArmazemModal();
   }
 
   if(kind==='visualizarRomaneioArmazem'){
@@ -4766,6 +4815,7 @@ function openCadastroModal(kind, id){
         </table></div>
         <div class="actions-row" style="justify-content:flex-end;margin-top:14px;">
           <button class="btn ghost" onclick="closeCadastroModal()">Fechar</button>
+          ${r.temFoto ? `<button class="btn ghost" onclick="visualizarFotoRomaneioArmazem('${r.id}')">👁️ Ver foto</button>` : ''}
           <button class="btn ghost" onclick="imprimirComprovanteDeposito('${r.id}')">🖨️ Comprovante</button>
         </div>`;
     }
@@ -4878,6 +4928,12 @@ async function salvarRomaneioArmazem(){
     tipo: r.tipoOperacao, fazendaId, produtorId, culturaId, safra: r.safra,
     pesoKg: r.pesoLiquido, scs: r.scsLiquido, data: r.dataEntrada, obs: r.obs
   }, 'romaneioArmazem', r.id);
+
+  if(romArmazemModalFotoAtual){
+    try{ await window.storage.set('romaneio-armazem-foto:'+r.id, romArmazemModalFotoAtual, true); r.temFoto = true; }
+    catch(e){ /* a foto é complementar — não trava o lançamento se falhar ao salvar */ }
+    romArmazemModalFotoAtual = null;
+  }
 
   await saveEstoque();
   if(novo) saveCadastros(); // persiste o contador sequencial do comprovante
@@ -6795,6 +6851,54 @@ function salvarConfigBalanca(){
   toast('Configurações salvas neste aparelho.');
   renderModoBalanca();
 }
+let romArmazemModalFotoAtual = null;
+function bindDropzoneRomArmazemModal(){
+  const dz = document.getElementById('dropzoneRomArmazemModal');
+  if(!dz) return;
+  const input = document.getElementById('fotoRomArmazemModalInput');
+  dz.addEventListener('click', ()=>input.click());
+  ['dragover','dragenter'].forEach(evt=>dz.addEventListener(evt, e=>{ e.preventDefault(); dz.classList.add('drag'); }));
+  ['dragleave','drop'].forEach(evt=>dz.addEventListener(evt, e=>{ e.preventDefault(); dz.classList.remove('drag'); }));
+  dz.addEventListener('drop', e=>{ if(e.dataTransfer.files.length) handleRomArmazemModalFile(e.dataTransfer.files[0]); });
+  input.addEventListener('change', e=>{ if(e.target.files.length) handleRomArmazemModalFile(e.target.files[0]); });
+  document.addEventListener('paste', pasteHandlerRomArmazemModal);
+}
+function pasteHandlerRomArmazemModal(e){
+  if(!document.getElementById('dropzoneRomArmazemModal')) return;
+  const items = e.clipboardData?.items || [];
+  for(const it of items){
+    if(it.type.startsWith('image/')){ handleRomArmazemModalFile(it.getAsFile()); break; }
+  }
+}
+async function handleRomArmazemModalFile(file){
+  const statusWrap = document.getElementById('ocrStatusWrapRomArmazemModal');
+  const reader = new FileReader();
+  reader.onload = () => { statusWrap.innerHTML = `<img class="thumb-preview" src="${reader.result}">` + statusWrap.innerHTML; };
+  reader.readAsDataURL(file);
+
+  statusWrap.innerHTML = `<div class="ocr-status"><div class="spinner"></div> Lendo romaneio com IA...</div>`;
+  const [parsedResult, fotoResult] = await Promise.allSettled([
+    ocrRomaneio(file),
+    comprimirImagemArquivo(file, 1400, 0.72)
+  ]);
+  romArmazemModalFotoAtual = fotoResult.status === 'fulfilled' ? fotoResult.value : null;
+
+  if(parsedResult.status === 'fulfilled'){
+    aplicarOcrFormBalanca(parsedResult.value); // mesmos IDs de campo do formulário da balança — mapeador reaproveitado
+    statusWrap.innerHTML = `<div class="ocr-status" style="color:var(--lime)">✓ Romaneio lido — confira os campos antes de salvar</div>` + statusWrap.innerHTML;
+  }else{
+    statusWrap.innerHTML = `<div class="ocr-status" style="color:var(--red)">⚠ ${parsedResult.reason?.message||'Falha ao consultar a IA'}. A foto foi mantida — preencha os campos manualmente.</div>` + statusWrap.innerHTML;
+  }
+}
+async function visualizarFotoRomaneioArmazem(id){
+  try{
+    const res = await window.storage.get('romaneio-armazem-foto:'+id, true);
+    if(!res || !res.value){ toast('Foto não encontrada para este romaneio.', true); return; }
+    abrirLightboxFoto(res.value);
+  }catch(e){
+    toast('Não consegui carregar a foto deste romaneio.', true);
+  }
+}
 function bindDropzoneBalanca(){
   const dz = document.getElementById('dropzoneRomaneioBalanca');
   if(!dz) return;
@@ -6906,7 +7010,11 @@ async function salvarRomaneioArmazemBalanca(){
   await saveCadastros(); // persiste o contador sequencial do comprovante
 
   if(balancaFotoAtual){
-    try{ await window.storage.set('romaneio-armazem-foto:'+r.id, balancaFotoAtual, true); }
+    try{
+      await window.storage.set('romaneio-armazem-foto:'+r.id, balancaFotoAtual, true);
+      r.temFoto = true;
+      await saveEstoque();
+    }
     catch(e){ /* a foto é complementar — não trava o lançamento se falhar ao salvar */ }
   }
 
