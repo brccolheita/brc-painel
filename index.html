@@ -1223,6 +1223,110 @@ function recalcRomaneioArmazem(r){
   r.scsLiquido = +(r.pesoLiquido/60).toFixed(4);
   return r;
 }
+/* ---------------- MODELO FÍSICO DO SECADOR + CALIBRAÇÃO ----------------
+   A capacidade nominal do fabricante (ex: 120 t/h) só vale numa condição de referência
+   específica (ex: "de 18% pra 14%"). O secador na verdade tem uma capacidade de EVAPORAÇÃO
+   DE ÁGUA fixa — e é ela que determina quantas toneladas/hora ele processa, dependendo de
+   quanta água precisa tirar. Balanço de massa (matéria seca não muda na secagem):
+     fração_evaporada(Ue, Us) = 1 - (1-Ue)/(1-Us)
+   Coeficiente de capacidade efetiva = fração_evap_nominal / fração_evap_real.
+   O "fatorCalibracao" corrige o desvio entre o modelo teórico e o desempenho real do
+   equipamento específico (aquecimento, vazão de ar, tempo de residência etc. não são só
+   função da diferença percentual de umidade) — ajustável manualmente e sugerido com base
+   no histórico de cargas já processadas (ver sugerirCalibracaoSecador).
+*/
+function calcularCapacidadeEfetivaSecador(opts){
+  const capNominal = num(opts.capacidadeNominalTonHora);
+  const fator = num(opts.fatorCalibracao) || 1;
+  if(!capNominal) return null;
+  const ueRef = num(opts.ueRefPct)/100, usRef = num(opts.usRefPct)/100;
+  const ueReal = num(opts.uePct)/100, usAlvo = num(opts.usAlvoPct)/100;
+  if(!(ueRef>usRef) || !(ueReal>usAlvo)) return null; // dados insuficientes, ou grão já está seco (secador não é gargalo)
+  const fracaoNominal = 1 - (1-ueRef)/(1-usRef);
+  const fracaoReal = 1 - (1-ueReal)/(1-usAlvo);
+  if(fracaoReal<=0) return null;
+  const coeficiente = fracaoNominal/fracaoReal;
+  return capNominal * coeficiente * fator;
+}
+// Capacidade efetiva (t/h) do secador de uma fazenda, já considerando a umidade média real
+// que está chegando agora e o fator de calibração salvo. Cai pra capacidade nominal se faltar
+// a umidade de referência do fabricante (fazenda ainda não configurada com o novo campo).
+function capacidadeEfetivaSecadorFazenda(f, umidadeMediaRealPct){
+  const capNominal = num(f.secadorTonHora);
+  if(!capNominal) return null;
+  const usAlvo = num(state.config.umidadeSeguraPct ?? 14);
+  const ueRef = num(f.secadorUmidadeRefPct);
+  if(!ueRef || umidadeMediaRealPct===null || umidadeMediaRealPct===undefined){
+    return { capacidadeTonHora: capNominal, calibrado: false };
+  }
+  const efetiva = calcularCapacidadeEfetivaSecador({
+    capacidadeNominalTonHora: capNominal, ueRefPct: ueRef, usRefPct: usAlvo,
+    uePct: umidadeMediaRealPct, usAlvoPct: usAlvo, fatorCalibracao: f.secadorFatorCalibracao
+  });
+  return { capacidadeTonHora: efetiva===null ? capNominal : efetiva, calibrado: efetiva!==null };
+}
+// Sugestão de fator de calibração a partir do histórico: agrupa as cargas que precisaram secar
+// por semana, calcula o que o modelo teórico (sem calibração) previa de capacidade naquela
+// semana e compara com o quanto realmente foi processado. A média dessas razões (só semanas
+// com amostra mínima) vira o fator sugerido — mesma lógica do protótipo Python, adaptada aos
+// dados que o sistema já guarda (sem depender de um tempo de secagem cronometrado por lote).
+function sugerirCalibracaoSecador(fazendaId, minimoAmostrasPorSemana){
+  const minAmostras = minimoAmostrasPorSemana || 3;
+  const f = state.fazendas.find(x=>x.id===fazendaId);
+  if(!f || !num(f.secadorTonHora) || !num(f.secadorUmidadeRefPct)) return { erro: 'Cadastre a capacidade nominal e a umidade de referência do fabricante antes de calibrar.' };
+  const usAlvo = num(state.config.umidadeSeguraPct ?? 14);
+  const cargas = state.romaneiosArmazem.filter(r=>{
+    if(r.fazendaId!==fazendaId) return false;
+    const pesoBruto = num(r.pesoBruto);
+    if(!pesoBruto) return false;
+    return (num(r.umidade)/pesoBruto*100) > usAlvo;
+  });
+  if(!cargas.length) return { erro: 'Ainda não há cargas registradas que precisaram secar nesta fazenda.' };
+
+  const semanas = {};
+  cargas.forEach(r=>{
+    const d = new Date(r.createdAt||r.dataEntrada);
+    const semanaKey = isoWeekKey(d);
+    if(!semanas[semanaKey]) semanas[semanaKey] = [];
+    semanas[semanaKey].push(r);
+  });
+
+  const razoes = [];
+  Object.values(semanas).forEach(lista=>{
+    if(lista.length < minAmostras) return;
+    const pesoTotal = lista.reduce((s,r)=>s+num(r.pesoBruto),0);
+    const umidadeMediaSemana = lista.reduce((s,r)=> s + (num(r.umidade)/num(r.pesoBruto)*100)*num(r.pesoBruto), 0) / pesoTotal;
+    const efetivaTeorica = calcularCapacidadeEfetivaSecador({
+      capacidadeNominalTonHora: f.secadorTonHora, ueRefPct: f.secadorUmidadeRefPct, usRefPct: usAlvo,
+      uePct: umidadeMediaSemana, usAlvoPct: usAlvo, fatorCalibracao: 1
+    });
+    if(!efetivaTeorica) return;
+    const capacidadeTeoricaSemanaKg = efetivaTeorica*1000*24*7;
+    const kgReal = lista.reduce((s,r)=>s+num(r.pesoLiquido),0);
+    razoes.push({ semana: true, n: lista.length, razao: kgReal/capacidadeTeoricaSemanaKg });
+  });
+
+  if(!razoes.length) return { erro: `Ainda não há semanas com pelo menos ${minAmostras} cargas que precisaram secar — precisa de mais histórico pra calibrar com confiança.` };
+  const somaN = razoes.reduce((s,r)=>s+r.n,0);
+  const fatorSugerido = razoes.reduce((s,r)=>s+r.razao*r.n,0) / somaN;
+  return { fatorSugerido: Math.round(fatorSugerido*100)/100, nSemanas: razoes.length, nCargas: somaN };
+}
+function isoWeekKey(d){
+  const dt = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const diaSemana = dt.getUTCDay() || 7;
+  dt.setUTCDate(dt.getUTCDate() + 4 - diaSemana);
+  const inicioAno = new Date(Date.UTC(dt.getUTCFullYear(),0,1));
+  const semana = Math.ceil((((dt-inicioAno)/86400000)+1)/7);
+  return `${dt.getUTCFullYear()}-W${semana}`;
+}
+function aplicarCalibracaoSugeridaSecador(fazendaId){
+  const r = sugerirCalibracaoSecador(fazendaId);
+  if(r.erro){ toast(r.erro, true); return; }
+  const campo = document.getElementById('fFazendaSecadorFator');
+  if(campo) campo.value = r.fatorSugerido;
+  toast(`Sugestão aplicada: fator ${r.fatorSugerido} (baseado em ${r.nSemanas} semana(s), ${r.nCargas} carga(s)). Confira e salve.`);
+}
+
 /* ---------------- CAPACIDADE DE RECEBIMENTO (24h) — armazém + secador ----------------
    Se o grão que está chegando estiver acima da umidade segura pra armazenagem, o secador
    vira o gargalo (limitado pela vazão dele em 24h) em vez do espaço físico livre no armazém. */
@@ -1261,14 +1365,17 @@ function capacidadeRecebimentoJanela(fazendaId){
   let limiteKg = espacoLivreKg;
   let gargalo = 'armazem';
   if(precisaSecar && secadorTonHora>0){
-    const capSecadorJanelaKg = secadorTonHora*1000*horas;
+    const efetivo = capacidadeEfetivaSecadorFazenda(f, umidadeMedia);
+    const capSecadorTonHoraUsado = efetivo ? efetivo.capacidadeTonHora : secadorTonHora;
+    const capSecadorJanelaKg = capSecadorTonHoraUsado*1000*horas;
     if(capSecadorJanelaKg < limiteKg){ limiteKg = capSecadorJanelaKg; gargalo = 'secador'; }
   }
   return { limiteKg, espacoLivreKg, umidadeMedia, precisaSecar, secadorConfigurado: secadorTonHora>0, gargalo, horas, recebidoKg: recebidoNaJanelaKg(fazendaId, horas) };
 }
 // Comprometimento do secador: das cargas que entraram na janela (24/36/48h...), quanto (em kg) chegou
 // acima da umidade segura (precisou secar), comparado com a vazão do secador nesse mesmo período.
-// É esse número que vira o medidor menor (secador), separado do medidor de espaço no armazém.
+// A vazão usada aqui já é a CAPACIDADE EFETIVA calibrada (não a nominal fixa do fabricante),
+// recalculada de acordo com a umidade média real que está chegando nesta janela.
 function comprometimentoSecador(fazendaId){
   const f = state.fazendas.find(x=>x.id===fazendaId);
   if(!f) return null;
@@ -1285,14 +1392,19 @@ function comprometimentoSecador(fazendaId){
     return (num(r.umidade)/pesoBruto*100) > umidadeSegura;
   });
   const kgNoSecador = cargasSecador.reduce((s,r)=>s+num(r.pesoLiquido),0);
-  const capacidadeSecadorKg = secadorTonHora*1000*horas;
   const umidadeMediaSecador = cargasSecador.length
     ? cargasSecador.reduce((s,r)=> s + (num(r.umidade)/num(r.pesoBruto)*100), 0) / cargasSecador.length
     : null;
+  const efetivo = capacidadeEfetivaSecadorFazenda(f, umidadeMediaSecador);
+  const capTonHoraUsado = efetivo ? efetivo.capacidadeTonHora : secadorTonHora;
+  const capacidadeSecadorKg = capTonHoraUsado*1000*horas;
   return {
     horas, capacidadeSecadorKg, kgNoSecador, umidadeMediaSecador,
     pct: capacidadeSecadorKg>0 ? (kgNoSecador/capacidadeSecadorKg*100) : 0,
-    nCargas: cargasSecador.length
+    nCargas: cargasSecador.length,
+    capacidadeNominalTonHora: secadorTonHora,
+    capacidadeEfetivaTonHora: capTonHoraUsado,
+    calibrado: !!(efetivo && efetivo.calibrado)
   };
 }
 function upsertMovimentoEstoque(dados, origemTipo, refId){
@@ -1657,7 +1769,8 @@ function monitorCapacidadeOperacional(f){
           <span class="small-note" style="font-size:13px;"> secadas de ${fmtUnidade(secador.capacidadeSecadorKg)}</span>
         </div>
         ${barraProgressoCapacidade(secador.pct, 'COMPROMETIMENTO DO SECADOR')}
-        <p class="small-note" style="text-align:center;margin-top:6px;">${secador.nCargas} carga(s) acima da umidade segura · umidade média ${secador.umidadeMediaSecador!==null?fmt(secador.umidadeMediaSecador,1)+'%':'—'}</p>` : ''}
+        <p class="small-note" style="text-align:center;margin-top:6px;">${secador.nCargas} carga(s) acima da umidade segura · umidade média ${secador.umidadeMediaSecador!==null?fmt(secador.umidadeMediaSecador,1)+'%':'—'}</p>
+        ${secador.calibrado ? `<p class="small-note" style="text-align:center;margin-top:2px;">Capacidade efetiva calibrada: <b>${fmt(secador.capacidadeEfetivaTonHora,1)} t/h</b> <span style="opacity:.7;">(nominal ${fmt(secador.capacidadeNominalTonHora,1)} t/h)</span></p>` : ''}` : ''}
       </div>
     </div>
 
@@ -2467,14 +2580,16 @@ function salvarFazenda(){
   const nome = document.getElementById('fFazendaNome').value.trim();
   const armazemKg = num(document.getElementById('fFazendaArmazemKg').value);
   const secadorTonHora = num(document.getElementById('fFazendaSecadorTonHora').value);
+  const secadorUmidadeRefPct = num(document.getElementById('fFazendaSecadorUmidadeRef').value);
+  const secadorFatorCalibracao = num(document.getElementById('fFazendaSecadorFator').value) || 1;
   if(!nome){ toast('Informe o nome da fazenda.', true); return; }
   const overlay = document.getElementById('modalCadastro');
   const id = overlay.dataset.id;
   if(id){
     const f = state.fazendas.find(x=>x.id===id);
-    Object.assign(f, {nome, armazemKg, secadorTonHora});
+    Object.assign(f, {nome, armazemKg, secadorTonHora, secadorUmidadeRefPct, secadorFatorCalibracao});
   } else {
-    state.fazendas.push({id: uid('faz'), nome, armazemKg, secadorTonHora, talhoes: novaFazendaTalhoesTemp});
+    state.fazendas.push({id: uid('faz'), nome, armazemKg, secadorTonHora, secadorUmidadeRefPct, secadorFatorCalibracao, talhoes: novaFazendaTalhoesTemp});
     novaFazendaTalhoesTemp = [];
   }
   saveCadastros(); renderAllOuAtualizarTelaAcesso(); closeCadastroModal(); toast('Fazenda salva.');
@@ -3896,6 +4011,20 @@ function openCadastroModal(kind, id){
         <input id="fFazendaSecadorTonHora" type="number" step="0.1" value="${f?.secadorTonHora||''}" placeholder="Ex: 12 (deixe em branco se não tiver secador)">
         <p class="small-note" style="margin-top:6px;">Usado pra calcular o medidor de capacidade de recebimento nas próximas 24h: se o grão chegando estiver acima da umidade segura, o secador vira o gargalo em vez do espaço livre no armazém.</p>
       </div>
+      <div class="form-grid">
+        <div class="field">
+          <label>Umidade de entrada de referência <span class="small-note">(condição da capacidade nominal, ficha técnica)</span></label>
+          <input id="fFazendaSecadorUmidadeRef" type="number" step="0.1" value="${f?.secadorUmidadeRefPct||''}" placeholder="Ex: 18">
+        </div>
+        <div class="field">
+          <label>Fator de calibração <span class="small-note">(1,0 = teórico puro)</span></label>
+          <div class="actions-row" style="gap:6px;">
+            <input id="fFazendaSecadorFator" type="number" step="0.01" value="${f?.secadorFatorCalibracao||1}" style="flex:1;">
+            ${f?.id ? `<button type="button" class="btn ghost sm" style="white-space:nowrap;" onclick="aplicarCalibracaoSugeridaSecador('${f.id}')">📊 Sugerir</button>` : ''}
+          </div>
+        </div>
+      </div>
+      <p class="small-note" style="margin-top:-6px;">A capacidade nominal (t/h) só vale na umidade de referência do fabricante. Informando ela aqui, o sistema recalcula sozinho a capacidade real do secador conforme a umidade que está chegando de fato — e o botão "Sugerir" ajusta o fator de calibração comparando com o histórico de cargas já processadas nesta fazenda.</p>
       <div class="field">
         <label>Talhões desta fazenda <span class="small-note">(nome e área definitivos — a variedade é escolhida depois, no operacional)</span></label>
         <div id="listaTalhoesFazenda">${renderListaTalhoesFazenda(f?f.id:null)}</div>
