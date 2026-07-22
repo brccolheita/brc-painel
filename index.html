@@ -1430,7 +1430,6 @@ function updateTbodyRomaneiosArmazem(){
   }).filter(r=>rowMatches(r.extract, filters));
   document.getElementById('tbody-romaneiosArmazem').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(18,'Nenhum romaneio de armazém registrado ainda.');
 }
-Object.assign(TBODY_UPDATERS, { romaneiosArmazem: updateTbodyRomaneiosArmazem });
 
 /* ---------------- AGREGAÇÕES PARA O DASHBOARD ---------------- */
 function computeDashboard(){
@@ -1835,6 +1834,7 @@ async function excluirUsuario(id){
 
 /* ---------------- HELPERS GENÉRICOS DE FILTRO ---------------- */
 const TBODY_UPDATERS = {};
+Object.assign(TBODY_UPDATERS, { romaneiosArmazem: updateTbodyRomaneiosArmazem });
 function onFilterInput(tableKey){ const fn = TBODY_UPDATERS[tableKey]; if(fn) fn(); }
 function getFilterValues(tableKey){
   const vals = {};
