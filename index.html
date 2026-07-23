@@ -426,7 +426,7 @@ body.read-only .interacoes-fixed{ display:none; }
 .dash-scope .comp-sub{ font-size:11px; color:var(--ink-dim); font-family:'JetBrains Mono',monospace; min-width:90px; text-align:right; }
 footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); margin-top:56px; font-family:'JetBrains Mono',monospace;}
 @media (max-width:900px){ .dash-scope .grid2{grid-template-columns:1fr;} .dash-scope .hectbox{flex-direction:column; align-items:stretch;} }
-@media (max-width:640px){ #btnNotificacoesPush .texto-notificacoes{ display:none; } #btnNotificacoesPush{ padding:11px 14px; } #btnMaximizarTela{ display:none; } }
+@media (max-width:640px){ #btnMaximizarTela{ display:none; } }
 @media (max-width:640px){
   .hero.compacto{ padding:5px 3vw 0 3vw; }
   .hero.compacto .hero-top{ padding-bottom:4px; gap:5px; }
@@ -456,14 +456,11 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
     </div>
     <div class="hero-actions" style="align-items:center;gap:10px;">
       <span id="sessaoUsuarioLabel" style="color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6);font-size:13px;font-weight:600;align-self:center;opacity:1;transition:opacity .2s ease;"></span>
-      <div style="position:relative;">
-        <input type="text" id="buscaGlobalInput" placeholder="🔍 Buscar romaneio/NF..." style="padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,.08);color:#fff;font-size:12.5px;width:190px;"
-          oninput="buscarRomaneioGlobal()" onfocus="buscarRomaneioGlobal()">
-        <div id="buscaGlobalResultados" style="display:none;position:absolute;top:calc(100% + 4px);left:0;width:320px;max-height:340px;overflow-y:auto;background:var(--bg-2);border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.5);z-index:200;"></div>
-      </div>
       <div class="interacoes-fixed" id="cardAcoesRapidas">
         <button class="interacoes-trigger" id="btnInteracoesToggle">☰ Interações</button>
         <div class="interacoes-panel" id="interacoesPanel">
+          <button class="interacoes-item" id="btnNotificacoesPush" title="Ativar notificações"><span id="iconeNotificacoesPush">🔕</span><span class="texto-notificacoes"> Ativar notificações</span></button>
+          <div class="interacoes-divider"></div>
           <button class="interacoes-item" id="btnForcarSincronizacao" data-item-id="sincronizacao">🔄 Forçar sincronização</button>
           <button class="interacoes-item" id="btnVincularPlanilha" data-item-id="vincular">🔗 Vincular planilha online</button>
           <button class="interacoes-item" id="btnLinkProdutor" data-item-id="linkProdutor">🔗 Link p/ produtor</button>
@@ -475,7 +472,14 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
           <button class="interacoes-item" id="btnToggleTema" data-item-id="tema">⚙️ Configurações</button>
         </div>
       </div>
-      <button class="interacoes-trigger" id="btnNotificacoesPush" onclick="toggleNotificacoesUsuario()" title="Ativar notificações"><span id="iconeNotificacoesPush">🔕</span><span class="texto-notificacoes"> Ativar notificações</span></button>
+      <div class="interacoes-fixed" id="cardBuscaGlobal">
+        <button class="interacoes-trigger" id="btnBuscaGlobalToggle">🔍 Buscar</button>
+        <div class="interacoes-panel" id="painelBuscaGlobal" style="min-width:280px;">
+          <input type="text" id="buscaGlobalInput" placeholder="Buscar romaneio/NF..." style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--ink);font-size:13px;box-sizing:border-box;"
+            oninput="buscarRomaneioGlobal()">
+          <div id="buscaGlobalResultados" style="display:none;max-height:300px;overflow-y:auto;margin-top:4px;"></div>
+        </div>
+      </div>
       <button class="interacoes-trigger" id="btnMaximizarTela" onclick="toggleTelaMaximizada()">⛶ Maximizar</button>
       <button class="interacoes-trigger" onclick="renderTelaFiltroContexto()">← Voltar</button>
       <button class="interacoes-trigger" style="color:var(--red);font-weight:800;border-color:var(--red-dim);" onclick="logout()">Sair</button>
@@ -1772,6 +1776,12 @@ function inferirCulturaPorTexto(texto){
    de virar registro: se a nota é de uma cultura diferente da que o sistema está trabalhando agora, ou
    de uma safra fora da atual, ela é IGNORADA (não some — fica de fora e é contada no aviso final). E toda
    nota já importada antes (mesma chave de acesso ou mesmo nº de NF) nunca gera um segundo registro. */
+// Mesma lista fixa de safras usada na tela de contexto (Cadastros) — select em vez de texto livre,
+// pra evitar erro de digitação e manter o formato sempre consistente (AAAA/AAAA).
+const SAFRAS_PADRAO = ['2023/2024','2024/2025','2025/2026','2026/2027','2027/2028','2028/2029'];
+function optionsSafrasPadrao(selected){
+  return SAFRAS_PADRAO.map(sf=>`<option value="${sf}" ${sf===selected?'selected':''}>${sf}</option>`).join('');
+}
 function culturaAtivaId(){
   if(!state.config.cultura) return null;
   const c = state.culturas.find(x=>stripAccents(x.nome)===stripAccents(state.config.cultura));
@@ -1899,7 +1909,7 @@ function abrirCulturasArmazemAtivas(){
       <div id="culturasArmazemLista"></div>
       <div class="actions-row" style="margin-top:10px;">
         <select id="fNovaCulturaArmazem" style="flex:1;">${state.culturas.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('')}</select>
-        <input id="fNovaSafraArmazem" placeholder="Ex: 2025/2026" style="flex:1;">
+        <select id="fNovaSafraArmazem" style="flex:1;"><option value="">Selecione a safra</option>${optionsSafrasPadrao(null)}</select>
         <button class="btn ghost sm" onclick="adicionarComboCulturaArmazem()">➕ Adicionar</button>
       </div>
       <div class="actions-row" style="justify-content:flex-end;margin-top:14px;">
@@ -2389,7 +2399,7 @@ function renderEstoque(){
       <div class="table-wrap" id="wrap-romaneiosArmazem"><table id="table-romaneiosArmazem">
         <thead>${filterHeaderCells('romaneiosArmazem',[
           {key:'armazem',label:'Armazém'},{key:'produtor',label:'Produtor'},{key:'cultura',label:'Cultura'},{key:'safra',label:'Safra'},{key:null,label:'Colheita'},
-          {key:'motorista',label:'Motorista'},{key:'placa',label:'Placa'},{key:'romaneio',label:'Nº Romaneio'},{key:'data',label:'Data'},
+          {key:'motorista',label:'Motorista'},{key:'placa',label:'Placa'},{key:'romaneio',label:'Nº Romaneio'},{key:'nf',label:'Nº NF'},{key:'data',label:'Data'},{key:'dataEmissao',label:'Data Emissão NF'},
           {key:'pesoBruto',label:'Peso Bruto (Kg)'},{key:'tara',label:'Tara (kg)'},{key:'umidade',label:'Umidade (kg)'},{key:'impureza',label:'Impureza (kg)'},
           {key:'ardido',label:'Ardido/Avariado (kg)'},{key:'pesoLiquido',label:'Peso Líquido (Kg)'},{key:'sacas',label:'Sacas Líq.'},
           {key:'comprovante',label:'Comprovante'},{key:'status',label:'Status'},{key:null,label:''}], true)}</thead>
@@ -2454,7 +2464,7 @@ function updateTbodyRomaneiosArmazem(){
   const rows = lista.map(r=>{
     const extract = {
       armazem: state.fazendas.find(f=>f.id===r.fazendaId)?.nome||'', produtor: r.terceiroId ? `🤝 ${terceiroNome(r.terceiroId)}` : produtorNome(r.produtorId), cultura: culturaNome(r.culturaId),
-      safra: r.safra||'', motorista: r.motorista||'', placa: r.placa||'', romaneio: r.nrRomaneio||'', data: dataBR(r.dataEntrada),
+      safra: r.safra||'', motorista: r.motorista||'', placa: r.placa||'', romaneio: r.nrRomaneio||'', nf: r.nrNF||'', data: dataBR(r.dataEntrada), dataEmissao: r.dataEmissaoNF ? dataBR(r.dataEmissaoNF) : '',
       pesoBruto: fmt(r.pesoBruto,0), tara: fmt(r.tara,0), umidade: fmt(r.umidade,0), impureza: fmt(r.impureza,0), ardido: fmt(r.ardido,0),
       pesoLiquido: fmt(r.pesoLiquido,0), sacas: fmt(r.scsLiquido,1), comprovante: r.numeroComprovante||'', status: r.status||'aprovado'
     };
@@ -2466,7 +2476,7 @@ function updateTbodyRomaneiosArmazem(){
     const html = `<tr data-id="${r.id}" class="${classeCorLinha(r)}">
       <td class="tbl-chk-cell"><input type="checkbox" class="chk-linha" data-id="${r.id}" ${selecaoTabela.romaneiosArmazem.has(r.id)?'checked':''} onchange="toggleSelecaoLinha('romaneiosArmazem','${r.id}',this.checked)"></td>
       <td>${r.marcado?'🔖 ':''}${extract.armazem||'—'}</td><td>${extract.produtor} ${finalidadeTag}</td><td>${extract.cultura}</td><td>${extract.safra||'—'}</td><td>${colheitaCellArmazem}</td>
-      <td>${extract.motorista||'—'}</td><td>${extract.placa||'—'}</td><td>${extract.romaneio||'—'}</td><td>${extract.data}</td>
+      <td>${extract.motorista||'—'}</td><td>${extract.placa||'—'}</td><td>${extract.romaneio||'—'}</td><td>${extract.nf||'—'}</td><td>${extract.data}</td><td>${extract.dataEmissao||'—'}</td>
       <td>${extract.pesoBruto} kg</td><td>${extract.tara} kg</td><td>${extract.umidade} kg</td><td>${extract.impureza} kg</td>
       <td>${extract.ardido} kg</td><td><b>${extract.pesoLiquido} kg</b></td><td>${extract.sacas}</td>
       <td>${extract.comprovante} ${r.tipoOperacao==='saida' ? '<span class="tag" style="color:var(--red);border-color:var(--red-dim);">⬆️ saída</span>' : ''}</td><td>${statusRomaneioArmazemTag(r.status)}</td>
@@ -2480,7 +2490,7 @@ function updateTbodyRomaneiosArmazem(){
     </tr>`;
     return {extract, html};
   }).filter(r=>rowMatches(r.extract, filters));
-  document.getElementById('tbody-romaneiosArmazem').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(20,'Nenhum romaneio de armazém registrado ainda.');
+  document.getElementById('tbody-romaneiosArmazem').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(22,'Nenhum romaneio de armazém registrado ainda.');
   montarScrollDuploTabelas();
   atualizarBarraSelecao('romaneiosArmazem');
 }
@@ -2847,6 +2857,7 @@ Extraia os dados visíveis na imagem do romaneio/ticket de balança e responda A
  "empresaNome": string ou null (nome do armazém/empresa que recebeu a carga),
  "produtorNome": string ou null (nome do produtor/vendedor dono da carga, se aparecer no romaneio),
  "nrNF": string ou null (número da Nota Fiscal a que esse romaneio se refere — pode aparecer como "NF", "Nota Fiscal" ou "NF Produtor". Esse é o número que vincula o romaneio ao lançamento da NF já cadastrada, então precisa ser extraído com cuidado — veja a observação abaixo sobre o formato "NF Produtor: 216 - 920"),
+ "dataEmissaoNF": string ou null (data de emissão da Nota Fiscal, formato AAAA-MM-DD — só preencha se aparecer explicitamente rotulada como "emissão" ou "emitida em"; não confundir com data de entrada/saída do caminhão),
  "nrNFRemessa": string ou null (número da NF de remessa, se for diferente e aparecer separadamente),
  "motorista": string ou null,
  "placa": string ou null,
@@ -2868,6 +2879,7 @@ Extraia os dados visíveis na imagem do romaneio/ticket de balança e responda A
 Atenção: em alguns romaneios (ex: C.Vale) o nome do motorista aparece colado depois da placa na mesma linha "Placa: XXX0000 - - NOME". Nesse caso, extraia a placa (só letras/números) em "placa" e o nome que vem depois em "motorista", mesmo que não haja um campo separado escrito "Motorista".
 Atenção: em alguns romaneios (ex: C.Vale) o campo de NF aparece como "NF Produtor: 216 - 920" (dois números separados por traço). Nesse formato, o PRIMEIRO número é a NF que foi apresentada/lançada (a que importa para vincular o romaneio ao lançamento já cadastrado) — use "216" nesse exemplo, e ignore o segundo número.
 Se o romaneio trouxer peso bruto e tara mas não trouxer o peso líquido sem desconto de forma explícita, calcule pesoLiquidoSemDesc = pesoBruto - tara.
+Atenção: muitos romaneios de balança só imprimem uma data (rotulada como "saída", "liberação" ou similar) sem separar entrada/saída — nesse caso, preencha os dois campos igual (dataEntrada e dataSaida com o mesmo valor lido), já que é a mesma data do evento.
 Se um campo não estiver legível ou não existir na imagem, use null. Não invente valores. Responda somente o JSON.`;
 
   const response = await fetch(`${API_BASE}/ocr-romaneio`, {
@@ -4192,6 +4204,7 @@ function buscarRomaneioGlobal(){
 function irParaResultadoBusca(tab, id){
   document.getElementById('buscaGlobalResultados').style.display = 'none';
   document.getElementById('buscaGlobalInput').value = '';
+  document.getElementById('painelBuscaGlobal')?.classList.remove('aberto');
   switchTab(tab);
   setTimeout(()=>{
     const row = document.querySelector(`#tab-${tab} tr[data-id="${id}"]`);
@@ -4231,6 +4244,7 @@ function bindShellEvents(){
       panel.classList.remove('aberto');
     }
   });
+  document.getElementById('btnNotificacoesPush').addEventListener('click', ()=>{ panel.classList.remove('aberto'); toggleNotificacoesUsuario(); });
   document.getElementById('btnForcarSincronizacao').addEventListener('click', ()=>{ panel.classList.remove('aberto'); forcarSincronizacao(); });
   document.getElementById('btnVincularPlanilha').addEventListener('click', ()=>{ panel.classList.remove('aberto'); openCadastroModal('guiaPlanilha'); });
   document.getElementById('btnGerarDashboard').addEventListener('click', ()=>{ panel.classList.remove('aberto'); switchTab('dashboard'); window.scrollTo({top:0, behavior:'smooth'}); });
@@ -4254,6 +4268,20 @@ function bindShellEvents(){
     openCadastroModal('linkBalanca');
   });
   document.getElementById('btnToggleTema').addEventListener('click', ()=>{ panel.classList.remove('aberto'); openCadastroModal('configuracoes'); });
+
+  // Popover de busca global — mesmo padrão de abrir/fechar do "Interações"
+  const buscaToggleBtn = document.getElementById('btnBuscaGlobalToggle');
+  const buscaPanel = document.getElementById('painelBuscaGlobal');
+  buscaToggleBtn.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    buscaPanel.classList.toggle('aberto');
+    if(buscaPanel.classList.contains('aberto')) setTimeout(()=>document.getElementById('buscaGlobalInput').focus(), 50);
+  });
+  document.addEventListener('click', (e)=>{
+    if(buscaPanel.classList.contains('aberto') && !buscaPanel.contains(e.target) && e.target!==buscaToggleBtn){
+      buscaPanel.classList.remove('aberto');
+    }
+  });
   atualizarBotaoNotificacoes();
   restaurarOrdemInteracoes();
   inicializarDragReorderInteracoes();
@@ -5268,7 +5296,7 @@ function openCadastroModal(kind, id){
       </div>
       <div class="form-grid">
         <div class="field"><label>Cultura</label><select id="fRomArmazemCultura">${optionsCulturasSemAlgodao(r?.culturaId)}</select></div>
-        <div class="field"><label>Safra</label><input id="fRomArmazemSafra" value="${r?.safra || state.config.safra || ''}"></div>
+        <div class="field"><label>Safra</label><select id="fRomArmazemSafra">${optionsSafrasPadrao(r?.safra || state.config.safra || '')}</select></div>
       </div>
       <div class="form-grid">
         <div class="field"><label>Motorista</label><input id="fRomArmazemMotorista" value="${r?.motorista||''}"></div>
@@ -5276,7 +5304,11 @@ function openCadastroModal(kind, id){
       </div>
       <div class="form-grid">
         <div class="field"><label>Nº do romaneio</label><input id="fRomArmazemNr" value="${r?.nrRomaneio||''}"></div>
-        <div class="field"><label>Data</label><input id="fRomArmazemData" type="date" value="${r?.dataEntrada || todayISO()}"></div>
+        <div class="field"><label>Nº da NF <span class="small-note">(opcional)</span></label><input id="fRomArmazemNF" value="${r?.nrNF||''}"></div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>Data <span class="small-note">(entrada/saída no armazém)</span></label><input id="fRomArmazemData" type="date" value="${r?.dataEntrada || todayISO()}"></div>
+        <div class="field"><label>Data de emissão da NF <span class="small-note">(opcional)</span></label><input id="fRomArmazemDataEmissao" type="date" value="${r?.dataEmissaoNF||''}"></div>
       </div>
       <div class="form-grid">
         <div class="field"><label>Peso bruto (kg)</label><input id="fRomArmazemPesoBruto" type="number" step="0.01" value="${r?.pesoBruto||''}" oninput="atualizarPesoLiquidoRomaneioArmazem()"></div>
@@ -5422,6 +5454,8 @@ async function salvarRomaneioArmazem(){
     motorista: document.getElementById('fRomArmazemMotorista').value.trim(),
     placa: document.getElementById('fRomArmazemPlaca').value.trim(),
     nrRomaneio: document.getElementById('fRomArmazemNr').value.trim(),
+    nrNF: document.getElementById('fRomArmazemNF').value.trim(),
+    dataEmissaoNF: document.getElementById('fRomArmazemDataEmissao').value || '',
     dataEntrada: document.getElementById('fRomArmazemData').value || todayISO(),
     pesoBruto,
     tara: num(document.getElementById('fRomArmazemTara').value),
@@ -7277,7 +7311,7 @@ function renderModoBalanca(){
           </div>
           <div class="form-grid">
             <div class="field"><label>Cultura</label><select id="fRomArmazemCultura">${optionsCulturasSemAlgodao(cfg.culturaId)}</select></div>
-            <div class="field"><label>Safra</label><input id="fRomArmazemSafra" value="${cfg.safra || state.config.safra || ''}"></div>
+            <div class="field"><label>Safra</label><select id="fRomArmazemSafra">${optionsSafrasPadrao(cfg.safra || state.config.safra || '')}</select></div>
           </div>
           <div class="form-grid">
             <div class="field"><label>Motorista</label><input id="fRomArmazemMotorista"></div>
@@ -7285,7 +7319,11 @@ function renderModoBalanca(){
           </div>
           <div class="form-grid">
             <div class="field"><label id="fRomArmazemNrLabel">Nº do romaneio</label><input id="fRomArmazemNr"></div>
+            <div class="field"><label>Nº da NF <span class="small-note">(opcional)</span></label><input id="fRomArmazemNF"></div>
+          </div>
+          <div class="form-grid">
             <div class="field"><label id="fRomArmazemDataLabel">Data de entrada</label><input id="fRomArmazemData" type="date" value="${todayISO()}"></div>
+            <div class="field"><label>Data de emissão da NF <span class="small-note">(opcional)</span></label><input id="fRomArmazemDataEmissao" type="date"></div>
           </div>
           <div class="form-grid">
             <div class="field"><label>Peso bruto (kg)</label><input id="fRomArmazemPesoBruto" type="number" step="0.01" oninput="atualizarPesoLiquidoRomaneioArmazem()"></div>
@@ -7512,8 +7550,15 @@ function aplicarOcrFormBalanca(p){
   if(matchProdutor) setVal('fRomArmazemProdutor', matchProdutor.id);
   setVal('fRomArmazemMotorista', p.motorista);
   setVal('fRomArmazemPlaca', p.placa);
-  setVal('fRomArmazemNr', p.nrRomaneio || p.nrNF);
+  setVal('fRomArmazemNr', p.nrRomaneio);
+  setVal('fRomArmazemNF', p.nrNF);
+  if(p.dataEmissaoNF) setVal('fRomArmazemDataEmissao', p.dataEmissaoNF);
+  // O romaneio de quem despachou o caminhão às vezes só imprime "data de saída" (saída DE LÁ), sem
+  // imprimir uma "data de entrada" separada — mas pra nós, que estamos recebendo o grão, esse mesmo
+  // evento É a data de entrada no nosso armazém. Por isso: usa dataEntrada se veio explícita; senão,
+  // cai pra dataSaida do documento (que na prática é a mesma data da carga chegando aqui).
   if(p.dataEntrada) setVal('fRomArmazemData', p.dataEntrada);
+  else if(p.dataSaida) setVal('fRomArmazemData', p.dataSaida);
   if(p.pesoBruto!=null) setVal('fRomArmazemPesoBruto', p.pesoBruto);
   if(p.tara!=null) setVal('fRomArmazemTara', p.tara);
   if(p.umidade!=null) setVal('fRomArmazemUmidade', p.umidade);
@@ -7548,6 +7593,8 @@ async function salvarRomaneioArmazemBalanca(){
     motorista: document.getElementById('fRomArmazemMotorista').value.trim(),
     placa: document.getElementById('fRomArmazemPlaca').value.trim(),
     nrRomaneio: document.getElementById('fRomArmazemNr').value.trim(),
+    nrNF: document.getElementById('fRomArmazemNF').value.trim(),
+    dataEmissaoNF: document.getElementById('fRomArmazemDataEmissao').value || '',
     dataEntrada: document.getElementById('fRomArmazemData').value || todayISO(),
     pesoBruto,
     tara: num(document.getElementById('fRomArmazemTara').value),
@@ -7610,9 +7657,10 @@ async function salvarRomaneioArmazemBalanca(){
   // limpa o formulário pra já poder registrar a próxima carga
   balancaFotoAtual = null;
   document.getElementById('ocrStatusWrapBalanca').innerHTML = '';
-  ['fRomArmazemMotorista','fRomArmazemPlaca','fRomArmazemNr','fRomArmazemPesoBruto','fRomArmazemTara','fRomArmazemUmidade','fRomArmazemImpureza','fRomArmazemArdido','fRomArmazemObs']
+  ['fRomArmazemMotorista','fRomArmazemPlaca','fRomArmazemNr','fRomArmazemNF','fRomArmazemPesoBruto','fRomArmazemTara','fRomArmazemUmidade','fRomArmazemImpureza','fRomArmazemArdido','fRomArmazemObs']
     .forEach(id=>{ const el = document.getElementById(id); if(el) el.value = ''; });
   document.getElementById('fRomArmazemData').value = todayISO();
+  document.getElementById('fRomArmazemDataEmissao').value = '';
   atualizarPesoLiquidoRomaneioArmazem();
 }
 
@@ -9224,9 +9272,11 @@ async function handleImportXmlNFeArmazem(files, origem, colheitaId){
    Chrome/Edge no computador — não funciona no Safari, Firefox ou no celular. Também só roda
    enquanto essa aba do sistema estiver aberta (não é um serviço rodando em segundo plano no
    sistema operacional) — o navegador não permite acesso irrestrito ao disco por segurança.
-   Dentro dessas condições, qualquer XML novo salvo na pasta escolhida entra sozinho. */
+   Dentro dessas condições, qualquer XML novo salvo na pasta escolhida entra sozinho.
+   Suporta VÁRIAS pastas ao mesmo tempo por destino (ex: uma pasta "Soja" e outra "Milho" rodando
+   juntas em Estoque) — cada pasta tem seu próprio id, guardado junto com um apelido pra mostrar na tela. */
 const PASTA_MONITORADA_INTERVALO_MS = 30000;
-const pastaMonitoradaIntervalos = {};
+const pastaMonitoradaIntervalos = {}; // chave: `${destino}:${pastaId}`
 function pastaMonitoradaSuportada(){ return typeof window.showDirectoryPicker === 'function'; }
 function abrirDbPastaMonitorada(){
   return new Promise((resolve, reject)=>{
@@ -9236,99 +9286,121 @@ function abrirDbPastaMonitorada(){
     req.onerror = ()=>reject(req.error);
   });
 }
-async function salvarHandlePastaMonitorada(destino, handle){
+async function salvarHandlePastaMonitorada(chave, handle){
   const db = await abrirDbPastaMonitorada();
   return new Promise((resolve, reject)=>{
     const tx = db.transaction('handles','readwrite');
-    tx.objectStore('handles').put(handle, destino);
+    tx.objectStore('handles').put(handle, chave);
     tx.oncomplete = ()=>resolve();
     tx.onerror = ()=>reject(tx.error);
   });
 }
-async function carregarHandlePastaMonitorada(destino){
+async function carregarHandlePastaMonitorada(chave){
   const db = await abrirDbPastaMonitorada();
   return new Promise((resolve, reject)=>{
     const tx = db.transaction('handles','readonly');
-    const req = tx.objectStore('handles').get(destino);
+    const req = tx.objectStore('handles').get(chave);
     req.onsuccess = ()=>resolve(req.result||null);
     req.onerror = ()=>reject(req.error);
   });
 }
-function chaveProcessadosPasta(destino){ return 'brc_pasta_processados_'+destino; }
-function jaProcessadoNaPasta(destino, assinatura){
-  const lista = JSON.parse(localStorage.getItem(chaveProcessadosPasta(destino))||'[]');
-  return lista.includes(assinatura);
-}
-function marcarProcessadoNaPasta(destino, assinatura){
-  const chave = chaveProcessadosPasta(destino);
-  const lista = JSON.parse(localStorage.getItem(chave)||'[]');
-  lista.push(assinatura);
-  if(lista.length>500) lista.splice(0, lista.length-500); // não deixa crescer pra sempre
-  localStorage.setItem(chave, JSON.stringify(lista));
-}
-function chaveStatusPasta(destino){ return 'brc_pasta_status_'+destino; }
-function lerStatusPasta(destino){
-  try{ return JSON.parse(localStorage.getItem(chaveStatusPasta(destino))||'null'); }catch(e){ return null; }
-}
-function registrarChecagemPasta(destino, qtdImportados){
-  const atual = lerStatusPasta(destino) || {totalImportado:0};
-  atual.ultimaChecagem = new Date().toISOString();
-  atual.totalImportado = (atual.totalImportado||0) + (qtdImportados||0);
-  localStorage.setItem(chaveStatusPasta(destino), JSON.stringify(atual));
-}
-async function pararMonitoramentoPasta(destino){
-  if(pastaMonitoradaIntervalos[destino]){ clearInterval(pastaMonitoradaIntervalos[destino]); delete pastaMonitoradaIntervalos[destino]; }
+async function removerHandlePastaMonitorada(chave){
   const db = await abrirDbPastaMonitorada();
-  await new Promise((resolve, reject)=>{
+  return new Promise((resolve, reject)=>{
     const tx = db.transaction('handles','readwrite');
-    tx.objectStore('handles').delete(destino);
+    tx.objectStore('handles').delete(chave);
     tx.oncomplete = resolve; tx.onerror = ()=>reject(tx.error);
   });
-  localStorage.removeItem(chaveStatusPasta(destino));
-  toast('Monitoramento de pasta desativado.');
+}
+function chaveListaPastas(destino){ return 'brc_pastas_lista_'+destino; }
+function listarPastasDoDestino(destino){
+  try{ return JSON.parse(localStorage.getItem(chaveListaPastas(destino))||'[]'); }catch(e){ return []; }
+}
+function salvarListaPastasDoDestino(destino, lista){
+  localStorage.setItem(chaveListaPastas(destino), JSON.stringify(lista));
+}
+function chaveProcessadosPasta(chave){ return 'brc_pasta_processados_'+chave; }
+function jaProcessadoNaPasta(chave, assinatura){
+  const lista = JSON.parse(localStorage.getItem(chaveProcessadosPasta(chave))||'[]');
+  return lista.includes(assinatura);
+}
+function marcarProcessadoNaPasta(chave, assinatura){
+  const k = chaveProcessadosPasta(chave);
+  const lista = JSON.parse(localStorage.getItem(k)||'[]');
+  lista.push(assinatura);
+  if(lista.length>500) lista.splice(0, lista.length-500); // não deixa crescer pra sempre
+  localStorage.setItem(k, JSON.stringify(lista));
+}
+function chaveStatusPasta(chave){ return 'brc_pasta_status_'+chave; }
+function lerStatusPasta(chave){
+  try{ return JSON.parse(localStorage.getItem(chaveStatusPasta(chave))||'null'); }catch(e){ return null; }
+}
+function registrarChecagemPasta(chave, qtdImportados){
+  const atual = lerStatusPasta(chave) || {totalImportado:0};
+  atual.ultimaChecagem = new Date().toISOString();
+  atual.totalImportado = (atual.totalImportado||0) + (qtdImportados||0);
+  localStorage.setItem(chaveStatusPasta(chave), JSON.stringify(atual));
+}
+async function pararMonitoramentoPasta(destino, pastaId){
+  const chave = destino+':'+pastaId;
+  if(pastaMonitoradaIntervalos[chave]){ clearInterval(pastaMonitoradaIntervalos[chave]); delete pastaMonitoradaIntervalos[chave]; }
+  await removerHandlePastaMonitorada(chave);
+  localStorage.removeItem(chaveStatusPasta(chave));
+  localStorage.removeItem(chaveProcessadosPasta(chave));
+  salvarListaPastasDoDestino(destino, listarPastasDoDestino(destino).filter(p=>p.id!==pastaId));
+  toast('Pasta desvinculada — não monitora mais.');
 }
 async function abrirStatusPastaMonitorada(destino){
-  const handle = await carregarHandlePastaMonitorada(destino).catch(()=>null);
-  const status = lerStatusPasta(destino);
+  const pastas = listarPastasDoDestino(destino);
   const overlay = document.createElement('div');
   overlay.id = 'statusPastaOverlay';
   overlay.className = 'modal-overlay';
-  const ativo = !!handle && pastaMonitoradaSuportada();
+  const linhas = await Promise.all(pastas.map(async p=>{
+    const chave = destino+':'+p.id;
+    const handle = await carregarHandlePastaMonitorada(chave).catch(()=>null);
+    const status = lerStatusPasta(chave);
+    if(!handle) return '';
+    return `
+      <div class="card" style="padding:12px;border-color:var(--lime);background:rgba(120,220,120,.08);margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div>
+            <div style="font-weight:700;color:var(--lime);">🟢 ${p.nome}</div>
+            <div style="margin-top:2px;font-size:12.5px;" class="small-note">Pasta: <b>${handle.name}</b></div>
+            ${status?.ultimaChecagem ? `<div style="margin-top:2px;font-size:12px;" class="small-note">Última verificação: ${new Date(status.ultimaChecagem).toLocaleString('pt-BR')} · ${status.totalImportado||0} arquivo(s) importado(s) ao todo</div>` : ''}
+          </div>
+          <button class="btn danger sm" onclick="pararMonitoramentoPasta('${destino}','${p.id}').then(()=>{document.getElementById('statusPastaOverlay').remove(); abrirStatusPastaMonitorada('${destino}');})">🛑 Desativar</button>
+        </div>
+      </div>`;
+  }));
   overlay.innerHTML = `
     <div class="modal">
-      <div class="modal-head"><h3>📁 Pasta monitorada — ${destino==='cargas'?'Cargas & Romaneios':'Estoque de Armazém'}</h3><button class="modal-close" onclick="document.getElementById('statusPastaOverlay').remove()">✕</button></div>
-      ${!pastaMonitoradaSuportada() ? `<p class="small-note">Esse recurso só funciona no Chrome ou Edge, no computador.</p>` :
-        handle ? `
-        <div class="card" style="padding:12px;border-color:var(--lime);background:rgba(120,220,120,.08);">
-          <div style="font-weight:700;color:var(--lime);">🟢 Ativo</div>
-          <div style="margin-top:4px;font-size:13px;">Pasta: <b>${handle.name}</b></div>
-          <div style="margin-top:2px;font-size:12.5px;" class="small-note">Verificando a cada ${PASTA_MONITORADA_INTERVALO_MS/1000}s, enquanto esta aba estiver aberta.</div>
-          ${status?.ultimaChecagem ? `<div style="margin-top:2px;font-size:12.5px;" class="small-note">Última verificação: ${new Date(status.ultimaChecagem).toLocaleString('pt-BR')} · ${status.totalImportado||0} arquivo(s) importado(s) ao todo</div>` : ''}
-        </div>
-        <div class="actions-row" style="margin-top:12px;">
-          <button class="btn ghost sm" onclick="document.getElementById('statusPastaOverlay').remove(); vincularPastaMonitorada('${destino}');">🔄 Trocar de pasta</button>
-          <button class="btn danger sm" onclick="pararMonitoramentoPasta('${destino}').then(()=>document.getElementById('statusPastaOverlay').remove())">🛑 Desativar</button>
-        </div>`
-        : `<p class="small-note" style="margin-top:-4px;">Nenhuma pasta vinculada ainda — nada está sendo importado automaticamente.</p>
-        <div class="actions-row" style="margin-top:12px;justify-content:flex-end;">
-          <button class="btn" onclick="document.getElementById('statusPastaOverlay').remove(); vincularPastaMonitorada('${destino}');">📁 Vincular pasta</button>
-        </div>`}
-      <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
+      <div class="modal-head"><h3>📁 Pastas monitoradas — ${destino==='cargas'?'Cargas & Romaneios':'Estoque de Armazém'}</h3><button class="modal-close" onclick="document.getElementById('statusPastaOverlay').remove()">✕</button></div>
+      ${!pastaMonitoradaSuportada() ? `<p class="small-note">Esse recurso só funciona no Chrome ou Edge, no computador.</p>` : `
+        <p class="small-note" style="margin-top:-4px;">Pode ter mais de uma pasta ativa ao mesmo tempo — útil se estiver movimentando mais de uma cultura junto (ex: uma pasta "Soja" e outra "Milho").</p>
+        ${linhas.filter(Boolean).join('') || '<p class="small-note">Nenhuma pasta vinculada ainda — nada está sendo importado automaticamente.</p>'}
+        <button class="btn" style="width:100%;margin-top:6px;" onclick="document.getElementById('statusPastaOverlay').remove(); adicionarPastaMonitorada('${destino}');">➕ Adicionar pasta</button>
+      `}
+      <div class="actions-row" style="justify-content:flex-end;margin-top:14px;">
         <button class="btn ghost" onclick="document.getElementById('statusPastaOverlay').remove()">Fechar</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
 }
-async function vincularPastaMonitorada(destino){
+async function adicionarPastaMonitorada(destino){
   if(!pastaMonitoradaSuportada()){
     toast('Esse recurso só funciona no Chrome ou Edge, no computador — o navegador que você está usando agora não suporta.', true);
     return;
   }
   try{
     const handle = await window.showDirectoryPicker();
-    await salvarHandlePastaMonitorada(destino, handle);
-    toast(`Pasta "${handle.name}" vinculada — verificando a cada ${PASTA_MONITORADA_INTERVALO_MS/1000}s por XMLs novos, enquanto esta aba estiver aberta.`);
-    iniciarMonitoramentoPasta(destino);
+    const apelido = prompt('Dê um apelido pra essa pasta (ex: "Soja", "Milho", "Sede Norte"):', handle.name) || handle.name;
+    const pastaId = uid('pasta');
+    await salvarHandlePastaMonitorada(destino+':'+pastaId, handle);
+    const lista = listarPastasDoDestino(destino);
+    lista.push({id: pastaId, nome: apelido});
+    salvarListaPastasDoDestino(destino, lista);
+    toast(`Pasta "${apelido}" adicionada — verificando a cada ${PASTA_MONITORADA_INTERVALO_MS/1000}s por XMLs novos, enquanto esta aba estiver aberta.`);
+    iniciarMonitoramentoPasta(destino, pastaId);
   }catch(err){
     if(err?.name !== 'AbortError') toast('Não consegui acessar essa pasta.', true);
   }
@@ -9346,10 +9418,11 @@ async function* listarArquivosRecursivo(dirHandle, profundidade){
     }
   }
 }
-async function iniciarMonitoramentoPasta(destino){
-  if(pastaMonitoradaIntervalos[destino]) clearInterval(pastaMonitoradaIntervalos[destino]);
+async function iniciarMonitoramentoPasta(destino, pastaId){
+  const chave = destino+':'+pastaId;
+  if(pastaMonitoradaIntervalos[chave]) clearInterval(pastaMonitoradaIntervalos[chave]);
   const rodar = async ()=>{
-    const handle = await carregarHandlePastaMonitorada(destino).catch(()=>null);
+    const handle = await carregarHandlePastaMonitorada(chave).catch(()=>null);
     if(!handle) return;
     const permissao = await handle.queryPermission({mode:'read'}).catch(()=>'denied');
     if(permissao !== 'granted') return; // evita ficar pedindo permissão sozinho sem o usuário estar interagindo
@@ -9359,24 +9432,26 @@ async function iniciarMonitoramentoPasta(destino){
         if(!entry.name.toLowerCase().endsWith('.xml')) continue;
         const file = await entry.getFile();
         const assinatura = `${entry.name}:${file.size}:${file.lastModified}`;
-        if(jaProcessadoNaPasta(destino, assinatura)) continue;
+        if(jaProcessadoNaPasta(chave, assinatura)) continue;
         novos.push({file, assinatura});
       }
     }catch(e){ return; }
-    registrarChecagemPasta(destino, novos.length);
+    registrarChecagemPasta(chave, novos.length);
     if(!novos.length) return;
     if(destino==='cargas') await handleImportXmlNFe(novos.map(n=>n.file), 'automatico', null);
     else await handleImportXmlNFeArmazem(novos.map(n=>n.file), 'automatico', null);
-    novos.forEach(n=>marcarProcessadoNaPasta(destino, n.assinatura));
+    novos.forEach(n=>marcarProcessadoNaPasta(chave, n.assinatura));
   };
   await rodar();
-  pastaMonitoradaIntervalos[destino] = setInterval(rodar, PASTA_MONITORADA_INTERVALO_MS);
+  pastaMonitoradaIntervalos[chave] = setInterval(rodar, PASTA_MONITORADA_INTERVALO_MS);
 }
 async function retomarMonitoramentoPastasAoEntrar(){
   if(!pastaMonitoradaSuportada()) return;
   for(const destino of ['cargas','armazem']){
-    const handle = await carregarHandlePastaMonitorada(destino).catch(()=>null);
-    if(handle) iniciarMonitoramentoPasta(destino);
+    for(const p of listarPastasDoDestino(destino)){
+      const handle = await carregarHandlePastaMonitorada(destino+':'+p.id).catch(()=>null);
+      if(handle) iniciarMonitoramentoPasta(destino, p.id);
+    }
   }
 }
 
