@@ -194,6 +194,13 @@ tr:last-child td{ border-bottom:none; }
 .table-scroll-top-inner{ height:1px; }
 .tbl-icon-cell{ white-space:nowrap; text-align:right; width:1%; }
 .tbl-icon-cell button{ width:26px; height:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; }
+.tbl-chk-cell{ width:1%; text-align:center; }
+.tbl-chk-cell input{ width:16px; height:16px; cursor:pointer; }
+tr.linha-amarela td{ background:rgba(230,190,40,.18) !important; }
+tr.linha-vermelha td{ background:rgba(220,70,70,.18) !important; }
+tr.linha-verde td{ background:rgba(70,180,100,.18) !important; }
+.barra-selecao{ display:none; align-items:center; gap:10px; flex-wrap:wrap; background:var(--bg-2); border:1px solid var(--line); border-radius:10px; padding:8px 12px; margin-bottom:10px; }
+.barra-selecao .cor-dot{ width:22px; height:22px; border-radius:50%; border:2px solid var(--line); cursor:pointer; display:inline-block; }
 .tag{ display:inline-block; padding:3px 9px; border-radius:20px; font-size:11px; font-weight:600; font-family:'JetBrains Mono',monospace; }
 .tag.pending{ background:var(--amber-glow); color:var(--gold); }
 .tag.ok{ background:rgba(198,255,61,.14); color:var(--lime); }
@@ -461,7 +468,7 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
           <button class="interacoes-item" id="btnVincularPlanilha" data-item-id="vincular">🔗 Vincular planilha online</button>
           <button class="interacoes-item" id="btnLinkProdutor" data-item-id="linkProdutor">🔗 Link p/ produtor</button>
           <button class="interacoes-item" id="btnLinkMotorista" data-item-id="linkMotorista">📱 Link p/ motorista</button>
-          <button class="interacoes-item" id="btnSalvarComplementares" data-item-id="salvarComplementares">💾 Salvar informações complementares</button>
+          <button class="interacoes-item" id="btnLinkBalanca" data-item-id="linkBalanca">⚖️ Link p/ balança</button>
           <button class="interacoes-item" id="btnExportBackup" data-item-id="exportBackup">💾 Exportar backup completo (Excel)</button>
           <button class="interacoes-item" id="btnGerarDashboard" data-item-id="gerarDashboard">📊 Gerar Dashboard</button>
           <div class="interacoes-divider"></div>
@@ -1733,6 +1740,42 @@ function inferirCulturaPorTexto(texto){
   const achada = state.culturas.find(c=>t.includes(stripAccents(c.nome)));
   return achada ? achada.id : null;
 }
+/* ---------------- INTELIGÊNCIA DE IMPORTAÇÃO — cultura/safra do contexto atual + duplicidade ----------------
+   Toda importação de NF (planilha, PDF ou XML, tanto em Cargas quanto em Estoque) passa por aqui antes
+   de virar registro: se a nota é de uma cultura diferente da que o sistema está trabalhando agora, ou
+   de uma safra fora da atual, ela é IGNORADA (não some — fica de fora e é contada no aviso final). E toda
+   nota já importada antes (mesma chave de acesso ou mesmo nº de NF) nunca gera um segundo registro. */
+function culturaAtivaId(){
+  if(!state.config.cultura) return null;
+  const c = state.culturas.find(x=>stripAccents(x.nome)===stripAccents(state.config.cultura));
+  return c ? c.id : null;
+}
+// Confere se uma cultura detectada NA NOTA bate com a cultura ativa do sistema. Se não deu pra detectar
+// nada na nota (null), deixa passar — não tem base pra rejeitar o que a nota não informa.
+function culturaCompativelComContexto(culturaDetectadaId){
+  if(!culturaDetectadaId) return true;
+  const ativa = culturaAtivaId();
+  if(!ativa) return true; // sistema sem cultura definida no contexto — não há o que comparar
+  return culturaDetectadaId === ativa;
+}
+// Confere se a data de emissão da nota cai dentro da safra configurada (ex: "2025/2026" aceita notas
+// emitidas em 2025 OU 2026 — é uma aproximação por ano civil, já que o calendário exato de safra varia
+// por cultura/região; ainda assim pega o caso claro de nota de outro ano parar batendo aqui por engano).
+function safraCompativelComContexto(dataISO){
+  if(!dataISO) return true;
+  const safra = String(state.config.safra||'').trim();
+  const m = safra.match(/(\d{4})\s*\/\s*(\d{4})/);
+  if(!m) return true; // safra não configurada num formato reconhecível — não há o que comparar
+  const ano = Number(String(dataISO).slice(0,4));
+  if(!ano) return true;
+  return ano === Number(m[1]) || ano === Number(m[2]);
+}
+function jaExisteVendaComChaveOuNF(chaveNFe, nrNF){
+  return state.vendas.some(v => (chaveNFe && v.chaveNFe && v.chaveNFe===chaveNFe) || (nrNF && String(v.nrNF)===String(nrNF)));
+}
+function jaExisteRomaneioArmazemComChaveOuNF(chaveNFe, nrNF){
+  return state.romaneiosArmazem.some(r => (chaveNFe && r.chaveNFe && r.chaveNFe===chaveNFe) || (nrNF && r.nrNF && String(r.nrNF)===String(nrNF)));
+}
 // Gera a saída de estoque direto de uma VENDA importada (sem romaneio/pesagem no sistema — é o caso de
 // relatórios de venda que já saíram do armazém próprio antes de existir carga lançada aqui). Tenta achar
 // o armazém certo pela colheita vinculada; se não tiver, tenta pela cultura + único armazém onde o
@@ -2159,8 +2202,10 @@ function renderEstoque(){
         <span class="choice-wrap">
           <button class="btn ghost sm" onclick="toggleChoicePopover('popoverImportarArmazem')">📥 Importar</button>
           <span class="choice-popover" id="popoverImportarArmazem">
+            <button onclick="fecharChoicePopovers(); document.getElementById('importArmazemInputXmlNFe').click();">🧾 XML da NF-e (oficial)</button>
             <button onclick="fecharChoicePopovers(); document.getElementById('importArmazemInput').click();">📊 Planilha Excel (.xlsx)</button>
             <button onclick="fecharChoicePopovers(); document.getElementById('importArmazemInputPDF').click();">📄 Relatório em PDF</button>
+            <button onclick="fecharChoicePopovers(); vincularPastaMonitorada('armazem');">📁 Vincular pasta monitorada (Chrome/Edge)</button>
           </span>
         </span>
         <button class="btn ghost sm" onclick="exportarEstoqueXlsx()">📤 Exportar planilha</button>
@@ -2168,17 +2213,19 @@ function renderEstoque(){
         <button class="btn sm" onclick="openCadastroModal('romaneioArmazem')">➕ Nova entrada</button>
         <input type="file" id="importArmazemInput" accept=".xlsx,.xls" style="display:none">
         <input type="file" id="importArmazemInputPDF" accept=".pdf" style="display:none">
+        <input type="file" id="importArmazemInputXmlNFe" accept=".xml" multiple style="display:none">
       </h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:10px;">Mesmo padrão de Cargas &amp; Romaneios — caminhão saindo do campo direto pro silo, sem comprador ainda. O produtor pode acompanhar seus próprios romaneios e a conferência aqui é feita pelo botão "Aprovar" (romaneios importados por planilha/PDF/webhook entram como "aguardando aprovação" até a conferência).
         Importar aceita tanto planilha Excel quanto relatório em PDF (lido por IA).</p>
       <div class="table-scroll-top" data-sync="wrap-romaneiosArmazem"><div class="table-scroll-top-inner"></div></div>
+      ${barraSelecaoHTML('romaneiosArmazem')}
       <div class="table-wrap" id="wrap-romaneiosArmazem"><table id="table-romaneiosArmazem">
         <thead>${filterHeaderCells('romaneiosArmazem',[
           {key:'armazem',label:'Armazém'},{key:'produtor',label:'Produtor'},{key:'cultura',label:'Cultura'},{key:'safra',label:'Safra'},
           {key:'motorista',label:'Motorista'},{key:'placa',label:'Placa'},{key:'romaneio',label:'Nº Romaneio'},{key:'data',label:'Data'},
           {key:'pesoBruto',label:'Peso Bruto (Kg)'},{key:'tara',label:'Tara (kg)'},{key:'umidade',label:'Umidade (kg)'},{key:'impureza',label:'Impureza (kg)'},
           {key:'ardido',label:'Ardido/Avariado (kg)'},{key:'pesoLiquido',label:'Peso Líquido (Kg)'},{key:'sacas',label:'Sacas Líq.'},
-          {key:'comprovante',label:'Comprovante'},{key:'status',label:'Status'},{key:null,label:''}])}</thead>
+          {key:'comprovante',label:'Comprovante'},{key:'status',label:'Status'},{key:null,label:''}], true)}</thead>
         <tbody id="tbody-romaneiosArmazem"></tbody>
       </table></div>
     </div>
@@ -2231,6 +2278,7 @@ function renderEstoque(){
   updateTbodyRomaneiosArmazem();
   document.getElementById('importArmazemInput').addEventListener('change', (e)=>{ if(e.target.files[0]) handleImportArmazemXlsx(e.target.files[0]); e.target.value=''; });
   document.getElementById('importArmazemInputPDF').addEventListener('change', (e)=>{ if(e.target.files[0]) handleImportArmazemPDF(e.target.files[0]); e.target.value=''; });
+  document.getElementById('importArmazemInputXmlNFe').addEventListener('change', (e)=>{ if(e.target.files.length) handleImportXmlNFeArmazem([...e.target.files]); e.target.value=''; });
   montarScrollDuploTabelas();
 }
 function updateTbodyRomaneiosArmazem(){
@@ -2243,8 +2291,9 @@ function updateTbodyRomaneiosArmazem(){
       pesoBruto: fmt(r.pesoBruto,0), tara: fmt(r.tara,0), umidade: fmt(r.umidade,0), impureza: fmt(r.impureza,0), ardido: fmt(r.ardido,0),
       pesoLiquido: fmt(r.pesoLiquido,0), sacas: fmt(r.scsLiquido,1), comprovante: r.numeroComprovante||'', status: r.status||'aprovado'
     };
-    const html = `<tr data-id="${r.id}">
-      <td>${extract.armazem||'—'}</td><td>${extract.produtor}</td><td>${extract.cultura}</td><td>${extract.safra||'—'}</td>
+    const html = `<tr data-id="${r.id}" class="${classeCorLinha(r)}">
+      <td class="tbl-chk-cell"><input type="checkbox" class="chk-linha" data-id="${r.id}" ${selecaoTabela.romaneiosArmazem.has(r.id)?'checked':''} onchange="toggleSelecaoLinha('romaneiosArmazem','${r.id}',this.checked)"></td>
+      <td>${r.marcado?'🔖 ':''}${extract.armazem||'—'}</td><td>${extract.produtor}</td><td>${extract.cultura}</td><td>${extract.safra||'—'}</td>
       <td>${extract.motorista||'—'}</td><td>${extract.placa||'—'}</td><td>${extract.romaneio||'—'}</td><td>${extract.data}</td>
       <td>${extract.pesoBruto} kg</td><td>${extract.tara} kg</td><td>${extract.umidade} kg</td><td>${extract.impureza} kg</td>
       <td>${extract.ardido} kg</td><td><b>${extract.pesoLiquido} kg</b></td><td>${extract.sacas}</td>
@@ -2259,8 +2308,9 @@ function updateTbodyRomaneiosArmazem(){
     </tr>`;
     return {extract, html};
   }).filter(r=>rowMatches(r.extract, filters));
-  document.getElementById('tbody-romaneiosArmazem').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(18,'Nenhum romaneio de armazém registrado ainda.');
+  document.getElementById('tbody-romaneiosArmazem').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(19,'Nenhum romaneio de armazém registrado ainda.');
   montarScrollDuploTabelas();
+  atualizarBarraSelecao('romaneiosArmazem');
 }
 
 /* ---------------- AGREGAÇÕES PARA O DASHBOARD ---------------- */
@@ -2416,6 +2466,21 @@ function enviarWhatsapp(texto){
   window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank');
 }
 let linkMotoristaTextoAtual = '';
+function onLinkBalancaSelectChange(){
+  const id = document.getElementById('fLinkBalancaSelect').value;
+  const wrap = document.getElementById('linkBalancaResultado');
+  if(!id){ wrap.innerHTML = ''; linkMotoristaTextoAtual = ''; return; }
+  const r = textoAcessoBalanca(id);
+  if(r.erro){
+    wrap.innerHTML = `<p class="small-note" style="color:var(--red);margin-top:10px;">${r.erro}</p>`;
+    linkMotoristaTextoAtual = '';
+    return;
+  }
+  linkMotoristaTextoAtual = r.texto;
+  wrap.innerHTML = `
+    <div class="card" style="margin-top:12px;padding:12px;white-space:pre-wrap;font-size:13px;">${r.texto.replace(/</g,'&lt;')}</div>
+    <button class="btn sm" style="margin-top:10px;" onclick="copiarTexto(linkMotoristaTextoAtual)">📋 Copiar dados de acesso</button>`;
+}
 function onLinkMotoristaSelectChange(){
   const id = document.getElementById('fLinkMotoristaSelect').value;
   const wrap = document.getElementById('linkMotoristaResultado');
@@ -2457,6 +2522,88 @@ function montarScrollDuploTabelas(){
   });
 }
 window.addEventListener('resize', ()=>montarScrollDuploTabelas());
+/* ---------------- SELEÇÃO DE LINHAS + AÇÕES EM MASSA ----------------
+   Cargas & Conferência compartilham os mesmos registros (state.entregas) — mas cada tabela guarda sua
+   própria seleção, porque normalmente cada uma mostra um recorte diferente das cargas. */
+const selecaoTabela = { cargas: new Set(), conferencia: new Set(), romaneiosArmazem: new Set() };
+function listaDaTabela(tabela){ return (tabela==='cargas'||tabela==='conferencia') ? state.entregas : state.romaneiosArmazem; }
+function toggleSelecaoLinha(tabela, id, marcado){
+  if(marcado) selecaoTabela[tabela].add(id); else selecaoTabela[tabela].delete(id);
+  atualizarBarraSelecao(tabela);
+}
+function toggleSelecionarTodos(tabela, master){
+  document.querySelectorAll(`#tbody-${tabela} .chk-linha`).forEach(chk=>{
+    chk.checked = master.checked;
+    if(master.checked) selecaoTabela[tabela].add(chk.dataset.id); else selecaoTabela[tabela].delete(chk.dataset.id);
+  });
+  atualizarBarraSelecao(tabela);
+}
+function limparSelecaoTabela(tabela){
+  selecaoTabela[tabela].clear();
+  document.querySelectorAll(`#tbody-${tabela} .chk-linha`).forEach(chk=>chk.checked=false);
+  const master = document.getElementById('chkTodos-'+tabela);
+  if(master) master.checked = false;
+  atualizarBarraSelecao(tabela);
+}
+function atualizarBarraSelecao(tabela){
+  const n = selecaoTabela[tabela].size;
+  const bar = document.getElementById('barraSelecao-'+tabela);
+  if(!bar) return;
+  bar.style.display = n>0 ? 'flex' : 'none';
+  const label = document.getElementById('barraSelecaoLabel-'+tabela);
+  if(label) label.textContent = `${n} selecionada(s)`;
+}
+function marcarSelecionadas(tabela){
+  const lista = listaDaTabela(tabela);
+  selecaoTabela[tabela].forEach(id=>{ const item = lista.find(x=>x.id===id); if(item) item.marcado = !item.marcado; });
+  salvarListaDaTabela(tabela);
+  renderAll();
+}
+function colorirSelecionadas(tabela, cor){
+  const lista = listaDaTabela(tabela);
+  selecaoTabela[tabela].forEach(id=>{ const item = lista.find(x=>x.id===id); if(item) item.corMarcacao = cor; });
+  salvarListaDaTabela(tabela);
+  renderAll();
+}
+async function excluirSelecionadas(tabela){
+  const n = selecaoTabela[tabela].size;
+  if(!n) return;
+  if(!confirm(`Excluir ${n} item(ns) selecionado(s)? Essa ação não pode ser desfeita.`)) return;
+  const ids = [...selecaoTabela[tabela]];
+  if(tabela==='cargas'||tabela==='conferencia'){
+    ids.forEach(id=>excluirEntregaSemConfirmar(id));
+    await saveEntregas();
+  } else {
+    ids.forEach(id=>excluirRomaneioArmazemSemConfirmar(id));
+    await saveEstoque();
+  }
+  selecaoTabela[tabela].clear();
+  renderAll();
+  toast(`${n} item(ns) excluído(s).`);
+}
+function salvarListaDaTabela(tabela){
+  return (tabela==='cargas'||tabela==='conferencia') ? saveEntregas() : saveEstoque();
+}
+function barraSelecaoHTML(tabela){
+  return `
+    <div class="barra-selecao" id="barraSelecao-${tabela}">
+      <b id="barraSelecaoLabel-${tabela}" style="font-size:12.5px;">0 selecionada(s)</b>
+      <button class="btn ghost sm" onclick="marcarSelecionadas('${tabela}')">🔖 Marcar</button>
+      <span style="display:flex;gap:6px;align-items:center;">
+        <span class="cor-dot" style="background:#e6be28;" title="Amarelo" onclick="colorirSelecionadas('${tabela}','amarela')"></span>
+        <span class="cor-dot" style="background:#dc4646;" title="Vermelho" onclick="colorirSelecionadas('${tabela}','vermelha')"></span>
+        <span class="cor-dot" style="background:#46b464;" title="Verde" onclick="colorirSelecionadas('${tabela}','verde')"></span>
+        <span class="cor-dot" style="background:transparent;" title="Remover cor" onclick="colorirSelecionadas('${tabela}',null)">✕</span>
+      </span>
+      <button class="btn danger sm" onclick="excluirSelecionadas('${tabela}')">🗑️ Excluir</button>
+      <button class="btn ghost sm" onclick="limparSelecaoTabela('${tabela}')">Limpar seleção</button>
+    </div>`;
+}
+function classeCorLinha(item){
+  if(!item?.corMarcacao) return '';
+  return item.corMarcacao==='amarela' ? 'linha-amarela' : item.corMarcacao==='vermelha' ? 'linha-vermelha' : item.corMarcacao==='verde' ? 'linha-verde' : '';
+}
+
 function toast(msg, isErr){
   const el = document.createElement('div');
   el.className = 'toast' + (isErr ? ' err' : '');
@@ -2717,13 +2864,14 @@ function rowMatches(extract, filters){
     return stripAccents(String(extract[k]??'')).includes(stripAccents(f));
   });
 }
-function filterHeaderCells(tableKey, cols){
+function filterHeaderCells(tableKey, cols, comSelecao){
   // cols: [{key, label}] — key null = coluna sem filtro (ex: ações)
   const ths = cols.map(c=>{
     if(!c.key) return `<th>${c.label}</th>`;
     return `<th><div class="th-flex"><span>${c.label}</span><button type="button" class="th-filter-btn" onclick="toggleColFilter(this)" title="Filtrar esta coluna">🔍</button></div><input type="text" class="filter-input mini" data-ftable="${tableKey}" data-fkey="${c.key}" placeholder="filtrar" style="display:none;" oninput="onFilterInput('${tableKey}'); this.previousElementSibling.querySelector('.th-filter-btn').classList.toggle('active', !!this.value)"></th>`;
   }).join('');
-  return `<tr>${ths}</tr>`;
+  const thSelecao = comSelecao ? `<th class="tbl-chk-cell"><input type="checkbox" id="chkTodos-${tableKey}" onchange="toggleSelecionarTodos('${tableKey}', this)" title="Selecionar todas"></th>` : '';
+  return `<tr>${thSelecao}${ths}</tr>`;
 }
 function toggleColFilter(btn){
   const th = btn.closest('th');
@@ -3106,9 +3254,10 @@ function renderCargasAtivas(){
         <span class="choice-wrap">
           <button class="btn ghost sm" onclick="toggleChoicePopover('popoverImportar')">📥 Importar</button>
           <span class="choice-popover" id="popoverImportar">
+            <button onclick="fecharChoicePopovers(); document.getElementById('importInputXmlNFe').click();">🧾 XML da NF-e (oficial)</button>
             <button onclick="fecharChoicePopovers(); document.getElementById('importInput').click();">📊 Planilha Excel (.xlsx)</button>
             <button onclick="fecharChoicePopovers(); document.getElementById('importInputPDF').click();">📄 Relatório em PDF</button>
-            <button onclick="fecharChoicePopovers(); document.getElementById('importInputXmlNFe').click();">🧾 XML da NF-e (oficial)</button>
+            <button onclick="fecharChoicePopovers(); vincularPastaMonitorada('cargas');">📁 Vincular pasta monitorada (Chrome/Edge)</button>
           </span>
         </span>
         <button class="btn ghost sm" onclick="openCadastroModal('filtroRelatorioCargas')">📤 Gerar relatório</button>
@@ -3121,6 +3270,7 @@ function renderCargasAtivas(){
         <input type="checkbox" ${mostrarComprovantes?'checked':''} onchange="toggleComprovantes()"> mostrar também os comprovantes de remessa/complemento (fora do confronto)
       </label>
       <div class="table-scroll-top" data-sync="wrap-cargas"><div class="table-scroll-top-inner"></div></div>
+      ${barraSelecaoHTML('cargas')}
       <div class="table-wrap resizable-wrap" id="wrap-cargas"><table id="table-cargas">
         <thead>${filterHeaderCells('cargas',[
           {key:'empresa',label:'Empresa'},{key:'produtor',label:'Proprietário'},{key:'natureza',label:'Natureza'},
@@ -3130,7 +3280,7 @@ function renderCargasAtivas(){
           {key:'ardido',label:'Ardido/Avariado (kg)'},{key:'txRecebimento',label:'Tx Depósito (kg)'},
           {key:'pesoLiqCom',label:'Peso Líq. COM desc. Depósito (Kg)'},{key:'pesoLiqSem',label:'Peso Líq. SEM desc. Depósito (Kg)'},
           {key:'scsBruto',label:'Scs Bruto'},{key:'scsLiqCom',label:'Scs Líq. COM desc. Depósito'},{key:'scsLiqSem',label:'Scs Líq. SEM desc. Depósito'},
-          {key:'status',label:'Status'},{key:null,label:''}])}</thead>
+          {key:'status',label:'Status'},{key:null,label:''}], true)}</thead>
         <tbody id="tbody-cargas"></tbody>
       </table></div>
     </div>
@@ -3139,6 +3289,7 @@ function renderCargasAtivas(){
   tornarColunasRedimensionaveis('table-cargas');
   document.getElementById('btnNovaCarga').addEventListener('click', ()=>openEntregaModal());
   montarScrollDuploTabelas();
+  atualizarBarraSelecao('cargas');
 }
 
 function renderCargasRejeitadas(){
@@ -3228,8 +3379,9 @@ function updateTbodyCargas(){
           : `<button class="btn ghost sm" onclick="openCadastroModal('selecionarColheita','${v.id}')">Selecionar colheita</button>`)
       : '—';
     const pesado = e.status!=='pendente';
-    const html = `<tr data-id="${e.id}"${ehComprovante?' style="opacity:.6"':''}>
-      <td>${extract.empresa}</td><td>${produtorCell}</td><td>${naturezaCell}</td>
+    const html = `<tr data-id="${e.id}" class="${classeCorLinha(e)}"${ehComprovante?' style="opacity:.6"':''}>
+      <td class="tbl-chk-cell"><input type="checkbox" class="chk-linha" data-id="${e.id}" ${selecaoTabela.cargas.has(e.id)?'checked':''} onchange="toggleSelecaoLinha('cargas','${e.id}',this.checked)"></td>
+      <td>${e.marcado?'🔖 ':''}${extract.empresa}</td><td>${produtorCell}</td><td>${naturezaCell}</td>
       <td class="mono" style="font-size:11.5px">${extract.contrato||'—'}</td><td>${extract.nfVenda||'—'}</td><td>${extract.data}</td>
       <td>${colheitaCell}</td>
       <td>${extract.pesoFiscal ? extract.pesoFiscal+' kg' : '<span class="small-note">a informar</span>'}</td>
@@ -3255,17 +3407,22 @@ function updateTbodyCargas(){
     </tr>`;
     return {extract, html};
   }).filter(r=>rowMatches(r.extract, filters));
-  document.getElementById('tbody-cargas').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(24,'Nenhuma carga encontrada. Importe o relatório de NFs para começar.');
+  document.getElementById('tbody-cargas').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(25,'Nenhuma carga encontrada. Importe o relatório de NFs para começar.');
   montarScrollDuploTabelas();
+  atualizarBarraSelecao('cargas');
 }
 Object.assign(TBODY_UPDATERS, { cargas: updateTbodyCargas });
 
-function deleteEntrega(id){
-  if(!confirm('Excluir esta entrega/romaneio? Essa ação não pode ser desfeita.')) return;
+function excluirEntregaSemConfirmar(id){
   const e = state.entregas.find(x=>x.id===id);
   state.entregas = state.entregas.filter(e=>e.id!==id);
-  saveEntregas();
   if(e?.temFoto){ window.storage.delete('romaneio-foto:'+id, true).catch(()=>{}); }
+  return e;
+}
+function deleteEntrega(id){
+  if(!confirm('Excluir esta entrega/romaneio? Essa ação não pode ser desfeita.')) return;
+  excluirEntregaSemConfirmar(id);
+  saveEntregas();
   renderAll();
   toast('Entrega excluída.');
 }
@@ -3297,6 +3454,7 @@ function renderConferenciaMotoristas(){
         Lançamentos feitos pelo link do motorista caem aqui primeiro. Confira os dados antes de lançar oficialmente no dashboard.
       </p>
       <div class="table-scroll-top" data-sync="wrap-conferencia"><div class="table-scroll-top-inner"></div></div>
+      ${barraSelecaoHTML('conferencia')}
       <div class="table-wrap resizable-wrap" id="wrap-conferencia"><table id="table-conferencia">
         <thead>${filterHeaderCells('conferencia',[
           {key:'recebido',label:'Recebido em'},{key:'empresa',label:'Empresa venda'},{key:'produtor',label:'Produtor'},
@@ -3305,7 +3463,7 @@ function renderConferenciaMotoristas(){
           {key:'txRecebimento',label:'Tx Recebimento (kg)'},
           {key:'pesoLiqCom',label:'Peso Líquido com desc. de Taxa de Depósito(Kg)'},{key:'pesoLiqSem',label:'Peso Líquido sem taxa de desconto de Depósito (Kg)'},
           {key:'scsBruto',label:'Scs Bruto'},{key:'scsLiqCom',label:'Sacas líquido com desc. de taxa de depósito'},{key:'scsLiqSem',label:'Sacas líquido sem desc. de taxa de depósito'},
-          {key:null,label:''},{key:null,label:'Alertas'}])}</thead>
+          {key:null,label:''},{key:null,label:'Alertas'}], true)}</thead>
         <tbody id="tbody-conferencia"></tbody>
       </table></div>
     </div>
@@ -3335,8 +3493,9 @@ function updateTbodyConferencia(){
       (num(e.ardido)/base*100) > limites.avariado
     );
     const estiloLinha = acimaDoLimite ? ' style="background:var(--red-dim);"' : '';
-    const html = `<tr${estiloLinha}>
-      <td>${extract.recebido}</td><td>${extract.empresa}</td><td>${extract.produtor}</td>
+    const html = `<tr data-id="${e.id}" class="${classeCorLinha(e)}"${estiloLinha}>
+      <td class="tbl-chk-cell"><input type="checkbox" class="chk-linha" data-id="${e.id}" ${selecaoTabela.conferencia.has(e.id)?'checked':''} onchange="toggleSelecaoLinha('conferencia','${e.id}',this.checked)"></td>
+      <td>${e.marcado?'🔖 ':''}${extract.recebido}</td><td>${extract.empresa}</td><td>${extract.produtor}</td>
       <td>${extract.nfRemessa||'—'}</td><td>${e.motorista||'—'}${e.placa?` (${e.placa})`:''}</td>
       <td>${extract.romaneio||'—'}${acimaDoLimite?' <span class="tag neg" title="Desconto acima do limite">⚠️</span>':''}</td><td>${extract.data}</td>
       <td>${extract.pesoBruto} kg</td><td>${extract.umidade} kg</td><td>${extract.impureza} kg</td><td>${extract.ardido} kg</td>
@@ -3356,8 +3515,9 @@ function updateTbodyConferencia(){
     </tr>`;
     return {extract, html};
   }).filter(r=>rowMatches(r.extract, filters));
-  document.getElementById('tbody-conferencia').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(19,'Nenhum envio de motorista aguardando conferência.');
+  document.getElementById('tbody-conferencia').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(20,'Nenhum envio de motorista aguardando conferência.');
   montarScrollDuploTabelas();
+  atualizarBarraSelecao('conferencia');
 }
 Object.assign(TBODY_UPDATERS, { conferencia: updateTbodyConferencia });
 
@@ -3859,11 +4019,6 @@ function bindShellEvents(){
   document.getElementById('btnVincularPlanilha').addEventListener('click', ()=>{ panel.classList.remove('aberto'); openCadastroModal('guiaPlanilha'); });
   document.getElementById('btnGerarDashboard').addEventListener('click', ()=>{ panel.classList.remove('aberto'); switchTab('dashboard'); window.scrollTo({top:0, behavior:'smooth'}); });
   document.getElementById('btnExportBackup').addEventListener('click', ()=>{ panel.classList.remove('aberto'); exportToXlsx(); });
-  document.getElementById('btnSalvarComplementares').addEventListener('click', async ()=>{
-    panel.classList.remove('aberto');
-    await saveCadastros();
-    toast('Informações complementares salvas (cultura, colheitas, produtores, venda/armazenagem, contratos e motoristas).');
-  });
   document.getElementById('btnLinkProdutor').addEventListener('click', ()=>{
     panel.classList.remove('aberto');
     const url = linkAcessoSistema('produtor');
@@ -3877,6 +4032,10 @@ function bindShellEvents(){
   document.getElementById('btnLinkMotorista').addEventListener('click', ()=>{
     panel.classList.remove('aberto');
     openCadastroModal('linkMotorista');
+  });
+  document.getElementById('btnLinkBalanca').addEventListener('click', ()=>{
+    panel.classList.remove('aberto');
+    openCadastroModal('linkBalanca');
   });
   document.getElementById('btnToggleTema').addEventListener('click', ()=>{ panel.classList.remove('aberto'); openCadastroModal('configuracoes'); });
   atualizarBotaoNotificacoes();
@@ -4568,9 +4727,14 @@ function openCadastroModal(kind, id){
 
   if(kind==='filtroRelatorioCargas'){
     const placasDisponiveis = Array.from(new Set(state.entregas.map(e=>e.placa).filter(Boolean))).sort();
+    const nSelecionadas = selecaoTabela.cargas.size;
     title.textContent = 'Gerar relatório de Cargas & Romaneios';
     body.innerHTML = `
       <p class="small-note" style="margin-top:-4px;">Deixe em branco ou sem marcar qualquer filtro que não quiser aplicar — assim ele traz tudo. Marque só os itens que quiser incluir no relatório.</p>
+      ${nSelecionadas>0 ? `<label style="display:flex;align-items:center;gap:8px;font-weight:400;background:rgba(230,190,40,.12);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:10px;cursor:pointer;">
+        <input type="checkbox" id="fRelSomenteSelecionadas" style="width:auto;">
+        Gerar somente das ${nSelecionadas} linha(s) selecionada(s) na tabela — ignora todos os outros filtros abaixo
+      </label>` : ''}
       <div class="form-grid">
         <div class="field"><label>Data inicial</label><input type="date" id="fRelDataIni"></div>
         <div class="field"><label>Data final</label><input type="date" id="fRelDataFim"></div>
@@ -4626,6 +4790,24 @@ function openCadastroModal(kind, id){
         </select>
       </div>
       <div id="linkMotoristaResultado"></div>
+      <div class="actions-row" style="justify-content:flex-end;margin-top:14px;">
+        <button class="btn ghost" onclick="closeCadastroModal()">Fechar</button>
+      </div>`;
+  }
+
+  if(kind==='linkBalanca'){
+    const usuariosBalanca = state.usuarios.filter(u=>u.papel==='balanca');
+    title.textContent = 'Link de acesso para a balança do armazém';
+    body.innerHTML = `
+      <p class="small-note" style="margin-top:-4px;">Selecione o usuário da balança pra gerar o link e os dados de acesso — depois é só copiar ou enviar direto pelo WhatsApp.</p>
+      ${!usuariosBalanca.length ? `<p class="small-note">Nenhum usuário com papel "Balança do armazém" cadastrado ainda — crie um na aba Usuários primeiro.</p>` : `
+      <div class="field"><label>Usuário da balança</label>
+        <select id="fLinkBalancaSelect" onchange="onLinkBalancaSelectChange()">
+          <option value="">— selecione —</option>
+          ${usuariosBalanca.map(u=>`<option value="${u.id}">${u.usuario}</option>`).join('')}
+        </select>
+      </div>
+      <div id="linkBalancaResultado"></div>`}
       <div class="actions-row" style="justify-content:flex-end;margin-top:14px;">
         <button class="btn ghost" onclick="closeCadastroModal()">Fechar</button>
       </div>`;
@@ -5015,10 +5197,13 @@ async function salvarRomaneioArmazem(){
     verificarReativarSecadorSuspenso(fazendaId, umidadePct);
   }
 }
-function excluirRomaneioArmazem(id){
-  if(!confirm('Excluir esta entrada de armazém? O movimento de estoque correspondente também será removido.')) return;
+function excluirRomaneioArmazemSemConfirmar(id){
   state.romaneiosArmazem = state.romaneiosArmazem.filter(r=>r.id!==id);
   state.movimentosEstoque = state.movimentosEstoque.filter(m=>!(m.origem?.tipo==='romaneioArmazem' && m.origem?.refId===id));
+}
+function excluirRomaneioArmazem(id){
+  if(!confirm('Excluir esta entrada de armazém? O movimento de estoque correspondente também será removido.')) return;
+  excluirRomaneioArmazemSemConfirmar(id);
   saveEstoque(); renderEstoque();
   toast('Entrada de armazém excluída.');
 }
@@ -8517,7 +8702,9 @@ function parseNFeXmlDoc(xmlDoc){
   const placa = xmlDoc.getElementsByTagName('placa')[0]?.textContent?.trim().toUpperCase() || '';
 
   // Peso: soma a quantidade dos itens medidos em KG (comum pra grão a granel) — quando a NF já vem com isso.
+  // xProdTexto: descrição dos produtos, usada só pra tentar identificar a cultura da nota.
   let pesoKg = 0;
+  const xProdTextos = [];
   const dets = xmlDoc.getElementsByTagName('det');
   for(let i=0;i<dets.length;i++){
     const prod = dets[i].getElementsByTagName('prod')[0];
@@ -8525,12 +8712,14 @@ function parseNFeXmlDoc(xmlDoc){
     const uCom = prod.getElementsByTagName('uCom')[0]?.textContent?.trim() || '';
     const qCom = num(prod.getElementsByTagName('qCom')[0]?.textContent || 0);
     if(/^kg$/i.test(uCom)) pesoKg += qCom;
+    const xProd = prod.getElementsByTagName('xProd')[0]?.textContent?.trim() || '';
+    if(xProd) xProdTextos.push(xProd);
   }
 
-  return { chNFe, nNF, dEmi, natOp, infCpl, vNF, emitNome, emitCnpj, emitCpf, destNome, destCnpj, destCpf, motorista, placa, pesoKg: pesoKg||null };
+  return { chNFe, nNF, dEmi, natOp, infCpl, vNF, emitNome, emitCnpj, emitCpf, destNome, destCnpj, destCpf, motorista, placa, pesoKg: pesoKg||null, xProdTexto: xProdTextos.join(' ') };
 }
 async function handleImportXmlNFe(files){
-  let novos=0, atualizados=0, duplicados=0, comErro=0;
+  let novos=0, duplicados=0, foraDeContexto=0, comErro=0;
   const gruposTocados = new Set();
 
   for(const file of files){
@@ -8540,6 +8729,14 @@ async function handleImportXmlNFe(files){
       if(xmlDoc.getElementsByTagName('parsererror').length){ comErro++; continue; }
       const nfe = parseNFeXmlDoc(xmlDoc);
       if(!nfe){ comErro++; continue; }
+
+      // Trava 1: NF já importada antes (mesma chave de acesso ou mesmo nº de NF) — nunca gera um segundo
+      // registro, nem atualiza o que já existe. Uma vez importada, só edição manual muda os dados dela.
+      if(jaExisteVendaComChaveOuNF(nfe.chNFe, nfe.nNF)){ duplicados++; continue; }
+
+      // Trava 2: cultura/safra da nota tem que bater com o que o sistema está trabalhando agora.
+      const culturaDetectada = inferirCulturaPorTexto(nfe.natOp) || inferirCulturaPorTexto(nfe.xProdTexto) || inferirCulturaPorTexto(nfe.infCpl);
+      if(!culturaCompativelComContexto(culturaDetectada) || !safraCompativelComContexto(nfe.dEmi)){ foraDeContexto++; continue; }
 
       // Descobre quem é o produtor e quem é a empresa compradora tentando casar CNPJ/CPF com cadastros
       // já existentes — se nenhum dos dois já for conhecido, assume emitente=produtor (caso mais comum
@@ -8566,32 +8763,16 @@ async function handleImportXmlNFe(files){
       const contratoExistente = contratoNr ? state.contratos.find(c=>c.doc===contratoNr) : null;
       const role = classificarNatureza(nfe.natOp);
 
-      let venda = state.vendas.find(v=> (nfe.chNFe && v.chaveNFe===nfe.chNFe) || String(v.nrNF)===String(nfe.nNF));
-      if(!venda){
-        venda = {
-          id: uid('venda'), empresaId, produtorId, contratoId: contratoExistente ? contratoExistente.id : null,
-          contratoNrRaw: contratoNr || '', nrNF: String(nfe.nNF), dataNF: nfe.dEmi || todayISO(),
-          pesoFiscal: nfe.pesoKg, valorFiscal: nfe.vNF, natureza: nfe.natOp, role, usarParaConfronto: true,
-          colheitaId: null, chaveNFe: nfe.chNFe || '', createdAt: new Date().toISOString(),
-        };
-        state.vendas.push(venda);
-        novos++;
-      } else {
-        Object.assign(venda, {
-          empresaId: empresaId || venda.empresaId, produtorId: produtorId || venda.produtorId,
-          contratoId: venda.contratoId || (contratoExistente ? contratoExistente.id : null),
-          contratoNrRaw: venda.contratoNrRaw || contratoNr || '',
-          valorFiscal: nfe.vNF || venda.valorFiscal, pesoFiscal: venda.pesoFiscal ?? nfe.pesoKg,
-          natureza: nfe.natOp || venda.natureza, role: role || venda.role,
-          chaveNFe: venda.chaveNFe || nfe.chNFe || '',
-        });
-        atualizados++;
-      }
+      const venda = {
+        id: uid('venda'), empresaId, produtorId, contratoId: contratoExistente ? contratoExistente.id : null,
+        contratoNrRaw: contratoNr || '', nrNF: String(nfe.nNF), dataNF: nfe.dEmi || todayISO(),
+        pesoFiscal: nfe.pesoKg, valorFiscal: nfe.vNF, natureza: nfe.natOp, role, usarParaConfronto: true,
+        colheitaId: null, chaveNFe: nfe.chNFe || '', createdAt: new Date().toISOString(),
+      };
+      state.vendas.push(venda);
+      novos++;
       const grupoKey = contratoGroupKey(venda);
       if(grupoKey) gruposTocados.add(grupoKey);
-
-      const jaTemEntrega = state.entregas.some(e=>e.vendaId===venda.id);
-      if(jaTemEntrega){ duplicados++; continue; }
 
       state.entregas.push({
         id: uid('ent'), vendaId: venda.id, temRemessa:false, nrNFRemessa:'',
@@ -8610,14 +8791,185 @@ async function handleImportXmlNFe(files){
   gruposTocados.forEach(recalcUsarParaConfronto);
   saveCadastros(); saveVendas(); saveEntregas(); renderAll();
   const partes = [`${novos} nota(s) nova(s)`];
-  if(atualizados) partes.push(`${atualizados} atualizada(s)`);
-  if(duplicados) partes.push(`${duplicados} já tinha(m) entrega lançada`);
+  if(duplicados) partes.push(`${duplicados} já tinha(m) sido importada(s) antes (ignorada, nunca duplica)`);
+  if(foraDeContexto) partes.push(`${foraDeContexto} de outra cultura/safra (fora do contexto atual: ${state.config.cultura||'—'} ${state.config.safra||''})`);
   if(comErro) partes.push(`${comErro} arquivo(s) não reconhecido(s) como XML de NF-e`);
   toast(`Importação de XML de NF-e: ${partes.join(', ')}.`);
 }
 
+// Importação de XML pro Estoque de Armazém — cobre o caso de "remessa pra depósito/armazém geral"
+// (NF-e emitida quando o armazém é uma pessoa jurídica separada do produtor, ex: cooperativa).
+// Mesmo parser da NF-e (parseNFeXmlDoc), só que gera romaneioArmazem + movimento de entrada em vez
+// de venda/entrega — e tenta achar a cultura pela descrição do produto na nota.
+async function handleImportXmlNFeArmazem(files){
+  let novos=0, ignorados=0, duplicados=0, foraDeContexto=0, comErro=0;
+  const fazendasTocadas = new Set();
+
+  for(const file of files){
+    try{
+      const texto = await file.text();
+      const xmlDoc = new DOMParser().parseFromString(texto, 'application/xml');
+      if(xmlDoc.getElementsByTagName('parsererror').length){ comErro++; continue; }
+      const nfe = parseNFeXmlDoc(xmlDoc);
+      if(!nfe){ comErro++; continue; }
+
+      // Trava 1: NF já importada antes (mesma chave ou mesmo nº) — nunca duplica, sempre ignorada.
+      if(jaExisteRomaneioArmazemComChaveOuNF(nfe.chNFe, nfe.nNF)){ duplicados++; continue; }
+
+      const culturaId = inferirCulturaPorTexto(nfe.natOp) || inferirCulturaPorTexto(nfe.xProdTexto) || inferirCulturaPorTexto(nfe.infCpl) || null;
+      // Trava 2: cultura/safra da nota tem que bater com o contexto atual.
+      if(!culturaCompativelComContexto(culturaId) || !safraCompativelComContexto(nfe.dEmi)){ foraDeContexto++; continue; }
+      if(culturaEhAlgodao(culturaId)){ ignorados++; continue; }
+
+      // Numa remessa pra depósito, o normal é: emitente = produtor (quem manda o grão), destinatário = o
+      // armazém/depósito. Mas confere contra os cadastros já existentes antes de assumir, igual na de Cargas.
+      const emitDoc = onlyDigits(nfe.emitCnpj || nfe.emitCpf);
+      const destEhProdutorConhecido = onlyDigits(nfe.destCnpj||nfe.destCpf) && state.produtores.some(p=>onlyDigits(p.cpf)===onlyDigits(nfe.destCnpj||nfe.destCpf) || onlyDigits(p.cnpj)===onlyDigits(nfe.destCnpj||nfe.destCpf));
+      const emitEhProdutorConhecido = emitDoc && state.produtores.some(p=>onlyDigits(p.cpf)===emitDoc || onlyDigits(p.cnpj)===emitDoc);
+
+      let produtorNome, produtorDoc, fazendaNome;
+      if(destEhProdutorConhecido && !emitEhProdutorConhecido){
+        produtorNome = nfe.destNome; produtorDoc = nfe.destCnpj||nfe.destCpf; fazendaNome = nfe.emitNome;
+      } else {
+        produtorNome = nfe.emitNome; produtorDoc = nfe.emitCnpj||nfe.emitCpf; fazendaNome = nfe.destNome;
+      }
+      if(!produtorNome || !fazendaNome || !nfe.pesoKg){ ignorados++; continue; }
+
+      const produtorId = getOrCreateProdutor(produtorNome, produtorDoc);
+      const fazendaId = getOrCreateFazenda(fazendaNome);
+      if(nfe.motorista) getOrCreateMotorista(nfe.motorista, nfe.placa);
+
+      const r = {
+        id: uid('romarm'), createdAt: new Date().toISOString(), numeroComprovante: proximoNumeroComprovante(),
+        status:'aguardando_aprovacao', tipoOperacao:'entrada', chaveNFe: nfe.chNFe||'', nrNF: nfe.nNF||'',
+        fazendaId, produtorId, culturaId, safra: state.config.safra||'',
+        motorista: nfe.motorista||'', placa: nfe.placa||'', nrRomaneio: '',
+        dataEntrada: nfe.dEmi || todayISO(),
+        pesoBruto: nfe.pesoKg, tara:0, umidade:0, impureza:0, ardido:0,
+        obs: `Importado do XML da NF-e ${nfe.nNF||''}`, updatedAt: new Date().toISOString(),
+      };
+      recalcRomaneioArmazem(r);
+      state.romaneiosArmazem.push(r);
+      upsertMovimentoEstoque({
+        tipo:'entrada', fazendaId, produtorId, culturaId, safra: r.safra,
+        pesoKg: r.pesoLiquido, scs: r.scsLiquido, data: r.dataEntrada, obs: r.obs
+      }, 'romaneioArmazem', r.id);
+      fazendasTocadas.add(fazendaId);
+      novos++;
+    }catch(err){
+      console.error('Erro lendo XML de NF-e (armazém):', err);
+      comErro++;
+    }
+  }
+
+  saveCadastros(); saveEstoque(); renderAll();
+  const partes = [`${novos} entrada(s) registrada(s)`];
+  if(ignorados) partes.push(`${ignorados} nota(s) ignorada(s) (sem peso em KG ou algodão)`);
+  if(duplicados) partes.push(`${duplicados} já tinha(m) sido importada(s) antes (ignorada, nunca duplica)`);
+  if(foraDeContexto) partes.push(`${foraDeContexto} de outra cultura/safra (fora do contexto atual: ${state.config.cultura||'—'} ${state.config.safra||''})`);
+  if(comErro) partes.push(`${comErro} arquivo(s) não reconhecido(s) como XML de NF-e`);
+  toast(`Importação de XML no Estoque: ${partes.join(', ')}. Cada entrada ficou como "aguardando aprovação" pra você conferir.`);
+  fazendasTocadas.forEach(verificarLimiteArmazemEAvisar);
+  fazendasTocadas.forEach(verificarLimiteRecebimentoEAvisar);
+  fazendasTocadas.forEach(recalibrarAutomaticamenteSeAtivo);
+}
+
+/* ---------------- PASTA MONITORADA — importação automática de XML ----------------
+   Usa a File System Access API do navegador (window.showDirectoryPicker). Isso só existe em
+   Chrome/Edge no computador — não funciona no Safari, Firefox ou no celular. Também só roda
+   enquanto essa aba do sistema estiver aberta (não é um serviço rodando em segundo plano no
+   sistema operacional) — o navegador não permite acesso irrestrito ao disco por segurança.
+   Dentro dessas condições, qualquer XML novo salvo na pasta escolhida entra sozinho. */
+const PASTA_MONITORADA_INTERVALO_MS = 30000;
+const pastaMonitoradaIntervalos = {};
+function pastaMonitoradaSuportada(){ return typeof window.showDirectoryPicker === 'function'; }
+function abrirDbPastaMonitorada(){
+  return new Promise((resolve, reject)=>{
+    const req = indexedDB.open('brc-pastas-monitoradas', 1);
+    req.onupgradeneeded = ()=>{ req.result.createObjectStore('handles'); };
+    req.onsuccess = ()=>resolve(req.result);
+    req.onerror = ()=>reject(req.error);
+  });
+}
+async function salvarHandlePastaMonitorada(destino, handle){
+  const db = await abrirDbPastaMonitorada();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction('handles','readwrite');
+    tx.objectStore('handles').put(handle, destino);
+    tx.oncomplete = ()=>resolve();
+    tx.onerror = ()=>reject(tx.error);
+  });
+}
+async function carregarHandlePastaMonitorada(destino){
+  const db = await abrirDbPastaMonitorada();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction('handles','readonly');
+    const req = tx.objectStore('handles').get(destino);
+    req.onsuccess = ()=>resolve(req.result||null);
+    req.onerror = ()=>reject(req.error);
+  });
+}
+function chaveProcessadosPasta(destino){ return 'brc_pasta_processados_'+destino; }
+function jaProcessadoNaPasta(destino, assinatura){
+  const lista = JSON.parse(localStorage.getItem(chaveProcessadosPasta(destino))||'[]');
+  return lista.includes(assinatura);
+}
+function marcarProcessadoNaPasta(destino, assinatura){
+  const chave = chaveProcessadosPasta(destino);
+  const lista = JSON.parse(localStorage.getItem(chave)||'[]');
+  lista.push(assinatura);
+  if(lista.length>500) lista.splice(0, lista.length-500); // não deixa crescer pra sempre
+  localStorage.setItem(chave, JSON.stringify(lista));
+}
+async function vincularPastaMonitorada(destino){
+  if(!pastaMonitoradaSuportada()){
+    toast('Esse recurso só funciona no Chrome ou Edge, no computador — o navegador que você está usando agora não suporta.', true);
+    return;
+  }
+  try{
+    const handle = await window.showDirectoryPicker();
+    await salvarHandlePastaMonitorada(destino, handle);
+    toast(`Pasta "${handle.name}" vinculada — verificando a cada ${PASTA_MONITORADA_INTERVALO_MS/1000}s por XMLs novos, enquanto esta aba estiver aberta.`);
+    iniciarMonitoramentoPasta(destino);
+  }catch(err){
+    if(err?.name !== 'AbortError') toast('Não consegui acessar essa pasta.', true);
+  }
+}
+async function iniciarMonitoramentoPasta(destino){
+  if(pastaMonitoradaIntervalos[destino]) clearInterval(pastaMonitoradaIntervalos[destino]);
+  const rodar = async ()=>{
+    const handle = await carregarHandlePastaMonitorada(destino).catch(()=>null);
+    if(!handle) return;
+    const permissao = await handle.queryPermission({mode:'read'}).catch(()=>'denied');
+    if(permissao !== 'granted') return; // evita ficar pedindo permissão sozinho sem o usuário estar interagindo
+    const novos = [];
+    try{
+      for await (const entry of handle.values()){
+        if(entry.kind !== 'file' || !entry.name.toLowerCase().endsWith('.xml')) continue;
+        const file = await entry.getFile();
+        const assinatura = `${entry.name}:${file.size}:${file.lastModified}`;
+        if(jaProcessadoNaPasta(destino, assinatura)) continue;
+        novos.push({file, assinatura});
+      }
+    }catch(e){ return; }
+    if(!novos.length) return;
+    if(destino==='cargas') await handleImportXmlNFe(novos.map(n=>n.file));
+    else await handleImportXmlNFeArmazem(novos.map(n=>n.file));
+    novos.forEach(n=>marcarProcessadoNaPasta(destino, n.assinatura));
+  };
+  await rodar();
+  pastaMonitoradaIntervalos[destino] = setInterval(rodar, PASTA_MONITORADA_INTERVALO_MS);
+}
+async function retomarMonitoramentoPastasAoEntrar(){
+  if(!pastaMonitoradaSuportada()) return;
+  for(const destino of ['cargas','armazem']){
+    const handle = await carregarHandlePastaMonitorada(destino).catch(()=>null);
+    if(handle) iniciarMonitoramentoPasta(destino);
+  }
+}
+
 function handleImportPadraoNF(rows, colheitaId){
-  let novos = 0, atualizados = 0, duplicados = 0, ignoradosCancelados = 0, ignoradosSemDados = 0;
+  let novos = 0, duplicados = 0, ignoradosCancelados = 0, ignoradosSemDados = 0, ignoradosForaContexto = 0;
   const gruposTocados = new Set();
   const keys = {
     status: findKey(Object.keys(rows[0]), ['status']),
@@ -8641,12 +8993,20 @@ function handleImportPadraoNF(rows, colheitaId){
     const destinatarioRaw = keys.destinatario ? String(row[keys.destinatario]||'').trim() : '';
     if(!nrNF || !produtorNomeRaw){ ignoradosSemDados++; return; }
 
+    // Trava 1: NF já importada antes — nunca duplica, ignorada mesmo se algum dado tiver mudado
+    // (correção de valor/dados feita depois da importação é edição manual, não reimportação).
+    if(jaExisteVendaComChaveOuNF(null, nrNF)){ duplicados++; return; }
+
     const valorTotal = keys.valorTotal ? num(row[keys.valorTotal]) : 0;
     const dataEmissao = keys.dataEmissao ? toISODate(row[keys.dataEmissao]) : null;
     const operacao = keys.operacao ? String(row[keys.operacao]||'').trim() : '';
     const observacao = keys.observacao ? String(row[keys.observacao]||'') : '';
     const motorista = keys.transportadora ? String(row[keys.transportadora]||'').trim() : '';
     const placa = keys.placa ? String(row[keys.placa]||'').trim().toUpperCase() : '';
+
+    // Trava 2: esse relatório não detalha o produto/cultura por linha (não dá pra comparar) — mas a
+    // data de emissão dá pra comparar com a safra ativa.
+    if(dataEmissao && !safraCompativelComContexto(dataEmissao)){ ignoradosForaContexto++; return; }
 
     const empresaId = destinatarioRaw ? getOrCreateEmpresa(parseClienteDestino(destinatarioRaw)) : null;
     const produtorId = getOrCreateProdutor(produtorNomeRaw);
@@ -8656,30 +9016,16 @@ function handleImportPadraoNF(rows, colheitaId){
     const contratoExistente = contratoNr ? state.contratos.find(c=>c.doc===contratoNr) : null;
     const role = classificarNatureza(operacao);
 
-    let venda = state.vendas.find(v=>String(v.nrNF)===String(nrNF));
-    if(!venda){
-      venda = {
-        id: uid('venda'), empresaId, produtorId, contratoId: contratoExistente ? contratoExistente.id : null,
-        contratoNrRaw: contratoNr || '', nrNF: String(nrNF), dataNF: dataEmissao || todayISO(),
-        pesoFiscal: null, valorFiscal: valorTotal, natureza: operacao, role, usarParaConfronto: true, colheitaId: colheitaId || null, chaveNFe: '',
-        createdAt: new Date().toISOString(),
-      };
-      state.vendas.push(venda);
-      novos++;
-    } else {
-      Object.assign(venda, {
-        empresaId: empresaId || venda.empresaId, produtorId: produtorId || venda.produtorId,
-        contratoId: venda.contratoId || (contratoExistente ? contratoExistente.id : null),
-        contratoNrRaw: venda.contratoNrRaw || contratoNr || '', valorFiscal: valorTotal || venda.valorFiscal,
-        natureza: operacao || venda.natureza, role: role || venda.role,
-      });
-      atualizados++;
-    }
+    const venda = {
+      id: uid('venda'), empresaId, produtorId, contratoId: contratoExistente ? contratoExistente.id : null,
+      contratoNrRaw: contratoNr || '', nrNF: String(nrNF), dataNF: dataEmissao || todayISO(),
+      pesoFiscal: null, valorFiscal: valorTotal, natureza: operacao, role, usarParaConfronto: true, colheitaId: colheitaId || null, chaveNFe: '',
+      createdAt: new Date().toISOString(),
+    };
+    state.vendas.push(venda);
+    novos++;
     const grupoKey = contratoGroupKey(venda);
     if(grupoKey) gruposTocados.add(grupoKey);
-
-    const jaTemEntrega = state.entregas.some(e=>e.vendaId===venda.id);
-    if(jaTemEntrega){ duplicados++; return; }
 
     state.entregas.push({
       id: uid('ent'), vendaId: venda.id, temRemessa: false, nrNFRemessa: '',
@@ -8696,10 +9042,12 @@ function handleImportPadraoNF(rows, colheitaId){
   saveCadastros(); saveVendas(); saveEntregas(); renderAll();
   const avisoPesoFiscal = ' Peso fiscal não vem nesse relatório — chega pelo romaneio (foto/manual).';
   const avisoCancel = ignoradosCancelados>0 ? ` ${ignoradosCancelados} NF(s) não autorizada(s) ignorada(s).` : '';
+  const avisoContexto = ignoradosForaContexto>0 ? ` ${ignoradosForaContexto} NF(s) fora da safra atual (${state.config.safra||'—'}) ignorada(s).` : '';
   const qtdSecundarias = state.vendas.filter(v=>gruposTocados.has(contratoGroupKey(v)) && v.usarParaConfronto===false).length;
   const avisoSecundarias = qtdSecundarias>0 ? ` ${qtdSecundarias} NF de remessa/complemento ficou como comprovante (contrato já tem NF de venda).` : '';
   const avisoColheita = colheitaId ? ` NF(s) nova(s) vinculada(s) à colheita selecionada.` : '';
-  toast(`Importação: ${novos} NF(s) nova(s), ${atualizados} atualizada(s), ${duplicados} já tinham carga lançada.${avisoCancel}${avisoPesoFiscal}${avisoSecundarias}${avisoColheita}`);
+  const avisoDuplicado = duplicados>0 ? ` ${duplicados} NF(s) já importada(s) antes (ignorada, nunca duplica).` : '';
+  toast(`Importação: ${novos} NF(s) nova(s).${avisoDuplicado}${avisoContexto}${avisoCancel}${avisoPesoFiscal}${avisoSecundarias}${avisoColheita}`);
 }
 
 /* ---- Import 1: relatório de NOTAS DE VENDA do software de gestão ---- */
@@ -8740,18 +9088,21 @@ function handleImportSoftwareGestaoVenda(rows, colheitaId){
     const tipoContrato = inferTipoContratoPorDescricao(keys.descricaoOperacao ? row[keys.descricaoOperacao] : '');
     const contratoId = contratoDoc ? getOrCreateContrato(contratoDoc, tipoContrato, empresaId, produtorId) : null;
 
-    const jaExiste = state.vendas.some(v=>String(v.nrNF)===String(nrNF) && v.empresaId===empresaId);
+    const chaveNFeRaw = keys.chaveNFe ? String(row[keys.chaveNFe]||'') : '';
+    const jaExiste = jaExisteVendaComChaveOuNF(chaveNFeRaw, nrNF) || state.vendas.some(v=>String(v.nrNF)===String(nrNF) && v.empresaId===empresaId);
     if(jaExiste){ duplicadas++; return; }
 
     const culturaId = inferirCulturaPorTexto(keys.item ? row[keys.item] : null)
       || inferirCulturaPorTexto(keys.centroCusto ? row[keys.centroCusto] : null);
+    const dataNF = toISODate(keys.dataEmissao ? row[keys.dataEmissao] : null) || todayISO();
+    if(!culturaCompativelComContexto(culturaId) || !safraCompativelComContexto(dataNF)){ ignoradas++; return; }
 
     const venda = {
       id: uid('venda'), empresaId, produtorId, contratoId,
-      nrNF: String(nrNF), dataNF: toISODate(keys.dataEmissao ? row[keys.dataEmissao] : null) || todayISO(),
+      nrNF: String(nrNF), dataNF,
       pesoFiscal: num(keys.quantidade ? row[keys.quantidade] : 0),
       valorFiscal: num(keys.valorTotal ? row[keys.valorTotal] : 0),
-      chaveNFe: keys.chaveNFe ? String(row[keys.chaveNFe]||'') : '',
+      chaveNFe: chaveNFeRaw,
       colheitaId: colheitaId || null, culturaId,
       createdAt: new Date().toISOString(),
     };
@@ -8936,7 +9287,7 @@ function handleImportArmazem(rows){
     ardido: findKey(headers, ['ardido']) || findKey(headers,['avariado']),
     obs: findKey(headers, ['observacao']) || findKey(headers,['obs']),
   };
-  let novos = 0, ignoradosSemDados = 0, ignoradosAlgodao = 0;
+  let novos = 0, ignoradosSemDados = 0, ignoradosAlgodao = 0, ignoradosDuplicado = 0, ignoradosForaContexto = 0;
   const fazendasTocadas = new Set();
   const maiorUmidadePorFazenda = {}; // pra avisar 1x por fazenda, não linha a linha, se o secador estiver suspenso
   rows.forEach(row=>{
@@ -8949,18 +9300,35 @@ function handleImportArmazem(rows){
     const culturaId = getOrCreateCulturaPorNome(culturaNomeRaw);
     if(culturaEhAlgodao(culturaId)){ ignoradosAlgodao++; return; }
 
-    const fazendaId = getOrCreateFazenda(armazemNome);
-    const produtorId = getOrCreateProdutor(produtorNomeRaw);
+    const dataEntrada = keys.data ? (toISODate(row[keys.data]) || todayISO()) : todayISO();
+    // Trava: cultura/safra da linha bate com o contexto atual? (só rejeita quando a planilha
+    // realmente informa uma cultura/safra diferente — se não informar, assume o contexto atual.)
+    const safraLinha = keys.safra ? String(row[keys.safra]||'').trim() : (state.config.safra||'');
+    if(keys.cultura && !culturaCompativelComContexto(culturaId)){ ignoradosForaContexto++; return; }
+    if(safraLinha && safraLinha!==(state.config.safra||'') && !safraCompativelComContexto(dataEntrada)){ ignoradosForaContexto++; return; }
+
+    const nrRomaneio = keys.romaneio ? String(row[keys.romaneio]||'').trim() : '';
+    // Trava: nunca duplica — mesmo romaneio/armazém/produtor/data/peso já importado antes é ignorado.
+    const fazendaIdPrevia = getOrCreateFazenda(armazemNome);
+    const produtorIdPrevio = getOrCreateProdutor(produtorNomeRaw);
+    const jaExiste = state.romaneiosArmazem.some(r=>
+      r.fazendaId===fazendaIdPrevia && r.produtorId===produtorIdPrevio && r.dataEntrada===dataEntrada &&
+      (nrRomaneio ? r.nrRomaneio===nrRomaneio : Math.abs(num(r.pesoBruto)-pesoBruto)<0.01)
+    );
+    if(jaExiste){ ignoradosDuplicado++; return; }
+
+    const fazendaId = fazendaIdPrevia;
+    const produtorId = produtorIdPrevio;
     const motorista = keys.motorista ? String(row[keys.motorista]||'').trim() : '';
     const placa = keys.placa ? String(row[keys.placa]||'').trim().toUpperCase() : '';
     if(motorista) getOrCreateMotorista(motorista, placa);
 
     const r = {
       id: uid('romarm'), fazendaId, produtorId, culturaId, numeroComprovante: proximoNumeroComprovante(), status:'aguardando_aprovacao',
-      safra: keys.safra ? String(row[keys.safra]||'').trim() : (state.config.safra||''),
+      safra: safraLinha,
       motorista, placa,
-      nrRomaneio: keys.romaneio ? String(row[keys.romaneio]||'').trim() : '',
-      dataEntrada: keys.data ? (toISODate(row[keys.data]) || todayISO()) : todayISO(),
+      nrRomaneio,
+      dataEntrada,
       pesoBruto, tara: keys.tara ? num(row[keys.tara]) : 0,
       umidade: keys.umidade ? num(row[keys.umidade]) : 0,
       impureza: keys.impureza ? num(row[keys.impureza]) : 0,
@@ -8983,7 +9351,9 @@ function handleImportArmazem(rows){
   saveCadastros(); saveEstoque(); renderAll();
   const avisoAlgodao = ignoradosAlgodao>0 ? ` ${ignoradosAlgodao} linha(s) de algodão ignorada(s) (fora do controle de estoque).` : '';
   const avisoSemDados = ignoradosSemDados>0 ? ` ${ignoradosSemDados} linha(s) sem dados suficientes (armazém/produtor/peso bruto).` : '';
-  toast(`Importação de estoque: ${novos} entrada(s) registrada(s).${avisoAlgodao}${avisoSemDados}`);
+  const avisoDuplicado = ignoradosDuplicado>0 ? ` ${ignoradosDuplicado} linha(s) já importada(s) antes (ignorada, nunca duplica).` : '';
+  const avisoContexto = ignoradosForaContexto>0 ? ` ${ignoradosForaContexto} linha(s) de outra cultura/safra (fora do contexto atual: ${state.config.cultura||'—'} ${state.config.safra||''}).` : '';
+  toast(`Importação de estoque: ${novos} entrada(s) registrada(s).${avisoAlgodao}${avisoSemDados}${avisoDuplicado}${avisoContexto}`);
   fazendasTocadas.forEach(verificarLimiteArmazemEAvisar);
   fazendasTocadas.forEach(verificarLimiteRecebimentoEAvisar);
   fazendasTocadas.forEach(recalibrarAutomaticamenteSeAtivo);
@@ -9096,24 +9466,27 @@ ${String(texto||'').slice(0, 40000)}
   return parsed;
 }
 function exportarEstoqueXlsx(){
+  const nSel = selecaoTabela.romaneiosArmazem.size;
+  const somenteSelecionadas = nSel>0 && confirm(`Você tem ${nSel} linha(s) selecionada(s) na tabela de romaneios de armazém.\n\nOK = exportar somente essas ${nSel} linha(s)\nCancelar = exportar todas as linhas normalmente`);
+  const listaRom = somenteSelecionadas ? state.romaneiosArmazem.filter(r=>selecaoTabela.romaneiosArmazem.has(r.id)) : state.romaneiosArmazem;
   const headersRom = ['Armazém','Produtor','Cultura','Safra','Motorista','Placa','Nº Romaneio','Data',
     'Peso Bruto (kg)','Tara (kg)','Umidade (kg)','Impureza (kg)','Ardido (kg)','Peso Líquido (kg)','Sacas','Obs.'];
-  const rowsRom = state.romaneiosArmazem.map(r=>[
+  const rowsRom = listaRom.map(r=>[
     state.fazendas.find(f=>f.id===r.fazendaId)?.nome||'', produtorNome(r.produtorId), culturaNome(r.culturaId),
     r.safra||'', r.motorista||'', r.placa||'', r.nrRomaneio||'', r.dataEntrada||'',
     r.pesoBruto||0, r.tara||0, r.umidade||0, r.impureza||0, r.ardido||0, r.pesoLiquido||0, r.scsLiquido||0, r.obs||''
   ]);
   const headersMov = ['Data','Tipo','Armazém','Cultura','Produtor','Safra','Kg','Sacas','Origem','Obs.'];
-  const rowsMov = state.movimentosEstoque.map(m=>[
+  const rowsMov = (somenteSelecionadas ? [] : state.movimentosEstoque).map(m=>[
     m.data||'', m.tipo||'', state.fazendas.find(f=>f.id===m.fazendaId)?.nome||'',
     m.culturaId?culturaNome(m.culturaId):'', m.produtorId?produtorNome(m.produtorId):'', m.safra||'',
     m.pesoKg||0, m.scs||0, m.origem?.tipo||'', m.obs||''
   ]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headersRom, ...rowsRom]), 'ENTRADAS DE ARMAZÉM');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headersMov, ...rowsMov]), 'MOVIMENTAÇÕES');
+  if(!somenteSelecionadas) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headersMov, ...rowsMov]), 'MOVIMENTAÇÕES');
   XLSX.writeFile(wb, `Estoque_de_armazem_${todayISO()}.xlsx`);
-  toast('Planilha de estoque exportada.');
+  toast(somenteSelecionadas ? `Planilha exportada só com as ${nSel} linha(s) selecionada(s).` : 'Planilha de estoque exportada.');
 }
 
 /* ---- Dispatcher de importação ---- */
@@ -9240,6 +9613,7 @@ function coletarValoresMarcados(containerId){
 }
 function coletarFiltrosRelatorioCargas(){
   return {
+    somenteSelecionadas: document.getElementById('fRelSomenteSelecionadas')?.checked || false,
     dataIni: document.getElementById('fRelDataIni').value || '',
     dataFim: document.getElementById('fRelDataFim').value || '',
     produtoresSel: coletarValoresMarcados('fRelProdutoresLista'),
@@ -9251,6 +9625,7 @@ function coletarFiltrosRelatorioCargas(){
   };
 }
 function aplicarFiltrosCargas(filtros){
+  if(filtros.somenteSelecionadas) return state.entregas.filter(e=>selecaoTabela.cargas.has(e.id));
   return state.entregas.filter(e=>e.status!=='rejeitado').filter(e=>{
     const v = vendaById(e.vendaId);
     if(filtros.dataIni && (e.dataSaida||'') < filtros.dataIni) return false;
@@ -9709,6 +10084,7 @@ function entrarNoApp(tabInicial){
   if(s.papel==='admin'){
     syncGoogleSheet();
     syncERPWebhook();
+    retomarMonitoramentoPastasAoEntrar();
     // push programado (resumo periódico) roda sozinho no servidor agora — não depende do navegador aberto.
     setInterval(syncGoogleSheet, 5*60*1000);
     setInterval(syncERPWebhook, 5*60*1000);
