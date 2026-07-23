@@ -449,6 +449,11 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
     </div>
     <div class="hero-actions" style="align-items:center;gap:10px;">
       <span id="sessaoUsuarioLabel" style="color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6);font-size:13px;font-weight:600;align-self:center;opacity:1;transition:opacity .2s ease;"></span>
+      <div style="position:relative;">
+        <input type="text" id="buscaGlobalInput" placeholder="🔍 Buscar romaneio/NF..." style="padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,.08);color:#fff;font-size:12.5px;width:190px;"
+          oninput="buscarRomaneioGlobal()" onfocus="buscarRomaneioGlobal()">
+        <div id="buscaGlobalResultados" style="display:none;position:absolute;top:calc(100% + 4px);left:0;width:320px;max-height:340px;overflow-y:auto;background:var(--bg-2);border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.5);z-index:200;"></div>
+      </div>
       <div class="interacoes-fixed" id="cardAcoesRapidas">
         <button class="interacoes-trigger" id="btnInteracoesToggle">☰ Interações</button>
         <div class="interacoes-panel" id="interacoesPanel">
@@ -471,6 +476,7 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
   </div>
   <input type="file" id="importInput" accept=".xlsx,.xls" style="display:none">
   <input type="file" id="importInputPDF" accept=".pdf" style="display:none">
+  <input type="file" id="importInputXmlNFe" accept=".xml" multiple style="display:none">
   <nav class="tabs">
     <button class="tab-btn active" data-tab="cadastros">Dados de Colheita e Comercialização</button>
     <button class="tab-btn" data-tab="cargas">Cargas &amp; Romaneios</button>
@@ -2237,7 +2243,7 @@ function updateTbodyRomaneiosArmazem(){
       pesoBruto: fmt(r.pesoBruto,0), tara: fmt(r.tara,0), umidade: fmt(r.umidade,0), impureza: fmt(r.impureza,0), ardido: fmt(r.ardido,0),
       pesoLiquido: fmt(r.pesoLiquido,0), sacas: fmt(r.scsLiquido,1), comprovante: r.numeroComprovante||'', status: r.status||'aprovado'
     };
-    const html = `<tr>
+    const html = `<tr data-id="${r.id}">
       <td>${extract.armazem||'—'}</td><td>${extract.produtor}</td><td>${extract.cultura}</td><td>${extract.safra||'—'}</td>
       <td>${extract.motorista||'—'}</td><td>${extract.placa||'—'}</td><td>${extract.romaneio||'—'}</td><td>${extract.data}</td>
       <td>${extract.pesoBruto} kg</td><td>${extract.tara} kg</td><td>${extract.umidade} kg</td><td>${extract.impureza} kg</td>
@@ -3102,6 +3108,7 @@ function renderCargasAtivas(){
           <span class="choice-popover" id="popoverImportar">
             <button onclick="fecharChoicePopovers(); document.getElementById('importInput').click();">📊 Planilha Excel (.xlsx)</button>
             <button onclick="fecharChoicePopovers(); document.getElementById('importInputPDF').click();">📄 Relatório em PDF</button>
+            <button onclick="fecharChoicePopovers(); document.getElementById('importInputXmlNFe').click();">🧾 XML da NF-e (oficial)</button>
           </span>
         </span>
         <button class="btn ghost sm" onclick="openCadastroModal('filtroRelatorioCargas')">📤 Gerar relatório</button>
@@ -3109,7 +3116,7 @@ function renderCargasAtivas(){
       </h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:10px;">Dados da NF (importados) e dados do romaneio (foto/manual) na mesma linha, assim que cada carga é pesada.
         Quando um contrato tem NF de venda <b>e</b> NF de remessa/complemento, só a venda entra no confronto com o romaneio — a remessa vira só comprovante de entrega.
-        Importar aceita tanto a planilha Excel oficial quanto um relatório de NFs em PDF (lido por IA).</p>
+        Importar aceita planilha Excel, relatório em PDF (lido por IA) ou o XML oficial da NF-e — o XML é o mais confiável, porque é dado estruturado direto da nota, sem depender de leitura por IA.</p>
       <label class="small-note" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:14px;cursor:pointer;">
         <input type="checkbox" ${mostrarComprovantes?'checked':''} onchange="toggleComprovantes()"> mostrar também os comprovantes de remessa/complemento (fora do confronto)
       </label>
@@ -3221,7 +3228,7 @@ function updateTbodyCargas(){
           : `<button class="btn ghost sm" onclick="openCadastroModal('selecionarColheita','${v.id}')">Selecionar colheita</button>`)
       : '—';
     const pesado = e.status!=='pendente';
-    const html = `<tr${ehComprovante?' style="opacity:.6"':''}>
+    const html = `<tr data-id="${e.id}"${ehComprovante?' style="opacity:.6"':''}>
       <td>${extract.empresa}</td><td>${produtorCell}</td><td>${naturezaCell}</td>
       <td class="mono" style="font-size:11.5px">${extract.contrato||'—'}</td><td>${extract.nfVenda||'—'}</td><td>${extract.data}</td>
       <td>${colheitaCell}</td>
@@ -3768,6 +3775,65 @@ function saldoTag(s, div){
 }
 
 /* ---------------- TROCA DE ABA ---------------- */
+/* ---------------- BUSCA GLOBAL POR ROMANEIO/NF ----------------
+   Em vez de precisar saber em qual aba (Cargas, Estoque) um romaneio ou NF está e filtrar
+   coluna por coluna lá dentro, esse campo já procura nos três lugares de uma vez e leva
+   direto pra linha certa, com um destaque temporário pra achar na hora. */
+function buscarRomaneioGlobal(){
+  const termo = document.getElementById('buscaGlobalInput').value.trim();
+  const wrap = document.getElementById('buscaGlobalResultados');
+  if(termo.length < 2){ wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
+  const termoLower = termo.toLowerCase();
+  const resultados = [];
+
+  state.romaneiosArmazem.forEach(r=>{
+    if(String(r.nrRomaneio||'').toLowerCase().includes(termoLower) || String(r.numeroComprovante||'').toLowerCase().includes(termoLower)){
+      resultados.push({ tipo:'Romaneio de Armazém (Estoque)', label:`${r.nrRomaneio||r.numeroComprovante} — ${produtorNome(r.produtorId)}`, tab:'estoque', id:r.id });
+    }
+  });
+  state.entregas.forEach(e=>{
+    const v = vendaById(e.vendaId);
+    const bate = String(e.nrRomaneio||'').toLowerCase().includes(termoLower)
+      || String(e.nrNFRemessa||'').toLowerCase().includes(termoLower)
+      || (v && String(v.nrNF||'').toLowerCase().includes(termoLower));
+    if(bate){
+      resultados.push({ tipo:'Carga / NF (Cargas & Romaneios)', label:`NF ${v?.nrNF||'—'} · Rom. ${e.nrRomaneio||'—'} — ${v?produtorNome(v.produtorId):'—'}`, tab:'cargas', id:e.id });
+    }
+  });
+
+  if(!resultados.length){
+    wrap.innerHTML = '<div class="small-note" style="padding:10px;">Nada encontrado.</div>';
+    wrap.style.display = 'block';
+    return;
+  }
+  wrap.innerHTML = resultados.slice(0,15).map(r=>`
+    <div class="entrada-item" style="padding:8px 12px;border-bottom:1px solid var(--line);" onclick="irParaResultadoBusca('${r.tab}','${r.id}')">
+      <div class="small-note" style="font-size:10.5px;">${r.tipo}</div>
+      <div style="font-size:12.5px;">${r.label}</div>
+    </div>`).join('');
+  wrap.style.display = 'block';
+}
+function irParaResultadoBusca(tab, id){
+  document.getElementById('buscaGlobalResultados').style.display = 'none';
+  document.getElementById('buscaGlobalInput').value = '';
+  switchTab(tab);
+  setTimeout(()=>{
+    const row = document.querySelector(`#tab-${tab} tr[data-id="${id}"]`);
+    if(!row){ toast('Linha encontrada nos dados, mas não está visível — verifique filtros ativos na tabela.', true); return; }
+    row.scrollIntoView({behavior:'smooth', block:'center'});
+    row.style.transition = 'background-color .3s ease';
+    const corOriginal = row.style.backgroundColor;
+    row.style.backgroundColor = 'var(--gold-dim, rgba(230,180,60,.35))';
+    setTimeout(()=>{ row.style.backgroundColor = corOriginal; }, 1800);
+  }, 120);
+}
+document.addEventListener('click', (e)=>{
+  const wrap = document.getElementById('buscaGlobalResultados');
+  const input = document.getElementById('buscaGlobalInput');
+  if(!wrap || !input) return;
+  if(!wrap.contains(e.target) && e.target!==input) wrap.style.display = 'none';
+});
+
 function switchTab(name){
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active', p.id==='tab-'+name));
@@ -3778,6 +3844,7 @@ function bindShellEvents(){
   document.getElementById('modalCargaClose').addEventListener('click', closeCargaModal);
   document.getElementById('importInput').addEventListener('change', (e)=>{ if(e.target.files.length) abrirSelecaoColheitaImportacao(e.target.files[0]); e.target.value=''; });
   document.getElementById('importInputPDF').addEventListener('change', (e)=>{ if(e.target.files.length) handleImportRelatorioPDF(e.target.files[0]); e.target.value=''; });
+  document.getElementById('importInputXmlNFe').addEventListener('change', (e)=>{ if(e.target.files.length) handleImportXmlNFe([...e.target.files]); e.target.value=''; });
 
   // Menu flutuante "Interações"
   const toggleBtn = document.getElementById('btnInteracoesToggle');
@@ -8418,6 +8485,137 @@ function isFormatoArmazem(headers){
 /* ---- Import 0: relatório PADRÃO de NFs emitidas (formato oficial a partir de agora) ----
    Uma linha por NF, já com produtor, empresa destinatária, natureza da operação, motorista e placa.
    Cada linha vira uma venda + uma entrega (peso ainda pendente, chega depois pelo romaneio). */
+/* ---------------- IMPORTAÇÃO DIRETA DO XML DA NF-e ----------------
+   O XML é o documento fiscal de verdade (o PDF/DANFE é só a representação visual dele) — layout
+   nacional padronizado (mesmas tags em qualquer emissor/estado). Por isso dá pra extrair os dados
+   com um parser comum, sem IA nenhuma e sem risco de erro de leitura, ao contrário do relatório em
+   PDF (que depende de IA lendo texto solto). */
+function parseNFeXmlDoc(xmlDoc){
+  const get = (tag) => xmlDoc.getElementsByTagName(tag)[0]?.textContent?.trim() || '';
+  const infNFeEl = xmlDoc.getElementsByTagName('infNFe')[0];
+  const chNFe = infNFeEl ? (infNFeEl.getAttribute('Id')||'').replace(/\D/g,'').slice(0,44) : '';
+  const nNF = get('nNF');
+  if(!nNF) return null; // não parece ser um XML de NF-e válido
+
+  const dhEmiRaw = get('dhEmi') || get('dEmi');
+  const dEmi = dhEmiRaw ? dhEmiRaw.slice(0,10) : '';
+  const natOp = get('natOp');
+  const infCpl = get('infCpl');
+  const vNF = num(get('vNF'));
+
+  const emitEl = xmlDoc.getElementsByTagName('emit')[0];
+  const destEl = xmlDoc.getElementsByTagName('dest')[0];
+  const emitNome = emitEl?.getElementsByTagName('xNome')[0]?.textContent?.trim() || '';
+  const emitCnpj = emitEl?.getElementsByTagName('CNPJ')[0]?.textContent?.trim() || '';
+  const emitCpf = emitEl?.getElementsByTagName('CPF')[0]?.textContent?.trim() || '';
+  const destNome = destEl?.getElementsByTagName('xNome')[0]?.textContent?.trim() || '';
+  const destCnpj = destEl?.getElementsByTagName('CNPJ')[0]?.textContent?.trim() || '';
+  const destCpf = destEl?.getElementsByTagName('CPF')[0]?.textContent?.trim() || '';
+
+  const transpEl = xmlDoc.getElementsByTagName('transporta')[0];
+  const motorista = transpEl?.getElementsByTagName('xNome')[0]?.textContent?.trim() || '';
+  const placa = xmlDoc.getElementsByTagName('placa')[0]?.textContent?.trim().toUpperCase() || '';
+
+  // Peso: soma a quantidade dos itens medidos em KG (comum pra grão a granel) — quando a NF já vem com isso.
+  let pesoKg = 0;
+  const dets = xmlDoc.getElementsByTagName('det');
+  for(let i=0;i<dets.length;i++){
+    const prod = dets[i].getElementsByTagName('prod')[0];
+    if(!prod) continue;
+    const uCom = prod.getElementsByTagName('uCom')[0]?.textContent?.trim() || '';
+    const qCom = num(prod.getElementsByTagName('qCom')[0]?.textContent || 0);
+    if(/^kg$/i.test(uCom)) pesoKg += qCom;
+  }
+
+  return { chNFe, nNF, dEmi, natOp, infCpl, vNF, emitNome, emitCnpj, emitCpf, destNome, destCnpj, destCpf, motorista, placa, pesoKg: pesoKg||null };
+}
+async function handleImportXmlNFe(files){
+  let novos=0, atualizados=0, duplicados=0, comErro=0;
+  const gruposTocados = new Set();
+
+  for(const file of files){
+    try{
+      const texto = await file.text();
+      const xmlDoc = new DOMParser().parseFromString(texto, 'application/xml');
+      if(xmlDoc.getElementsByTagName('parsererror').length){ comErro++; continue; }
+      const nfe = parseNFeXmlDoc(xmlDoc);
+      if(!nfe){ comErro++; continue; }
+
+      // Descobre quem é o produtor e quem é a empresa compradora tentando casar CNPJ/CPF com cadastros
+      // já existentes — se nenhum dos dois já for conhecido, assume emitente=produtor (caso mais comum
+      // quando o produtor rural tem inscrição própria e emite a NF de venda).
+      const emitDoc = onlyDigits(nfe.emitCnpj || nfe.emitCpf);
+      const destDoc = onlyDigits(nfe.destCnpj||nfe.destCpf);
+      const destEhProdutorConhecido = destDoc && state.produtores.some(p=>onlyDigits(p.cpf)===destDoc || onlyDigits(p.cnpj)===destDoc);
+      const emitEhProdutorConhecido = emitDoc && state.produtores.some(p=>onlyDigits(p.cpf)===emitDoc || onlyDigits(p.cnpj)===emitDoc);
+
+      let produtorNome, produtorDoc, empresaNome, empresaDoc;
+      if(destEhProdutorConhecido && !emitEhProdutorConhecido){
+        produtorNome = nfe.destNome; produtorDoc = nfe.destCnpj||nfe.destCpf;
+        empresaNome = nfe.emitNome; empresaDoc = nfe.emitCnpj;
+      } else {
+        produtorNome = nfe.emitNome; produtorDoc = nfe.emitCnpj||nfe.emitCpf;
+        empresaNome = nfe.destNome; empresaDoc = nfe.destCnpj;
+      }
+
+      const produtorId = getOrCreateProdutor(produtorNome, produtorDoc);
+      const empresaId = getOrCreateEmpresa(empresaNome, empresaDoc);
+      if(nfe.motorista) getOrCreateMotorista(nfe.motorista, nfe.placa);
+
+      const contratoNr = extractContratoNr(nfe.infCpl);
+      const contratoExistente = contratoNr ? state.contratos.find(c=>c.doc===contratoNr) : null;
+      const role = classificarNatureza(nfe.natOp);
+
+      let venda = state.vendas.find(v=> (nfe.chNFe && v.chaveNFe===nfe.chNFe) || String(v.nrNF)===String(nfe.nNF));
+      if(!venda){
+        venda = {
+          id: uid('venda'), empresaId, produtorId, contratoId: contratoExistente ? contratoExistente.id : null,
+          contratoNrRaw: contratoNr || '', nrNF: String(nfe.nNF), dataNF: nfe.dEmi || todayISO(),
+          pesoFiscal: nfe.pesoKg, valorFiscal: nfe.vNF, natureza: nfe.natOp, role, usarParaConfronto: true,
+          colheitaId: null, chaveNFe: nfe.chNFe || '', createdAt: new Date().toISOString(),
+        };
+        state.vendas.push(venda);
+        novos++;
+      } else {
+        Object.assign(venda, {
+          empresaId: empresaId || venda.empresaId, produtorId: produtorId || venda.produtorId,
+          contratoId: venda.contratoId || (contratoExistente ? contratoExistente.id : null),
+          contratoNrRaw: venda.contratoNrRaw || contratoNr || '',
+          valorFiscal: nfe.vNF || venda.valorFiscal, pesoFiscal: venda.pesoFiscal ?? nfe.pesoKg,
+          natureza: nfe.natOp || venda.natureza, role: role || venda.role,
+          chaveNFe: venda.chaveNFe || nfe.chNFe || '',
+        });
+        atualizados++;
+      }
+      const grupoKey = contratoGroupKey(venda);
+      if(grupoKey) gruposTocados.add(grupoKey);
+
+      const jaTemEntrega = state.entregas.some(e=>e.vendaId===venda.id);
+      if(jaTemEntrega){ duplicados++; continue; }
+
+      state.entregas.push({
+        id: uid('ent'), vendaId: venda.id, temRemessa:false, nrNFRemessa:'',
+        empresaDestinoId: empresaId, motorista: nfe.motorista, placa: nfe.placa,
+        dataSaida: nfe.dEmi || todayISO(),
+        pesoFiscal: nfe.pesoKg, valorFiscal: nfe.vNF,
+        pesoBruto:0, umidade:0, impureza:0, ardido:0, txRecebimento:0, pesoLiquidoComDesc:0,
+        status:'pendente', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      });
+    }catch(err){
+      console.error('Erro lendo XML de NF-e:', err);
+      comErro++;
+    }
+  }
+
+  gruposTocados.forEach(recalcUsarParaConfronto);
+  saveCadastros(); saveVendas(); saveEntregas(); renderAll();
+  const partes = [`${novos} nota(s) nova(s)`];
+  if(atualizados) partes.push(`${atualizados} atualizada(s)`);
+  if(duplicados) partes.push(`${duplicados} já tinha(m) entrega lançada`);
+  if(comErro) partes.push(`${comErro} arquivo(s) não reconhecido(s) como XML de NF-e`);
+  toast(`Importação de XML de NF-e: ${partes.join(', ')}.`);
+}
+
 function handleImportPadraoNF(rows, colheitaId){
   let novos = 0, atualizados = 0, duplicados = 0, ignoradosCancelados = 0, ignoradosSemDados = 0;
   const gruposTocados = new Set();
