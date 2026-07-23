@@ -542,6 +542,7 @@ const PESO_FISCAL_PADRAO = 46000;
 const state = {
   empresas: [],    // {id, nome, cnpj}
   produtores: [],  // {id, nome, cpf}
+  terceiros: [],   // {id, nome, doc, tipo:'deposito'|'arrendamento'|'outro', obs} — grão de/para quem não é produtor da fazenda nem empresa compradora (ver seção ARMAZÉM GERAL abaixo)
   fazendas: [],    // {id, nome}
   contratos: [],   // {id, tipo, empresaId, produtorId, culturaId, doc, volumeKg, valorKg, volumeSacas, valorSaca, alertaPercentual, localEntrega, obs}
   motoristas: [],  // {id, nome, placa, cpf}
@@ -810,6 +811,7 @@ async function loadState(){
       const c = JSON.parse(r1.value);
       state.empresas = c.empresas || [];
       state.produtores = c.produtores || [];
+      state.terceiros = c.terceiros || [];
       state.fazendas = c.fazendas || [];
       state.contratos = c.contratos || [];
       state.motoristas = c.motoristas || [];
@@ -860,7 +862,7 @@ async function saveUsuarios(){
 async function saveCadastros(){
   try{
     await window.storage.set(STORE_KEY_CADASTROS, JSON.stringify({
-      empresas: state.empresas, produtores: state.produtores, fazendas: state.fazendas, contratos: state.contratos,
+      empresas: state.empresas, produtores: state.produtores, terceiros: state.terceiros, fazendas: state.fazendas, contratos: state.contratos,
       motoristas: state.motoristas, colheitas: state.colheitas, culturas: state.culturas, config: state.config
     }), true);
   }catch(e){ toast('Não foi possível salvar os cadastros. Tente novamente.', true); }
@@ -1049,6 +1051,20 @@ async function enviarRespostaChatAdmin(){
 /* ---------------- HELPERS DE BUSCA / JOIN ---------------- */
 function empresaNome(id){ const e = state.empresas.find(x=>x.id===id); return e ? e.nome : '—'; }
 function produtorNome(id){ const p = state.produtores.find(x=>x.id===id); return p ? p.nome : '—'; }
+function terceiroNome(id){ const t = state.terceiros.find(x=>x.id===id); return t ? t.nome : '—'; }
+function getOrCreateTerceiro(nome, doc){
+  if(!nome) return null;
+  const digits = onlyDigits(doc);
+  let t = digits ? state.terceiros.find(x=>onlyDigits(x.doc)===digits) : null;
+  if(!t) t = state.terceiros.find(x=>stripAccents(x.nome)===stripAccents(nome));
+  if(!t){
+    t = { id: uid('terc'), nome: String(nome).trim(), doc: digits||'', tipo:'outro', obs:'' };
+    state.terceiros.push(t);
+  } else if(digits && !t.doc){
+    t.doc = digits;
+  }
+  return t.id;
+}
 function contratoById(id){ return state.contratos.find(x=>x.id===id); }
 function motoristaById(id){ return state.motoristas.find(x=>x.id===id); }
 function culturaById(id){ return state.culturas.find(x=>x.id===id); }
@@ -1147,6 +1163,17 @@ function classificarNatureza(natureza){
   if(n.includes('remessa')) return 'remessa';
   if(n.includes('complemento')) return 'complemento';
   return 'outro';
+}
+// CFOP 5905/6905 = remessa PRA depósito/armazém geral → ENTRADA no armazém.
+// CFOP 5906/6906/5907/6907 = retorno DE depósito/armazém geral (real ou simbólico) → SAÍDA do armazém.
+// Sem CFOP reconhecido, tenta pela natureza da operação em texto; na dúvida, assume entrada (mais comum).
+function classificarTipoOperacaoArmazem(cfop, natOp){
+  const c = String(cfop||'').trim();
+  if(/^[56]905$/.test(c)) return 'entrada';
+  if(/^[56]90[67]$/.test(c)) return 'saida';
+  const t = stripAccents(natOp||'');
+  if(t.includes('retorno')) return 'saida';
+  return 'entrada';
 }
 function contratoGroupKey(venda){
   return venda.contratoId ? ('id:'+venda.contratoId) : (venda.contratoNrRaw ? ('nr:'+venda.contratoNrRaw) : null);
@@ -1758,17 +1785,155 @@ function culturaCompativelComContexto(culturaDetectadaId){
   if(!ativa) return true; // sistema sem cultura definida no contexto — não há o que comparar
   return culturaDetectadaId === ativa;
 }
-// Confere se a data de emissão da nota cai dentro da safra configurada (ex: "2025/2026" aceita notas
-// emitidas em 2025 OU 2026 — é uma aproximação por ano civil, já que o calendário exato de safra varia
-// por cultura/região; ainda assim pega o caso claro de nota de outro ano parar batendo aqui por engano).
-function safraCompativelComContexto(dataISO){
+// Confere se a data cai dentro de uma safra no formato "2025/2026" (aceita ano civil 2025 OU 2026 —
+// aproximação, já que o calendário exato de safra varia por cultura/região; ainda assim pega o caso
+// claro de nota de outro ano parar batendo aqui por engano).
+function anoCompativelComSafra(dataISO, safraStr){
   if(!dataISO) return true;
-  const safra = String(state.config.safra||'').trim();
-  const m = safra.match(/(\d{4})\s*\/\s*(\d{4})/);
+  const m = String(safraStr||'').trim().match(/(\d{4})\s*\/\s*(\d{4})/);
   if(!m) return true; // safra não configurada num formato reconhecível — não há o que comparar
   const ano = Number(String(dataISO).slice(0,4));
   if(!ano) return true;
   return ano === Number(m[1]) || ano === Number(m[2]);
+}
+function safraCompativelComContexto(dataISO){
+  return anoCompativelComSafra(dataISO, state.config.safra);
+}
+/* ---------------- CULTURAS/SAFRAS ACEITAS NO ARMAZÉM (mais flexível que o contexto único) ----------------
+   Em Cargas & Romaneios faz sentido ter só uma cultura/safra ativa por vez. Mas o armazém tem uma
+   dinâmica mais complexa: o produtor pode estar colhendo soja da safra nova e vendendo milho da safra
+   anterior ao mesmo tempo, tudo saindo do mesmo silo. Por isso o armazém aceita uma LISTA de combinações
+   cultura+safra válidas (configurável), em vez do contexto único do resto do sistema — sem essa lista
+   configurada, cai de volta no comportamento simples (só a cultura/safra ativa do contexto geral). */
+function culturasArmazemAtivas(){
+  return Array.isArray(state.config.culturasArmazemAtivas) ? state.config.culturasArmazemAtivas : [];
+}
+function culturaSafraCompativelComArmazem(culturaDetectadaId, dataISO){
+  const combos = culturasArmazemAtivas();
+  if(!combos.length) return culturaCompativelComContexto(culturaDetectadaId) && safraCompativelComContexto(dataISO);
+  return combos.some(c=>{
+    const culturaOk = !culturaDetectadaId || !c.culturaId || culturaDetectadaId===c.culturaId;
+    const safraOk = anoCompativelComSafra(dataISO, c.safra);
+    return culturaOk && safraOk;
+  });
+}
+/* ---------------- TERCEIROS — ARMAZÉM GERAL / ARRENDAMENTO ----------------
+   Cobre dois cenários que não são nem "produtor da fazenda" nem "empresa compradora":
+   1) Depósito de terceiro: alguém de fora guarda o próprio grão no armazém da fazenda (a fazenda
+      presta o serviço de armazenagem, tipo armazém geral) — esse saldo NUNCA entra na conta do
+      produtor, fica isolado do estoque próprio.
+   2) Entrega em nome de terceiro: grão sai da fazenda já em nome de outra pessoa, por exemplo
+      pagamento de arrendamento em sacas — o romaneio de saída registra o terceiro como titular,
+      não o produtor, e guarda a finalidade (arrendamento, devolução etc.) pra rastrear o motivo. */
+function abrirTerceiros(){
+  const overlay = document.createElement('div');
+  overlay.id = 'terceirosOverlay';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:480px;">
+      <div class="modal-head"><h3>🤝 Terceiros (armazém geral / arrendamento)</h3><button class="modal-close" onclick="document.getElementById('terceirosOverlay').remove()">✕</button></div>
+      <p class="small-note" style="margin-top:-4px;">Cadastre aqui quem não é produtor da fazenda nem empresa compradora, mas tem grão passando pelo armazém — seja depositando o próprio grão, seja recebendo grão como pagamento (ex: arrendamento).</p>
+      <div id="terceirosLista"></div>
+      <div class="actions-row" style="margin-top:10px;flex-wrap:wrap;">
+        <input id="fNovoTerceiroNome" placeholder="Nome" style="flex:2;min-width:140px;">
+        <input id="fNovoTerceiroDoc" placeholder="CPF/CNPJ (opcional)" style="flex:1;min-width:120px;">
+        <select id="fNovoTerceiroTipo" style="flex:1;min-width:120px;">
+          <option value="deposito">Depósito de terceiro</option>
+          <option value="arrendamento">Arrendamento</option>
+          <option value="outro">Outro</option>
+        </select>
+        <button class="btn ghost sm" onclick="adicionarTerceiro()">➕ Adicionar</button>
+      </div>
+      <div class="actions-row" style="justify-content:flex-end;margin-top:14px;">
+        <button class="btn ghost" onclick="document.getElementById('terceirosOverlay').remove()">Fechar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  renderListaTerceiros();
+}
+function labelTipoTerceiro(tipo){ return tipo==='deposito' ? 'Depósito de terceiro' : tipo==='arrendamento' ? 'Arrendamento' : 'Outro'; }
+function renderListaTerceiros(){
+  const wrap = document.getElementById('terceirosLista');
+  wrap.innerHTML = state.terceiros.length ? state.terceiros.map(t=>`
+    <div class="actions-row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);">
+      <span><b>${t.nome}</b> <span class="small-note">— ${labelTipoTerceiro(t.tipo)}${t.doc?' · '+t.doc:''}</span></span>
+      <button class="btn ghost sm" onclick="excluirTerceiro('${t.id}')">🗑️</button>
+    </div>`).join('') : `<p class="small-note">Nenhum terceiro cadastrado ainda.</p>`;
+}
+async function adicionarTerceiro(){
+  const nome = document.getElementById('fNovoTerceiroNome').value.trim();
+  const doc = document.getElementById('fNovoTerceiroDoc').value.trim();
+  const tipo = document.getElementById('fNovoTerceiroTipo').value;
+  if(!nome){ toast('Informe o nome do terceiro.', true); return; }
+  state.terceiros.push({ id: uid('terc'), nome, doc: onlyDigits(doc), tipo, obs:'' });
+  await saveCadastros();
+  document.getElementById('fNovoTerceiroNome').value = '';
+  document.getElementById('fNovoTerceiroDoc').value = '';
+  renderListaTerceiros();
+  toast('Terceiro adicionado.');
+}
+async function excluirTerceiro(id){
+  const temMovimento = state.romaneiosArmazem.some(r=>r.terceiroId===id) || state.movimentosEstoque.some(m=>m.terceiroId===id);
+  if(temMovimento){ toast('Esse terceiro já tem movimentação registrada no armazém — não dá pra excluir (isso quebraria o histórico). Só edite o cadastro se precisar corrigir algo.', true); return; }
+  if(!confirm('Excluir este terceiro?')) return;
+  state.terceiros = state.terceiros.filter(t=>t.id!==id);
+  await saveCadastros();
+  renderListaTerceiros();
+}
+// Saldo de um terceiro num armazém — mesma lógica do saldo de produtor, só que filtrando por terceiroId
+// em vez de produtorId. Fica sempre separado do saldo dos produtores da fazenda.
+function calcSaldoTerceiroNaFazenda(terceiroId, fazendaId, culturaId){
+  return movimentosDaFazenda(fazendaId)
+    .filter(m=>m.terceiroId===terceiroId && (!culturaId || m.culturaId===culturaId))
+    .reduce((acc,m)=> acc + (m.tipo==='saida' ? -num(m.pesoKg) : num(m.pesoKg)), 0);
+}
+function abrirCulturasArmazemAtivas(){
+  const combos = culturasArmazemAtivas();
+  const overlay = document.createElement('div');
+  overlay.id = 'culturasArmazemOverlay';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:420px;">
+      <div class="modal-head"><h3>🌱 Culturas/safras aceitas no armazém</h3><button class="modal-close" onclick="document.getElementById('culturasArmazemOverlay').remove()">✕</button></div>
+      <p class="small-note" style="margin-top:-4px;">Uma importação de armazém (planilha ou XML) só é aceita se a cultura/safra dela bater com uma das combinações listadas aqui. Sem nenhuma linha, o sistema usa só a cultura/safra ativa do contexto geral (${state.config.cultura||'—'} ${state.config.safra||'—'}).</p>
+      <div id="culturasArmazemLista"></div>
+      <div class="actions-row" style="margin-top:10px;">
+        <select id="fNovaCulturaArmazem" style="flex:1;">${state.culturas.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('')}</select>
+        <input id="fNovaSafraArmazem" placeholder="Ex: 2025/2026" style="flex:1;">
+        <button class="btn ghost sm" onclick="adicionarComboCulturaArmazem()">➕ Adicionar</button>
+      </div>
+      <div class="actions-row" style="justify-content:flex-end;margin-top:14px;">
+        <button class="btn ghost" onclick="document.getElementById('culturasArmazemOverlay').remove()">Fechar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  renderListaCulturasArmazemAtivas();
+}
+function renderListaCulturasArmazemAtivas(){
+  const wrap = document.getElementById('culturasArmazemLista');
+  const combos = culturasArmazemAtivas();
+  wrap.innerHTML = combos.length ? combos.map((c,i)=>`
+    <div class="actions-row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);">
+      <span>${culturaNome(c.culturaId)} — ${c.safra||'qualquer safra'}</span>
+      <button class="btn ghost sm" onclick="removerComboCulturaArmazem(${i})">🗑️</button>
+    </div>`).join('') : `<p class="small-note">Nenhuma combinação adicionada ainda — usando só o contexto geral (${state.config.cultura||'—'} ${state.config.safra||'—'}).</p>`;
+}
+async function adicionarComboCulturaArmazem(){
+  const culturaId = document.getElementById('fNovaCulturaArmazem').value;
+  const safra = document.getElementById('fNovaSafraArmazem').value.trim();
+  if(!culturaId || !safra){ toast('Escolha a cultura e informe a safra.', true); return; }
+  if(!/^\d{4}\s*\/\s*\d{4}$/.test(safra)){ toast('Informe a safra no formato AAAA/AAAA, ex: 2025/2026.', true); return; }
+  if(!state.config.culturasArmazemAtivas) state.config.culturasArmazemAtivas = [];
+  state.config.culturasArmazemAtivas.push({culturaId, safra});
+  await saveCadastros();
+  document.getElementById('fNovaSafraArmazem').value = '';
+  renderListaCulturasArmazemAtivas();
+  toast('Combinação adicionada.');
+}
+async function removerComboCulturaArmazem(idx){
+  state.config.culturasArmazemAtivas.splice(idx,1);
+  await saveCadastros();
+  renderListaCulturasArmazemAtivas();
 }
 function jaExisteVendaComChaveOuNF(chaveNFe, nrNF){
   return state.vendas.some(v => (chaveNFe && v.chaveNFe && v.chaveNFe===chaveNFe) || (nrNF && String(v.nrNF)===String(nrNF)));
@@ -2205,12 +2370,14 @@ function renderEstoque(){
             <button onclick="fecharChoicePopovers(); document.getElementById('importArmazemInputXmlNFe').click();">🧾 XML da NF-e (oficial)</button>
             <button onclick="fecharChoicePopovers(); document.getElementById('importArmazemInput').click();">📊 Planilha Excel (.xlsx)</button>
             <button onclick="fecharChoicePopovers(); document.getElementById('importArmazemInputPDF').click();">📄 Relatório em PDF</button>
-            <button onclick="fecharChoicePopovers(); vincularPastaMonitorada('armazem');">📁 Vincular pasta monitorada (Chrome/Edge)</button>
+            <button onclick="fecharChoicePopovers(); abrirStatusPastaMonitorada('armazem');">📁 Pasta monitorada</button>
           </span>
         </span>
         <button class="btn ghost sm" onclick="exportarEstoqueXlsx()">📤 Exportar planilha</button>
         <button class="btn ghost sm" onclick="exportarRelatorioEstoquePDF()">🖨️ Gerar relatório</button>
         <button class="btn sm" onclick="openCadastroModal('romaneioArmazem')">➕ Nova entrada</button>
+        <button class="btn ghost sm" onclick="abrirCulturasArmazemAtivas()">🌱 Culturas/safras aceitas</button>
+        <button class="btn ghost sm" onclick="abrirTerceiros()">🤝 Terceiros</button>
         <input type="file" id="importArmazemInput" accept=".xlsx,.xls" style="display:none">
         <input type="file" id="importArmazemInputPDF" accept=".pdf" style="display:none">
         <input type="file" id="importArmazemInputXmlNFe" accept=".xml" multiple style="display:none">
@@ -2221,7 +2388,7 @@ function renderEstoque(){
       ${barraSelecaoHTML('romaneiosArmazem')}
       <div class="table-wrap" id="wrap-romaneiosArmazem"><table id="table-romaneiosArmazem">
         <thead>${filterHeaderCells('romaneiosArmazem',[
-          {key:'armazem',label:'Armazém'},{key:'produtor',label:'Produtor'},{key:'cultura',label:'Cultura'},{key:'safra',label:'Safra'},
+          {key:'armazem',label:'Armazém'},{key:'produtor',label:'Produtor'},{key:'cultura',label:'Cultura'},{key:'safra',label:'Safra'},{key:null,label:'Colheita'},
           {key:'motorista',label:'Motorista'},{key:'placa',label:'Placa'},{key:'romaneio',label:'Nº Romaneio'},{key:'data',label:'Data'},
           {key:'pesoBruto',label:'Peso Bruto (Kg)'},{key:'tara',label:'Tara (kg)'},{key:'umidade',label:'Umidade (kg)'},{key:'impureza',label:'Impureza (kg)'},
           {key:'ardido',label:'Ardido/Avariado (kg)'},{key:'pesoLiquido',label:'Peso Líquido (Kg)'},{key:'sacas',label:'Sacas Líq.'},
@@ -2276,9 +2443,9 @@ function renderEstoque(){
     </div>
   `;
   updateTbodyRomaneiosArmazem();
-  document.getElementById('importArmazemInput').addEventListener('change', (e)=>{ if(e.target.files[0]) handleImportArmazemXlsx(e.target.files[0]); e.target.value=''; });
-  document.getElementById('importArmazemInputPDF').addEventListener('change', (e)=>{ if(e.target.files[0]) handleImportArmazemPDF(e.target.files[0]); e.target.value=''; });
-  document.getElementById('importArmazemInputXmlNFe').addEventListener('change', (e)=>{ if(e.target.files.length) handleImportXmlNFeArmazem([...e.target.files]); e.target.value=''; });
+  document.getElementById('importArmazemInput').addEventListener('change', (e)=>{ if(e.target.files[0]) abrirImportacaoArmazemXlsxComColheita(e.target.files[0]); e.target.value=''; });
+  document.getElementById('importArmazemInputPDF').addEventListener('change', (e)=>{ if(e.target.files[0]) abrirImportacaoArmazemPdfComColheita(e.target.files[0]); e.target.value=''; });
+  document.getElementById('importArmazemInputXmlNFe').addEventListener('change', (e)=>{ if(e.target.files.length) abrirImportacaoXmlComColheita([...e.target.files], 'armazem'); e.target.value=''; });
   montarScrollDuploTabelas();
 }
 function updateTbodyRomaneiosArmazem(){
@@ -2286,14 +2453,19 @@ function updateTbodyRomaneiosArmazem(){
   const lista = [...state.romaneiosArmazem].sort((a,b)=>(b.dataEntrada||'').localeCompare(a.dataEntrada||'') || (b.createdAt||'').localeCompare(a.createdAt||''));
   const rows = lista.map(r=>{
     const extract = {
-      armazem: state.fazendas.find(f=>f.id===r.fazendaId)?.nome||'', produtor: produtorNome(r.produtorId), cultura: culturaNome(r.culturaId),
+      armazem: state.fazendas.find(f=>f.id===r.fazendaId)?.nome||'', produtor: r.terceiroId ? `🤝 ${terceiroNome(r.terceiroId)}` : produtorNome(r.produtorId), cultura: culturaNome(r.culturaId),
       safra: r.safra||'', motorista: r.motorista||'', placa: r.placa||'', romaneio: r.nrRomaneio||'', data: dataBR(r.dataEntrada),
       pesoBruto: fmt(r.pesoBruto,0), tara: fmt(r.tara,0), umidade: fmt(r.umidade,0), impureza: fmt(r.impureza,0), ardido: fmt(r.ardido,0),
       pesoLiquido: fmt(r.pesoLiquido,0), sacas: fmt(r.scsLiquido,1), comprovante: r.numeroComprovante||'', status: r.status||'aprovado'
     };
+    const finalidadeTag = r.tipoOperacao==='saida' && r.finalidadeSaida && r.finalidadeSaida!=='venda'
+      ? `<span class="tag" style="color:var(--gold);border-color:var(--gold);" title="Finalidade da saída">${r.finalidadeSaida==='arrendamento'?'🏠 arrendamento':r.finalidadeSaida==='devolucao_terceiro'?'↩️ devolução':'outro'}</span>` : '';
+    const colheitaCellArmazem = r.colheitaId
+      ? `${labelColheita(r.colheitaId)||'—'} <button class="btn ghost sm" onclick="openCadastroModal('selecionarColheitaArmazem','${r.id}')" title="Trocar">✎</button>`
+      : `<button class="btn ghost sm" onclick="openCadastroModal('selecionarColheitaArmazem','${r.id}')">Vincular colheita</button>`;
     const html = `<tr data-id="${r.id}" class="${classeCorLinha(r)}">
       <td class="tbl-chk-cell"><input type="checkbox" class="chk-linha" data-id="${r.id}" ${selecaoTabela.romaneiosArmazem.has(r.id)?'checked':''} onchange="toggleSelecaoLinha('romaneiosArmazem','${r.id}',this.checked)"></td>
-      <td>${r.marcado?'🔖 ':''}${extract.armazem||'—'}</td><td>${extract.produtor}</td><td>${extract.cultura}</td><td>${extract.safra||'—'}</td>
+      <td>${r.marcado?'🔖 ':''}${extract.armazem||'—'}</td><td>${extract.produtor} ${finalidadeTag}</td><td>${extract.cultura}</td><td>${extract.safra||'—'}</td><td>${colheitaCellArmazem}</td>
       <td>${extract.motorista||'—'}</td><td>${extract.placa||'—'}</td><td>${extract.romaneio||'—'}</td><td>${extract.data}</td>
       <td>${extract.pesoBruto} kg</td><td>${extract.tara} kg</td><td>${extract.umidade} kg</td><td>${extract.impureza} kg</td>
       <td>${extract.ardido} kg</td><td><b>${extract.pesoLiquido} kg</b></td><td>${extract.sacas}</td>
@@ -2308,7 +2480,7 @@ function updateTbodyRomaneiosArmazem(){
     </tr>`;
     return {extract, html};
   }).filter(r=>rowMatches(r.extract, filters));
-  document.getElementById('tbody-romaneiosArmazem').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(19,'Nenhum romaneio de armazém registrado ainda.');
+  document.getElementById('tbody-romaneiosArmazem').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(20,'Nenhum romaneio de armazém registrado ainda.');
   montarScrollDuploTabelas();
   atualizarBarraSelecao('romaneiosArmazem');
 }
@@ -2595,9 +2767,53 @@ function barraSelecaoHTML(tabela){
         <span class="cor-dot" style="background:#46b464;" title="Verde" onclick="colorirSelecionadas('${tabela}','verde')"></span>
         <span class="cor-dot" style="background:transparent;" title="Remover cor" onclick="colorirSelecionadas('${tabela}',null)">✕</span>
       </span>
+      <button class="btn ghost sm" onclick="abrirApropriacaoColheitaSelecionadas('${tabela}')">🌾 Apropriar colheita</button>
       <button class="btn danger sm" onclick="excluirSelecionadas('${tabela}')">🗑️ Excluir</button>
       <button class="btn ghost sm" onclick="limparSelecaoTabela('${tabela}')">Limpar seleção</button>
     </div>`;
+}
+// Apropriação coletiva de colheita — pensada pro fluxo de importação automática (pasta monitorada):
+// entram várias NFs sem colheita vinculada (o XML não carrega talhão/variedade), o admin seleciona
+// todas as que são do mesmo talhão/variedade de uma vez (ex: 50 NFs) e vincula a colheita certa numa
+// tacada só, em vez de abrir uma por uma.
+function abrirApropriacaoColheitaSelecionadas(tabela){
+  const n = selecaoTabela[tabela].size;
+  if(!n){ toast('Selecione ao menos uma linha primeiro.', true); return; }
+  const overlay = document.createElement('div');
+  overlay.id = 'apropriacaoColheitaOverlay';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-head"><h3>🌾 Apropriar colheita — ${n} selecionada(s)</h3><button class="modal-close" onclick="document.getElementById('apropriacaoColheitaOverlay').remove()">✕</button></div>
+      <p class="small-note" style="margin-top:-4px;">Todas as ${n} linha(s) selecionada(s) vão ficar vinculadas à mesma colheita (talhão/variedade) — útil quando vários romaneios/NFs importados automaticamente são do mesmo lote.</p>
+      <div class="field full"><label>Colheita</label><select id="fApropriacaoColheita">${optionsColheitas(null)}</select></div>
+      <div class="actions-row" style="justify-content:flex-end;margin-top:14px;">
+        <button class="btn ghost" onclick="document.getElementById('apropriacaoColheitaOverlay').remove()">Cancelar</button>
+        <button class="btn" onclick="confirmarApropriacaoColheitaSelecionadas('${tabela}')">Aplicar às ${n} selecionada(s)</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+async function confirmarApropriacaoColheitaSelecionadas(tabela){
+  const colheitaId = document.getElementById('fApropriacaoColheita').value || null;
+  const ids = [...selecaoTabela[tabela]];
+  if(tabela==='romaneiosArmazem'){
+    ids.forEach(id=>{ const r = state.romaneiosArmazem.find(x=>x.id===id); if(r) r.colheitaId = colheitaId; });
+    await saveEstoque();
+  } else {
+    // cargas/conferência: a colheita fica na VENDA, não na entrega — cada entrega selecionada aponta pra uma venda.
+    const vendasTocadas = new Set();
+    ids.forEach(id=>{
+      const e = state.entregas.find(x=>x.id===id);
+      const v = e ? vendaById(e.vendaId) : null;
+      if(v && !vendasTocadas.has(v.id)){ v.colheitaId = colheitaId; vendasTocadas.add(v.id); }
+    });
+    await saveVendas();
+  }
+  document.getElementById('apropriacaoColheitaOverlay').remove();
+  selecaoTabela[tabela].clear();
+  renderAll();
+  toast(`Colheita aplicada a ${ids.length} item(ns).`);
 }
 function classeCorLinha(item){
   if(!item?.corMarcacao) return '';
@@ -3257,7 +3473,7 @@ function renderCargasAtivas(){
             <button onclick="fecharChoicePopovers(); document.getElementById('importInputXmlNFe').click();">🧾 XML da NF-e (oficial)</button>
             <button onclick="fecharChoicePopovers(); document.getElementById('importInput').click();">📊 Planilha Excel (.xlsx)</button>
             <button onclick="fecharChoicePopovers(); document.getElementById('importInputPDF').click();">📄 Relatório em PDF</button>
-            <button onclick="fecharChoicePopovers(); vincularPastaMonitorada('cargas');">📁 Vincular pasta monitorada (Chrome/Edge)</button>
+            <button onclick="fecharChoicePopovers(); abrirStatusPastaMonitorada('cargas');">📁 Pasta monitorada</button>
           </span>
         </span>
         <button class="btn ghost sm" onclick="openCadastroModal('filtroRelatorioCargas')">📤 Gerar relatório</button>
@@ -4004,7 +4220,7 @@ function bindShellEvents(){
   document.getElementById('modalCargaClose').addEventListener('click', closeCargaModal);
   document.getElementById('importInput').addEventListener('change', (e)=>{ if(e.target.files.length) abrirSelecaoColheitaImportacao(e.target.files[0]); e.target.value=''; });
   document.getElementById('importInputPDF').addEventListener('change', (e)=>{ if(e.target.files.length) handleImportRelatorioPDF(e.target.files[0]); e.target.value=''; });
-  document.getElementById('importInputXmlNFe').addEventListener('change', (e)=>{ if(e.target.files.length) handleImportXmlNFe([...e.target.files]); e.target.value=''; });
+  document.getElementById('importInputXmlNFe').addEventListener('change', (e)=>{ if(e.target.files.length) abrirImportacaoXmlComColheita([...e.target.files], 'cargas'); e.target.value=''; });
 
   // Menu flutuante "Interações"
   const toggleBtn = document.getElementById('btnInteracoesToggle');
@@ -4437,6 +4653,18 @@ function openCadastroModal(kind, id){
       <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
         <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
         <button class="btn" onclick="salvarColheitaDaVenda()">Salvar</button>
+      </div>`;
+  }
+
+  if(kind==='selecionarColheitaArmazem'){
+    const r = state.romaneiosArmazem.find(x=>x.id===id);
+    title.textContent = `De onde veio este romaneio de armazém?`;
+    body.innerHTML = `
+      <p class="small-note" style="margin-top:-4px;">Escolha qual colheita (talhão/variedade) gerou esse grão — importante pra rastreabilidade. Em importações automáticas (XML/pasta monitorada) isso nunca vem preenchido sozinho, porque a nota fiscal não carrega essa informação; só quem confere sabe de qual talhão veio.</p>
+      <div class="field full"><label>Colheita</label><select id="fSelecionarColheitaArmazem">${optionsColheitas(r?.colheitaId)}</select></div>
+      <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
+        <button class="btn ghost" onclick="closeCadastroModal()">Cancelar</button>
+        <button class="btn" onclick="salvarColheitaDoRomaneioArmazem()">Salvar</button>
       </div>`;
   }
 
@@ -4996,10 +5224,36 @@ function openCadastroModal(kind, id){
 
   if(kind==='romaneioArmazem'){
     const r = id ? state.romaneiosArmazem.find(x=>x.id===id) : null;
+    const tipoOp = r?.tipoOperacao || 'entrada';
+    const ehTerceiro = !!r?.terceiroId;
     title.textContent = r ? 'Editar entrada de armazém' : 'Nova entrada no armazém';
     romArmazemModalFotoAtual = null;
     body.innerHTML = `
-      <p class="small-note" style="margin-top:-4px;">Registra o caminhão que sai do campo direto pro silo, sem comprador definido ainda. Gera uma entrada de estoque automaticamente.</p>
+      <p class="small-note" style="margin-top:-4px;">Registra o caminhão que sai do campo direto pro silo, sem comprador definido ainda. Gera um movimento de estoque automaticamente.</p>
+      <div class="form-grid">
+        <div class="field"><label>Tipo de operação</label>
+          <select id="fRomArmazemTipoOp" onchange="atualizarCamposTipoTitularRomArmazem()">
+            <option value="entrada" ${tipoOp==='entrada'?'selected':''}>⬇️ Entrada</option>
+            <option value="saida" ${tipoOp==='saida'?'selected':''}>⬆️ Saída</option>
+          </select>
+        </div>
+        <div class="field"><label>Titular do grão</label>
+          <select id="fRomArmazemTitular" onchange="atualizarCamposTipoTitularRomArmazem()">
+            <option value="produtor" ${!ehTerceiro?'selected':''}>👤 Produtor da fazenda</option>
+            <option value="terceiro" ${ehTerceiro?'selected':''}>🤝 Terceiro (depósito/arrendamento)</option>
+          </select>
+        </div>
+      </div>
+      <div id="fRomArmazemFinalidadeWrap" style="display:none;">
+        <div class="field"><label>Finalidade da saída</label>
+          <select id="fRomArmazemFinalidade">
+            <option value="venda" ${r?.finalidadeSaida==='venda'?'selected':''}>Venda normal</option>
+            <option value="arrendamento" ${r?.finalidadeSaida==='arrendamento'?'selected':''}>Pagamento de arrendamento</option>
+            <option value="devolucao_terceiro" ${r?.finalidadeSaida==='devolucao_terceiro'?'selected':''}>Devolução a terceiro (depósito)</option>
+            <option value="outro" ${r?.finalidadeSaida==='outro'?'selected':''}>Outro</option>
+          </select>
+        </div>
+      </div>
       <div class="dropzone" id="dropzoneRomArmazemModal">
         <input type="file" id="fotoRomArmazemModalInput" accept="image/*" capture="environment">
         <div class="icon">📷</div>
@@ -5009,7 +5263,8 @@ function openCadastroModal(kind, id){
       <div id="ocrStatusWrapRomArmazemModal">${r?.temFoto ? `<button type="button" class="btn ghost sm" onclick="visualizarFotoRomaneioArmazem('${r.id}')">👁️ Ver foto já anexada</button>` : ''}</div>
       <div class="form-grid">
         <div class="field"><label>Armazém (fazenda)</label><select id="fRomArmazemFazenda">${optionsFazendas(r?.fazendaId)}</select></div>
-        <div class="field"><label>Produtor</label><select id="fRomArmazemProdutor">${optionsProdutores(r?.produtorId)}</select></div>
+        <div class="field" id="fRomArmazemProdutorWrap"><label>Produtor</label><select id="fRomArmazemProdutor">${optionsProdutores(r?.produtorId)}</select></div>
+        <div class="field" id="fRomArmazemTerceiroWrap" style="display:none;"><label>Terceiro</label><select id="fRomArmazemTerceiro">${optionsTerceiros(r?.terceiroId)}</select></div>
       </div>
       <div class="form-grid">
         <div class="field"><label>Cultura</label><select id="fRomArmazemCultura">${optionsCulturasSemAlgodao(r?.culturaId)}</select></div>
@@ -5021,7 +5276,7 @@ function openCadastroModal(kind, id){
       </div>
       <div class="form-grid">
         <div class="field"><label>Nº do romaneio</label><input id="fRomArmazemNr" value="${r?.nrRomaneio||''}"></div>
-        <div class="field"><label>Data de entrada</label><input id="fRomArmazemData" type="date" value="${r?.dataEntrada || todayISO()}"></div>
+        <div class="field"><label>Data</label><input id="fRomArmazemData" type="date" value="${r?.dataEntrada || todayISO()}"></div>
       </div>
       <div class="form-grid">
         <div class="field"><label>Peso bruto (kg)</label><input id="fRomArmazemPesoBruto" type="number" step="0.01" value="${r?.pesoBruto||''}" oninput="atualizarPesoLiquidoRomaneioArmazem()"></div>
@@ -5039,6 +5294,7 @@ function openCadastroModal(kind, id){
         <button class="btn" onclick="salvarRomaneioArmazem()">Salvar</button>
       </div>`;
     setTimeout(atualizarPesoLiquidoRomaneioArmazem, 0);
+    setTimeout(atualizarCamposTipoTitularRomArmazem, 0);
     bindDropzoneRomArmazemModal();
   }
 
@@ -5143,10 +5399,15 @@ async function salvarRomaneioArmazem(){
   const overlay = document.getElementById('modalCadastro');
   const id = overlay.dataset.id;
   const fazendaId = document.getElementById('fRomArmazemFazenda').value;
-  const produtorId = document.getElementById('fRomArmazemProdutor').value;
   const culturaId = document.getElementById('fRomArmazemCultura').value;
+  const tipoOperacao = document.getElementById('fRomArmazemTipoOp').value;
+  const titular = document.getElementById('fRomArmazemTitular').value;
+  const produtorId = titular==='produtor' ? document.getElementById('fRomArmazemProdutor').value : null;
+  const terceiroId = titular==='terceiro' ? document.getElementById('fRomArmazemTerceiro').value : null;
+  const finalidadeSaida = tipoOperacao==='saida' ? document.getElementById('fRomArmazemFinalidade').value : null;
   if(!fazendaId){ toast('Selecione o armazém (fazenda).', true); return; }
-  if(!produtorId){ toast('Selecione o produtor.', true); return; }
+  if(titular==='produtor' && !produtorId){ toast('Selecione o produtor.', true); return; }
+  if(titular==='terceiro' && !terceiroId){ toast('Selecione o terceiro.', true); return; }
   if(!culturaId){ toast('Selecione a cultura.', true); return; }
   const pesoBruto = num(document.getElementById('fRomArmazemPesoBruto').value);
   if(!pesoBruto){ toast('Informe o peso bruto.', true); return; }
@@ -5155,7 +5416,8 @@ async function salvarRomaneioArmazem(){
   const novo = !r;
   if(!r){ r = { id: uid('romarm'), createdAt: new Date().toISOString(), numeroComprovante: proximoNumeroComprovante(), status:'aprovado' }; }
   Object.assign(r, {
-    fazendaId, produtorId, culturaId,
+    tipoOperacao, finalidadeSaida,
+    fazendaId, produtorId, terceiroId, culturaId,
     safra: document.getElementById('fRomArmazemSafra').value.trim(),
     motorista: document.getElementById('fRomArmazemMotorista').value.trim(),
     placa: document.getElementById('fRomArmazemPlaca').value.trim(),
@@ -5171,11 +5433,15 @@ async function salvarRomaneioArmazem(){
   });
   recalcRomaneioArmazem(r);
   if(novo) state.romaneiosArmazem.push(r);
-  if(!r.tipoOperacao) r.tipoOperacao = 'entrada'; // registros antigos/criados aqui no admin são sempre entrada
 
+  let avisoSaldo = '';
+  if(tipoOperacao==='saida'){
+    const saldoAtual = terceiroId ? calcSaldoTerceiroNaFazenda(terceiroId, fazendaId, culturaId) : calcSaldoProdutorNaFazenda(produtorId, fazendaId, culturaId);
+    if(saldoAtual < r.pesoLiquido) avisoSaldo = ` ⚠️ saldo insuficiente (tinha ${fmt(saldoAtual,0)} kg)`;
+  }
   upsertMovimentoEstoque({
-    tipo: r.tipoOperacao, fazendaId, produtorId, culturaId, safra: r.safra,
-    pesoKg: r.pesoLiquido, scs: r.scsLiquido, data: r.dataEntrada, obs: r.obs
+    tipo: tipoOperacao, fazendaId, produtorId, terceiroId, culturaId, safra: r.safra,
+    pesoKg: r.pesoLiquido, scs: r.scsLiquido, data: r.dataEntrada, obs: r.obs + avisoSaldo
   }, 'romaneioArmazem', r.id);
 
   if(romArmazemModalFotoAtual){
@@ -5188,10 +5454,10 @@ async function salvarRomaneioArmazem(){
   if(novo) saveCadastros(); // persiste o contador sequencial do comprovante
   renderEstoque();
   closeCadastroModal();
-  toast(r.tipoOperacao==='saida' ? 'Saída registrada no armazém.' : 'Entrada registrada no armazém.');
+  toast((tipoOperacao==='saida' ? 'Saída' : 'Entrada') + ' registrada no armazém.' + avisoSaldo);
   verificarLimiteArmazemEAvisar(fazendaId);
   verificarLimiteRecebimentoEAvisar(fazendaId);
-  if(r.tipoOperacao!=='saida'){
+  if(tipoOperacao!=='saida'){
     recalibrarAutomaticamenteSeAtivo(fazendaId);
     const umidadePct = num(r.pesoBruto) ? (num(r.umidade)/num(r.pesoBruto)*100) : null;
     verificarReativarSecadorSuspenso(fazendaId, umidadePct);
@@ -5512,6 +5778,20 @@ function optionsProdutores(selectedId){
   if(!state.produtores.length) return `<option value="">Cadastre um produtor primeiro</option>`;
   return state.produtores.map(p=>`<option value="${p.id}" ${p.id===selectedId?'selected':''}>${p.nome}</option>`).join('');
 }
+function optionsTerceiros(selectedId){
+  if(!state.terceiros.length) return `<option value="">Cadastre um terceiro primeiro (botão 🤝 Terceiros)</option>`;
+  return state.terceiros.map(t=>`<option value="${t.id}" ${t.id===selectedId?'selected':''}>${t.nome}</option>`).join('');
+}
+function atualizarCamposTipoTitularRomArmazem(){
+  const titular = document.getElementById('fRomArmazemTitular')?.value;
+  const tipoOp = document.getElementById('fRomArmazemTipoOp')?.value;
+  const produtorWrap = document.getElementById('fRomArmazemProdutorWrap');
+  const terceiroWrap = document.getElementById('fRomArmazemTerceiroWrap');
+  const finalidadeWrap = document.getElementById('fRomArmazemFinalidadeWrap');
+  if(produtorWrap) produtorWrap.style.display = titular==='terceiro' ? 'none' : '';
+  if(terceiroWrap) terceiroWrap.style.display = titular==='terceiro' ? '' : 'none';
+  if(finalidadeWrap) finalidadeWrap.style.display = tipoOp==='saida' ? '' : 'none';
+}
 function optionsCulturas(selectedId){
   return `<option value="">— nenhuma —</option>` + state.culturas.map(c=>`<option value="${c.id}" ${c.id===selectedId?'selected':''}>${c.nome}</option>`).join('');
 }
@@ -5645,6 +5925,15 @@ function salvarColheitaDaVenda(){
   venda.colheitaId = colheitaId;
   saveVendas(); renderAll(); closeCadastroModal();
   toast(`NF ${venda.nrNF} vinculada à colheita selecionada.`);
+}
+function salvarColheitaDoRomaneioArmazem(){
+  const overlay = document.getElementById('modalCadastro');
+  const id = overlay.dataset.id;
+  const r = state.romaneiosArmazem.find(x=>x.id===id);
+  if(!r) return;
+  r.colheitaId = document.getElementById('fSelecionarColheitaArmazem').value || null;
+  saveEstoque(); renderEstoque(); closeCadastroModal();
+  toast(`Romaneio ${r.numeroComprovante||''} vinculado à colheita selecionada.`);
 }
 function salvarContrato(){
   const tipo = document.getElementById('fContratoTipo').value;
@@ -6966,7 +7255,25 @@ function renderModoBalanca(){
         <div id="balancaFormWrap" style="margin-top:14px;">
           <div class="form-grid">
             <div class="field"><label>Armazém (fazenda)</label><select id="fRomArmazemFazenda">${optionsFazendas(cfg.fazendaId)}</select></div>
-            <div class="field"><label>Produtor</label><select id="fRomArmazemProdutor">${optionsProdutores()}</select></div>
+            <div class="field"><label>Titular do grão</label>
+              <select id="fRomArmazemTitular" onchange="atualizarCamposTitularBalanca()">
+                <option value="produtor">👤 Produtor da fazenda</option>
+                <option value="terceiro">🤝 Terceiro</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="field" id="fRomArmazemProdutorWrap"><label>Produtor</label><select id="fRomArmazemProdutor">${optionsProdutores()}</select></div>
+            <div class="field" id="fRomArmazemTerceiroWrap" style="display:none;"><label>Terceiro</label><select id="fRomArmazemTerceiro">${optionsTerceiros()}</select></div>
+          </div>
+          <div class="field" id="fRomArmazemFinalidadeWrap" style="display:none;">
+            <label>Finalidade da saída</label>
+            <select id="fRomArmazemFinalidade">
+              <option value="venda">Venda normal</option>
+              <option value="arrendamento">Pagamento de arrendamento</option>
+              <option value="devolucao_terceiro">Devolução a terceiro (depósito)</option>
+              <option value="outro">Outro</option>
+            </select>
           </div>
           <div class="form-grid">
             <div class="field"><label>Cultura</label><select id="fRomArmazemCultura">${optionsCulturasSemAlgodao(cfg.culturaId)}</select></div>
@@ -7017,6 +7324,15 @@ function atualizarLabelsTipoOperacaoBalanca(){
   const dataLabel = document.getElementById('fRomArmazemDataLabel');
   if(nrLabel) nrLabel.textContent = balancaTipoOperacao==='saida' ? 'Nº da NF ou romaneio' : 'Nº do romaneio';
   if(dataLabel) dataLabel.textContent = balancaTipoOperacao==='saida' ? 'Data de saída' : 'Data de entrada';
+  const finalidadeWrap = document.getElementById('fRomArmazemFinalidadeWrap');
+  if(finalidadeWrap) finalidadeWrap.style.display = balancaTipoOperacao==='saida' ? '' : 'none';
+}
+function atualizarCamposTitularBalanca(){
+  const titular = document.getElementById('fRomArmazemTitular')?.value;
+  const produtorWrap = document.getElementById('fRomArmazemProdutorWrap');
+  const terceiroWrap = document.getElementById('fRomArmazemTerceiroWrap');
+  if(produtorWrap) produtorWrap.style.display = titular==='terceiro' ? 'none' : '';
+  if(terceiroWrap) terceiroWrap.style.display = titular==='terceiro' ? '' : 'none';
 }
 function balancaSwitchTab(tab){
   const btnNova = document.getElementById('balTabBtnNova');
@@ -7208,22 +7524,26 @@ function aplicarOcrFormBalanca(p){
 async function salvarRomaneioArmazemBalanca(){
   const s = getSessao();
   const fazendaId = document.getElementById('fRomArmazemFazenda').value;
-  const produtorId = document.getElementById('fRomArmazemProdutor').value;
+  const titular = document.getElementById('fRomArmazemTitular').value;
+  const produtorId = titular==='produtor' ? document.getElementById('fRomArmazemProdutor').value : null;
+  const terceiroId = titular==='terceiro' ? document.getElementById('fRomArmazemTerceiro').value : null;
   const culturaId = document.getElementById('fRomArmazemCultura').value;
   if(!fazendaId){ toast('Selecione o armazém (fazenda).', true); return; }
-  if(!produtorId){ toast('Selecione o produtor.', true); return; }
+  if(titular==='produtor' && !produtorId){ toast('Selecione o produtor.', true); return; }
+  if(titular==='terceiro' && !terceiroId){ toast('Selecione o terceiro.', true); return; }
   if(!culturaId){ toast('Selecione a cultura.', true); return; }
   const pesoBruto = num(document.getElementById('fRomArmazemPesoBruto').value);
   if(!pesoBruto){ toast('Informe o peso bruto.', true); return; }
 
   const tipoOperacao = balancaTipoOperacao;
+  const finalidadeSaida = tipoOperacao==='saida' ? document.getElementById('fRomArmazemFinalidade').value : null;
 
   // Lançamento pela balança sempre entra como "aguardando aprovação" — o admin confere e aprova
   // depois no Estoque, mesmo padrão usado pra importações em lote sem conferência prévia.
   const r = {
     id: uid('romarm'), createdAt: new Date().toISOString(), numeroComprovante: proximoNumeroComprovante(), status:'aguardando_aprovacao',
-    tipoOperacao, criadoPorUsuarioId: s.usuarioId,
-    fazendaId, produtorId, culturaId,
+    tipoOperacao, finalidadeSaida, criadoPorUsuarioId: s.usuarioId,
+    fazendaId, produtorId, terceiroId, culturaId,
     safra: document.getElementById('fRomArmazemSafra').value.trim(),
     motorista: document.getElementById('fRomArmazemMotorista').value.trim(),
     placa: document.getElementById('fRomArmazemPlaca').value.trim(),
@@ -7242,18 +7562,18 @@ async function salvarRomaneioArmazemBalanca(){
 
   let avisoSaldo = '';
   if(tipoOperacao==='saida'){
-    const saldoAtual = calcSaldoProdutorNaFazenda(produtorId, fazendaId, culturaId);
+    const saldoAtual = terceiroId ? calcSaldoTerceiroNaFazenda(terceiroId, fazendaId, culturaId) : calcSaldoProdutorNaFazenda(produtorId, fazendaId, culturaId);
     if(saldoAtual < r.pesoLiquido){
       const f = state.fazendas.find(x=>x.id===fazendaId);
-      avisoSaldo = ` ⚠️ Saldo insuficiente: ${produtorNome(produtorId)} tinha ${fmt(saldoAtual,0)} kg em ${f?.nome||'armazém'}.`;
+      avisoSaldo = ` ⚠️ Saldo insuficiente: ${terceiroId?terceiroNome(terceiroId):produtorNome(produtorId)} tinha ${fmt(saldoAtual,0)} kg em ${f?.nome||'armazém'}.`;
     }
     upsertMovimentoEstoque({
-      tipo:'saida', fazendaId, produtorId, culturaId, safra: r.safra,
+      tipo:'saida', fazendaId, produtorId, terceiroId, culturaId, safra: r.safra,
       pesoKg: r.pesoLiquido, scs: r.scsLiquido, data: r.dataEntrada, obs: r.obs
     }, 'romaneioArmazem', r.id);
   } else {
     upsertMovimentoEstoque({
-      tipo:'entrada', fazendaId, produtorId, culturaId, safra: r.safra,
+      tipo:'entrada', fazendaId, produtorId, terceiroId, culturaId, safra: r.safra,
       pesoKg: r.pesoLiquido, scs: r.scsLiquido, data: r.dataEntrada, obs: r.obs
     }, 'romaneioArmazem', r.id);
   }
@@ -7282,7 +7602,7 @@ async function salvarRomaneioArmazemBalanca(){
   document.getElementById('balancaSuccessWrap').innerHTML = `
     <div class="card" style="border-color:${avisoSaldo?'var(--red-dim)':'var(--lime)'};background:${avisoSaldo?'var(--red-dim)':'rgba(120,220,120,.08)'};margin-top:14px;padding:14px;">
       <div style="font-weight:700;color:${avisoSaldo?'var(--red)':'var(--lime)'};">${avisoSaldo?'⚠️':'✓'} ${tipoOperacao==='saida'?'Saída':'Entrada'} registrada — comprovante ${r.numeroComprovante}</div>
-      <div style="margin-top:4px;font-size:13px;">${f?.nome||'—'} · ${produtorNome(produtorId)} · ${fmt(r.pesoLiquido,0)} kg líquidos</div>
+      <div style="margin-top:4px;font-size:13px;">${f?.nome||'—'} · ${terceiroId?'🤝 '+terceiroNome(terceiroId):produtorNome(produtorId)} · ${fmt(r.pesoLiquido,0)} kg líquidos</div>
       ${avisoSaldo ? `<div style="margin-top:4px;font-size:12.5px;">${avisoSaldo}</div>` : ''}
     </div>`;
   toast(`${tipoOperacao==='saida'?'Saída':'Entrada'} registrada no armazém. Aguardando aprovação do admin.${avisoSaldo}`);
@@ -8675,6 +8995,11 @@ function isFormatoArmazem(headers){
    nacional padronizado (mesmas tags em qualquer emissor/estado). Por isso dá pra extrair os dados
    com um parser comum, sem IA nenhuma e sem risco de erro de leitura, ao contrário do relatório em
    PDF (que depende de IA lendo texto solto). */
+// O XML da NF-e usa ponto decimal "internacional" (ex: 46000.0000, 27600.00) — SEM separador de
+// milhar. É bem diferente do formato brasileiro (46.000,00) que a função num() trata em todo o
+// resto do sistema. Usar num() aqui apagava o ponto como se fosse separador de milhar e multiplicava
+// o valor por até 10.000x. numXml() é só pra conteúdo numérico vindo direto de tag de XML.
+function numXml(v){ const f = parseFloat(v); return isNaN(f) ? 0 : f; }
 function parseNFeXmlDoc(xmlDoc){
   const get = (tag) => xmlDoc.getElementsByTagName(tag)[0]?.textContent?.trim() || '';
   const infNFeEl = xmlDoc.getElementsByTagName('infNFe')[0];
@@ -8686,7 +9011,7 @@ function parseNFeXmlDoc(xmlDoc){
   const dEmi = dhEmiRaw ? dhEmiRaw.slice(0,10) : '';
   const natOp = get('natOp');
   const infCpl = get('infCpl');
-  const vNF = num(get('vNF'));
+  const vNF = numXml(get('vNF'));
 
   const emitEl = xmlDoc.getElementsByTagName('emit')[0];
   const destEl = xmlDoc.getElementsByTagName('dest')[0];
@@ -8710,15 +9035,20 @@ function parseNFeXmlDoc(xmlDoc){
     const prod = dets[i].getElementsByTagName('prod')[0];
     if(!prod) continue;
     const uCom = prod.getElementsByTagName('uCom')[0]?.textContent?.trim() || '';
-    const qCom = num(prod.getElementsByTagName('qCom')[0]?.textContent || 0);
+    const qCom = numXml(prod.getElementsByTagName('qCom')[0]?.textContent || 0);
     if(/^kg$/i.test(uCom)) pesoKg += qCom;
     const xProd = prod.getElementsByTagName('xProd')[0]?.textContent?.trim() || '';
     if(xProd) xProdTextos.push(xProd);
   }
 
-  return { chNFe, nNF, dEmi, natOp, infCpl, vNF, emitNome, emitCnpj, emitCpf, destNome, destCnpj, destCpf, motorista, placa, pesoKg: pesoKg||null, xProdTexto: xProdTextos.join(' ') };
+  // Natureza da operação / CFOP ajudam a saber se é ENTRADA no armazém ou SAÍDA dele (usado só na
+  // importação pro Estoque) — remessa/devolução pra depósito = entrada; retorno/venda de dentro do
+  // depósito = saída. Ver classificarTipoOperacaoArmazem().
+  const cfop = xmlDoc.getElementsByTagName('CFOP')[0]?.textContent?.trim() || '';
+
+  return { chNFe, nNF, dEmi, natOp, infCpl, cfop, vNF, emitNome, emitCnpj, emitCpf, destNome, destCnpj, destCpf, motorista, placa, pesoKg: pesoKg||null, xProdTexto: xProdTextos.join(' ') };
 }
-async function handleImportXmlNFe(files){
+async function handleImportXmlNFe(files, origem, colheitaId){
   let novos=0, duplicados=0, foraDeContexto=0, comErro=0;
   const gruposTocados = new Set();
 
@@ -8767,7 +9097,7 @@ async function handleImportXmlNFe(files){
         id: uid('venda'), empresaId, produtorId, contratoId: contratoExistente ? contratoExistente.id : null,
         contratoNrRaw: contratoNr || '', nrNF: String(nfe.nNF), dataNF: nfe.dEmi || todayISO(),
         pesoFiscal: nfe.pesoKg, valorFiscal: nfe.vNF, natureza: nfe.natOp, role, usarParaConfronto: true,
-        colheitaId: null, chaveNFe: nfe.chNFe || '', createdAt: new Date().toISOString(),
+        colheitaId: colheitaId||null, chaveNFe: nfe.chNFe || '', createdAt: new Date().toISOString(),
       };
       state.vendas.push(venda);
       novos++;
@@ -8801,8 +9131,8 @@ async function handleImportXmlNFe(files){
 // (NF-e emitida quando o armazém é uma pessoa jurídica separada do produtor, ex: cooperativa).
 // Mesmo parser da NF-e (parseNFeXmlDoc), só que gera romaneioArmazem + movimento de entrada em vez
 // de venda/entrega — e tenta achar a cultura pela descrição do produto na nota.
-async function handleImportXmlNFeArmazem(files){
-  let novos=0, ignorados=0, duplicados=0, foraDeContexto=0, comErro=0;
+async function handleImportXmlNFeArmazem(files, origem, colheitaId){
+  let novos=0, novasSaidas=0, ignorados=0, duplicados=0, foraDeContexto=0, comErro=0;
   const fazendasTocadas = new Set();
 
   for(const file of files){
@@ -8818,17 +9148,25 @@ async function handleImportXmlNFeArmazem(files){
 
       const culturaId = inferirCulturaPorTexto(nfe.natOp) || inferirCulturaPorTexto(nfe.xProdTexto) || inferirCulturaPorTexto(nfe.infCpl) || null;
       // Trava 2: cultura/safra da nota tem que bater com o contexto atual.
-      if(!culturaCompativelComContexto(culturaId) || !safraCompativelComContexto(nfe.dEmi)){ foraDeContexto++; continue; }
+      if(!culturaSafraCompativelComArmazem(culturaId, nfe.dEmi)){ foraDeContexto++; continue; }
       if(culturaEhAlgodao(culturaId)){ ignorados++; continue; }
 
-      // Numa remessa pra depósito, o normal é: emitente = produtor (quem manda o grão), destinatário = o
-      // armazém/depósito. Mas confere contra os cadastros já existentes antes de assumir, igual na de Cargas.
+      const tipoOperacao = classificarTipoOperacaoArmazem(nfe.cfop, nfe.natOp);
+
+      // Numa remessa PRA depósito (entrada), o normal é: emitente = produtor, destinatário = armazém.
+      // Num retorno DE depósito (saída), é o contrário: emitente = armazém, destinatário = produtor.
+      // De qualquer forma, confere contra os cadastros já existentes antes de assumir.
       const emitDoc = onlyDigits(nfe.emitCnpj || nfe.emitCpf);
       const destEhProdutorConhecido = onlyDigits(nfe.destCnpj||nfe.destCpf) && state.produtores.some(p=>onlyDigits(p.cpf)===onlyDigits(nfe.destCnpj||nfe.destCpf) || onlyDigits(p.cnpj)===onlyDigits(nfe.destCnpj||nfe.destCpf));
       const emitEhProdutorConhecido = emitDoc && state.produtores.some(p=>onlyDigits(p.cpf)===emitDoc || onlyDigits(p.cnpj)===emitDoc);
 
       let produtorNome, produtorDoc, fazendaNome;
-      if(destEhProdutorConhecido && !emitEhProdutorConhecido){
+      const destEhArmazemPorPadrao = tipoOperacao==='entrada'; // entrada: destinatário=armazém; saída: destinatário=produtor
+      if(emitEhProdutorConhecido === destEhProdutorConhecido){
+        // Nenhum dos dois é claramente conhecido (ou os dois são, o que não deveria acontecer) — usa o padrão pelo tipo de operação.
+        if(destEhArmazemPorPadrao){ produtorNome = nfe.emitNome; produtorDoc = nfe.emitCnpj||nfe.emitCpf; fazendaNome = nfe.destNome; }
+        else { produtorNome = nfe.destNome; produtorDoc = nfe.destCnpj||nfe.destCpf; fazendaNome = nfe.emitNome; }
+      } else if(destEhProdutorConhecido){
         produtorNome = nfe.destNome; produtorDoc = nfe.destCnpj||nfe.destCpf; fazendaNome = nfe.emitNome;
       } else {
         produtorNome = nfe.emitNome; produtorDoc = nfe.emitCnpj||nfe.emitCpf; fazendaNome = nfe.destNome;
@@ -8841,8 +9179,8 @@ async function handleImportXmlNFeArmazem(files){
 
       const r = {
         id: uid('romarm'), createdAt: new Date().toISOString(), numeroComprovante: proximoNumeroComprovante(),
-        status:'aguardando_aprovacao', tipoOperacao:'entrada', chaveNFe: nfe.chNFe||'', nrNF: nfe.nNF||'',
-        fazendaId, produtorId, culturaId, safra: state.config.safra||'',
+        status:'aguardando_aprovacao', tipoOperacao, chaveNFe: nfe.chNFe||'', nrNF: nfe.nNF||'',
+        fazendaId, produtorId, culturaId, colheitaId: colheitaId||null, safra: state.config.safra||'',
         motorista: nfe.motorista||'', placa: nfe.placa||'', nrRomaneio: '',
         dataEntrada: nfe.dEmi || todayISO(),
         pesoBruto: nfe.pesoKg, tara:0, umidade:0, impureza:0, ardido:0,
@@ -8850,12 +9188,18 @@ async function handleImportXmlNFeArmazem(files){
       };
       recalcRomaneioArmazem(r);
       state.romaneiosArmazem.push(r);
+
+      let avisoSaldo = '';
+      if(tipoOperacao==='saida'){
+        const saldoAtual = calcSaldoProdutorNaFazenda(produtorId, fazendaId, culturaId);
+        if(saldoAtual < r.pesoLiquido) avisoSaldo = ` ⚠️ saldo insuficiente (${produtorNome}: ${fmt(saldoAtual,0)} kg em ${fazendaNome})`;
+      }
       upsertMovimentoEstoque({
-        tipo:'entrada', fazendaId, produtorId, culturaId, safra: r.safra,
-        pesoKg: r.pesoLiquido, scs: r.scsLiquido, data: r.dataEntrada, obs: r.obs
+        tipo: tipoOperacao, fazendaId, produtorId, culturaId, safra: r.safra,
+        pesoKg: r.pesoLiquido, scs: r.scsLiquido, data: r.dataEntrada, obs: r.obs + avisoSaldo
       }, 'romaneioArmazem', r.id);
       fazendasTocadas.add(fazendaId);
-      novos++;
+      if(tipoOperacao==='saida') novasSaidas++; else novos++;
     }catch(err){
       console.error('Erro lendo XML de NF-e (armazém):', err);
       comErro++;
@@ -8864,11 +9208,12 @@ async function handleImportXmlNFeArmazem(files){
 
   saveCadastros(); saveEstoque(); renderAll();
   const partes = [`${novos} entrada(s) registrada(s)`];
+  if(novasSaidas) partes.push(`${novasSaidas} saída(s) registrada(s)`);
   if(ignorados) partes.push(`${ignorados} nota(s) ignorada(s) (sem peso em KG ou algodão)`);
   if(duplicados) partes.push(`${duplicados} já tinha(m) sido importada(s) antes (ignorada, nunca duplica)`);
   if(foraDeContexto) partes.push(`${foraDeContexto} de outra cultura/safra (fora do contexto atual: ${state.config.cultura||'—'} ${state.config.safra||''})`);
   if(comErro) partes.push(`${comErro} arquivo(s) não reconhecido(s) como XML de NF-e`);
-  toast(`Importação de XML no Estoque: ${partes.join(', ')}. Cada entrada ficou como "aguardando aprovação" pra você conferir.`);
+  toast(`Importação de XML no Estoque: ${partes.join(', ')}. Cada uma ficou como "aguardando aprovação" pra você conferir.`);
   fazendasTocadas.forEach(verificarLimiteArmazemEAvisar);
   fazendasTocadas.forEach(verificarLimiteRecebimentoEAvisar);
   fazendasTocadas.forEach(recalibrarAutomaticamenteSeAtivo);
@@ -8921,6 +9266,59 @@ function marcarProcessadoNaPasta(destino, assinatura){
   if(lista.length>500) lista.splice(0, lista.length-500); // não deixa crescer pra sempre
   localStorage.setItem(chave, JSON.stringify(lista));
 }
+function chaveStatusPasta(destino){ return 'brc_pasta_status_'+destino; }
+function lerStatusPasta(destino){
+  try{ return JSON.parse(localStorage.getItem(chaveStatusPasta(destino))||'null'); }catch(e){ return null; }
+}
+function registrarChecagemPasta(destino, qtdImportados){
+  const atual = lerStatusPasta(destino) || {totalImportado:0};
+  atual.ultimaChecagem = new Date().toISOString();
+  atual.totalImportado = (atual.totalImportado||0) + (qtdImportados||0);
+  localStorage.setItem(chaveStatusPasta(destino), JSON.stringify(atual));
+}
+async function pararMonitoramentoPasta(destino){
+  if(pastaMonitoradaIntervalos[destino]){ clearInterval(pastaMonitoradaIntervalos[destino]); delete pastaMonitoradaIntervalos[destino]; }
+  const db = await abrirDbPastaMonitorada();
+  await new Promise((resolve, reject)=>{
+    const tx = db.transaction('handles','readwrite');
+    tx.objectStore('handles').delete(destino);
+    tx.oncomplete = resolve; tx.onerror = ()=>reject(tx.error);
+  });
+  localStorage.removeItem(chaveStatusPasta(destino));
+  toast('Monitoramento de pasta desativado.');
+}
+async function abrirStatusPastaMonitorada(destino){
+  const handle = await carregarHandlePastaMonitorada(destino).catch(()=>null);
+  const status = lerStatusPasta(destino);
+  const overlay = document.createElement('div');
+  overlay.id = 'statusPastaOverlay';
+  overlay.className = 'modal-overlay';
+  const ativo = !!handle && pastaMonitoradaSuportada();
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-head"><h3>📁 Pasta monitorada — ${destino==='cargas'?'Cargas & Romaneios':'Estoque de Armazém'}</h3><button class="modal-close" onclick="document.getElementById('statusPastaOverlay').remove()">✕</button></div>
+      ${!pastaMonitoradaSuportada() ? `<p class="small-note">Esse recurso só funciona no Chrome ou Edge, no computador.</p>` :
+        handle ? `
+        <div class="card" style="padding:12px;border-color:var(--lime);background:rgba(120,220,120,.08);">
+          <div style="font-weight:700;color:var(--lime);">🟢 Ativo</div>
+          <div style="margin-top:4px;font-size:13px;">Pasta: <b>${handle.name}</b></div>
+          <div style="margin-top:2px;font-size:12.5px;" class="small-note">Verificando a cada ${PASTA_MONITORADA_INTERVALO_MS/1000}s, enquanto esta aba estiver aberta.</div>
+          ${status?.ultimaChecagem ? `<div style="margin-top:2px;font-size:12.5px;" class="small-note">Última verificação: ${new Date(status.ultimaChecagem).toLocaleString('pt-BR')} · ${status.totalImportado||0} arquivo(s) importado(s) ao todo</div>` : ''}
+        </div>
+        <div class="actions-row" style="margin-top:12px;">
+          <button class="btn ghost sm" onclick="document.getElementById('statusPastaOverlay').remove(); vincularPastaMonitorada('${destino}');">🔄 Trocar de pasta</button>
+          <button class="btn danger sm" onclick="pararMonitoramentoPasta('${destino}').then(()=>document.getElementById('statusPastaOverlay').remove())">🛑 Desativar</button>
+        </div>`
+        : `<p class="small-note" style="margin-top:-4px;">Nenhuma pasta vinculada ainda — nada está sendo importado automaticamente.</p>
+        <div class="actions-row" style="margin-top:12px;justify-content:flex-end;">
+          <button class="btn" onclick="document.getElementById('statusPastaOverlay').remove(); vincularPastaMonitorada('${destino}');">📁 Vincular pasta</button>
+        </div>`}
+      <div class="actions-row" style="justify-content:flex-end;margin-top:10px;">
+        <button class="btn ghost" onclick="document.getElementById('statusPastaOverlay').remove()">Fechar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
 async function vincularPastaMonitorada(destino){
   if(!pastaMonitoradaSuportada()){
     toast('Esse recurso só funciona no Chrome ou Edge, no computador — o navegador que você está usando agora não suporta.', true);
@@ -8935,6 +9333,19 @@ async function vincularPastaMonitorada(destino){
     if(err?.name !== 'AbortError') toast('Não consegui acessar essa pasta.', true);
   }
 }
+// Varre a pasta inteira, entrando nas subpastas — o AgroGestão guarda o XML vários níveis
+// abaixo da pasta raiz (CPF/CNPJ do produtor → Inscrição Estadual → NFe → ano+mês), então não
+// dá pra olhar só o primeiro nível. profundidadeMax evita entrar num looping por engano.
+async function* listarArquivosRecursivo(dirHandle, profundidade){
+  if(profundidade > 6) return;
+  for await (const entry of dirHandle.values()){
+    if(entry.kind === 'file'){
+      yield entry;
+    } else if(entry.kind === 'directory'){
+      yield* listarArquivosRecursivo(entry, profundidade+1);
+    }
+  }
+}
 async function iniciarMonitoramentoPasta(destino){
   if(pastaMonitoradaIntervalos[destino]) clearInterval(pastaMonitoradaIntervalos[destino]);
   const rodar = async ()=>{
@@ -8944,17 +9355,18 @@ async function iniciarMonitoramentoPasta(destino){
     if(permissao !== 'granted') return; // evita ficar pedindo permissão sozinho sem o usuário estar interagindo
     const novos = [];
     try{
-      for await (const entry of handle.values()){
-        if(entry.kind !== 'file' || !entry.name.toLowerCase().endsWith('.xml')) continue;
+      for await (const entry of listarArquivosRecursivo(handle, 0)){
+        if(!entry.name.toLowerCase().endsWith('.xml')) continue;
         const file = await entry.getFile();
         const assinatura = `${entry.name}:${file.size}:${file.lastModified}`;
         if(jaProcessadoNaPasta(destino, assinatura)) continue;
         novos.push({file, assinatura});
       }
     }catch(e){ return; }
+    registrarChecagemPasta(destino, novos.length);
     if(!novos.length) return;
-    if(destino==='cargas') await handleImportXmlNFe(novos.map(n=>n.file));
-    else await handleImportXmlNFeArmazem(novos.map(n=>n.file));
+    if(destino==='cargas') await handleImportXmlNFe(novos.map(n=>n.file), 'automatico', null);
+    else await handleImportXmlNFeArmazem(novos.map(n=>n.file), 'automatico', null);
     novos.forEach(n=>marcarProcessadoNaPasta(destino, n.assinatura));
   };
   await rodar();
@@ -9095,7 +9507,7 @@ function handleImportSoftwareGestaoVenda(rows, colheitaId){
     const culturaId = inferirCulturaPorTexto(keys.item ? row[keys.item] : null)
       || inferirCulturaPorTexto(keys.centroCusto ? row[keys.centroCusto] : null);
     const dataNF = toISODate(keys.dataEmissao ? row[keys.dataEmissao] : null) || todayISO();
-    if(!culturaCompativelComContexto(culturaId) || !safraCompativelComContexto(dataNF)){ ignoradas++; return; }
+    if(!culturaSafraCompativelComArmazem(culturaId, dataNF)){ ignoradas++; return; }
 
     const venda = {
       id: uid('venda'), empresaId, produtorId, contratoId,
@@ -9268,7 +9680,7 @@ function handleImportLegacy(rows, colheitaId){
 /* ---- Import: ENTRADA NO ARMAZÉM (sem NF/venda — caminhão do campo direto pro silo) ----
    Mesma lógica de Cargas & Romaneios (planilha, PDF lido por IA, ou sincronização automática),
    só que gera romaneiosArmazem + movimentoEstoque de entrada em vez de venda/entrega comercial. */
-function handleImportArmazem(rows){
+function handleImportArmazem(rows, colheitaId){
   if(!rows || !rows.length){ toast('Não encontrei linhas de dados nesse relatório.', true); return; }
   const headers = Object.keys(rows[0]);
   const keys = {
@@ -9301,11 +9713,10 @@ function handleImportArmazem(rows){
     if(culturaEhAlgodao(culturaId)){ ignoradosAlgodao++; return; }
 
     const dataEntrada = keys.data ? (toISODate(row[keys.data]) || todayISO()) : todayISO();
-    // Trava: cultura/safra da linha bate com o contexto atual? (só rejeita quando a planilha
-    // realmente informa uma cultura/safra diferente — se não informar, assume o contexto atual.)
+    // Trava: cultura/safra da linha bate com alguma combinação aceita no armazém? (só rejeita quando a
+    // planilha realmente informa uma cultura/safra diferente — se não informar, assume o contexto atual.)
     const safraLinha = keys.safra ? String(row[keys.safra]||'').trim() : (state.config.safra||'');
-    if(keys.cultura && !culturaCompativelComContexto(culturaId)){ ignoradosForaContexto++; return; }
-    if(safraLinha && safraLinha!==(state.config.safra||'') && !safraCompativelComContexto(dataEntrada)){ ignoradosForaContexto++; return; }
+    if(keys.cultura && !culturaSafraCompativelComArmazem(culturaId, dataEntrada)){ ignoradosForaContexto++; return; }
 
     const nrRomaneio = keys.romaneio ? String(row[keys.romaneio]||'').trim() : '';
     // Trava: nunca duplica — mesmo romaneio/armazém/produtor/data/peso já importado antes é ignorado.
@@ -9324,7 +9735,7 @@ function handleImportArmazem(rows){
     if(motorista) getOrCreateMotorista(motorista, placa);
 
     const r = {
-      id: uid('romarm'), fazendaId, produtorId, culturaId, numeroComprovante: proximoNumeroComprovante(), status:'aguardando_aprovacao',
+      id: uid('romarm'), fazendaId, produtorId, culturaId, colheitaId: colheitaId||null, numeroComprovante: proximoNumeroComprovante(), status:'aguardando_aprovacao',
       safra: safraLinha,
       motorista, placa,
       nrRomaneio,
@@ -9359,7 +9770,7 @@ function handleImportArmazem(rows){
   fazendasTocadas.forEach(recalibrarAutomaticamenteSeAtivo);
   fazendasTocadas.forEach(fazendaId=>verificarReativarSecadorSuspenso(fazendaId, maiorUmidadePorFazenda[fazendaId]));
 }
-function handleImportArmazemXlsx(file){
+function handleImportArmazemXlsx(file, colheitaId){
   const reader = new FileReader();
   reader.onload = (e)=>{
     try{
@@ -9368,7 +9779,7 @@ function handleImportArmazemXlsx(file){
       const sheet = wb.Sheets[sheetName];
       const objRows = XLSX.utils.sheet_to_json(sheet, {defval:null});
       if(!objRows.length){ toast('Não encontrei linhas de dados nessa planilha.', true); return; }
-      handleImportArmazem(objRows);
+      handleImportArmazem(objRows, colheitaId);
     }catch(err){
       console.error(err);
       toast('Não foi possível ler essa planilha. Confira o formato.', true);
@@ -9376,7 +9787,7 @@ function handleImportArmazemXlsx(file){
   };
   reader.readAsArrayBuffer(file);
 }
-function handleImportArmazemPDF(file){
+function handleImportArmazemPDF(file, colheitaId){
   if(!window.pdfjsLib){ toast('Biblioteca de leitura de PDF não carregou. Verifique sua conexão.', true); return; }
   const reader = new FileReader();
   reader.onload = async (ev)=>{
@@ -9406,7 +9817,7 @@ function handleImportArmazemPDF(file){
         'Peso Bruto': r.pesoBruto||0, Tara: r.tara||0, Umidade: r.umidade||0, Impureza: r.impureza||0,
         Ardido: r.ardido||0, Observacao: r.observacao||''
       }));
-      handleImportArmazem(rows);
+      handleImportArmazem(rows, colheitaId);
     }catch(err){
       console.error(err);
       toast('Não consegui ler esse PDF. Confira se não é uma imagem escaneada sem texto.', true);
@@ -9491,6 +9902,7 @@ function exportarEstoqueXlsx(){
 
 /* ---- Dispatcher de importação ---- */
 let arquivoImportacaoPendente = null;
+let destinoImportacaoPendente = 'cargas'; // 'cargas' | 'armazem'
 function toggleChoicePopover(id){
   const pop = document.getElementById(id);
   const estavaAberto = pop.classList.contains('aberto');
@@ -9512,6 +9924,25 @@ let tipoImportacaoPendente = 'xlsx';
 function handleImportRelatorioPDF(file){
   arquivoImportacaoPendente = file;
   tipoImportacaoPendente = 'pdf';
+  destinoImportacaoPendente = 'cargas';
+  openCadastroModal('selecionarColheitaImportacao', null);
+}
+function abrirImportacaoXmlComColheita(files, destino){
+  arquivoImportacaoPendente = files;
+  tipoImportacaoPendente = 'xml';
+  destinoImportacaoPendente = destino;
+  openCadastroModal('selecionarColheitaImportacao', null);
+}
+function abrirImportacaoArmazemXlsxComColheita(file){
+  arquivoImportacaoPendente = file;
+  tipoImportacaoPendente = 'xlsx';
+  destinoImportacaoPendente = 'armazem';
+  openCadastroModal('selecionarColheitaImportacao', null);
+}
+function abrirImportacaoArmazemPdfComColheita(file){
+  arquivoImportacaoPendente = file;
+  tipoImportacaoPendente = 'pdf';
+  destinoImportacaoPendente = 'armazem';
   openCadastroModal('selecionarColheitaImportacao', null);
 }
 function processarRelatorioPDF(file, colheitaId){
@@ -9721,6 +10152,7 @@ function exportarRelatorioCargasPDF(listaFiltrada){
 function abrirSelecaoColheitaImportacao(file){
   arquivoImportacaoPendente = file;
   tipoImportacaoPendente = 'xlsx';
+  destinoImportacaoPendente = 'cargas';
   openCadastroModal('selecionarColheitaImportacao', null);
 }
 function confirmarImportacaoComColheita(){
@@ -9728,12 +10160,21 @@ function confirmarImportacaoComColheita(){
   const colheitaId = sel && sel.value ? sel.value : null;
   const file = arquivoImportacaoPendente;
   const tipo = tipoImportacaoPendente;
+  const destino = destinoImportacaoPendente;
   arquivoImportacaoPendente = null;
   tipoImportacaoPendente = 'xlsx';
+  destinoImportacaoPendente = 'cargas';
   closeCadastroModal();
   if(!file) return;
-  if(tipo==='pdf') processarRelatorioPDF(file, colheitaId);
-  else handleImportFile(file, colheitaId);
+  if(destino==='armazem'){
+    if(tipo==='xlsx') handleImportArmazemXlsx(file, colheitaId);
+    else if(tipo==='pdf') handleImportArmazemPDF(file, colheitaId);
+    else if(tipo==='xml') handleImportXmlNFeArmazem(file, 'manual', colheitaId);
+  } else {
+    if(tipo==='pdf') processarRelatorioPDF(file, colheitaId);
+    else if(tipo==='xml') handleImportXmlNFe(file, 'manual', colheitaId);
+    else handleImportFile(file, colheitaId);
+  }
 }
 function handleImportFile(file, colheitaId){
   const reader = new FileReader();
