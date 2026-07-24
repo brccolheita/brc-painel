@@ -483,11 +483,11 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
 .monv2-col { display:flex; flex-direction:column; gap:12px; }
 .monv2-card { background:var(--mv2-card); border:1px solid var(--mv2-border); border-radius:14px; padding:14px 16px; position:relative; }
 .monv2-mini { display:flex; align-items:center; gap:12px; }
-.monv2-iconbox { width:40px; height:40px; min-width:40px; border:1px solid rgba(34,211,238,.35); border-radius:10px; display:flex; align-items:center; justify-content:center; background:rgba(34,211,238,.06); box-shadow:0 0 12px rgba(34,211,238,.15) inset; }
+.monv2-iconbox { width:40px; height:40px; min-width:40px; border:1px solid rgba(34,211,238,.4); border-radius:10px; display:flex; align-items:center; justify-content:center; background:rgba(34,211,238,.10); box-shadow:0 0 12px rgba(34,211,238,.15) inset; }
 .monv2-iconbox i { font-size:19px; color:var(--mv2-cyan); }
-.monv2-iconbox.green { border-color:rgba(74,222,128,.35); background:rgba(74,222,128,.06); }
+.monv2-iconbox.green { border-color:rgba(74,222,128,.4); background:rgba(74,222,128,.10); }
 .monv2-iconbox.green i { color:var(--mv2-green); }
-.monv2-iconbox.red { border-color:rgba(220,70,70,.4); background:rgba(220,70,70,.08); }
+.monv2-iconbox.red { border-color:rgba(220,70,70,.45); background:rgba(220,70,70,.12); }
 .monv2-iconbox.red i { color:#ff6b6b; }
 .monv2-label { font-size:10px; letter-spacing:1px; color:var(--mv2-dim); text-transform:uppercase; font-weight:600; }
 .monv2-value { font-size:19px; font-weight:700; margin-top:2px; color:var(--mv2-text); }
@@ -516,10 +516,10 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
 .monv2-progress-title{ font-size:11px; letter-spacing:1.2px; color:var(--mv2-dim); text-transform:uppercase; font-weight:700; }
 .monv2-progress-badge{ background:rgba(34,211,238,.1); border:1px solid rgba(34,211,238,.3); color:var(--mv2-cyan); font-weight:700; font-size:12px; padding:3px 11px; border-radius:20px; }
 .monv2-seg-track{ display:flex; gap:3px; height:18px; }
-.monv2-seg{ flex:1; border-radius:3px; background:#101b2c; }
-.monv2-panel-card{ background:rgba(7,17,32,.6); border:1px solid var(--mv2-border); border-radius:14px; padding:12px 14px; color:var(--mv2-text); }
+.monv2-seg{ flex:1; border-radius:3px; background:rgba(127,127,127,.18); }
+.monv2-panel-card{ background:var(--mv2-card); border:1px solid var(--mv2-border); border-radius:14px; padding:12px 14px; color:var(--mv2-text); }
 .monv2-panel-card .small-note{ color:var(--mv2-dim); }
-.monv2-panel-card input, .monv2-panel-card select{ background:rgba(255,255,255,.05); border:1px solid var(--mv2-border); color:var(--mv2-text); }
+.monv2-panel-card input, .monv2-panel-card select{ background:rgba(127,127,127,.12); border:1px solid var(--mv2-border); color:var(--mv2-text); }
 .monv2-btn{ background:rgba(34,211,238,.08); border:1px solid rgba(34,211,238,.3); color:var(--mv2-cyan); border-radius:8px; padding:6px 12px; font-size:12px; font-weight:600; cursor:pointer; }
 .monv2-btn:hover{ background:rgba(34,211,238,.16); }
 .monv2-btn.red{ background:rgba(220,70,70,.1); border-color:rgba(220,70,70,.4); color:#ff6b6b; }
@@ -2602,6 +2602,10 @@ function renderRomaneiosArmazemTabela(){
             <button class="interacoes-item" data-item-id="colunas" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); abrirGerenciarColunas('table-romaneiosArmazem');">⚙ Colunas</button>
             <button class="interacoes-item" data-item-id="telaCheia" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); telaCheiaTabela('cardEstoquePlanilha');">⛶ Tela cheia</button>
             <div class="interacoes-divider"></div>
+            <button class="interacoes-item" data-item-id="editarMassa" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); abrirEditarEmMassa('romaneiosArmazem');">✏️ Editar selecionadas</button>
+            <button class="interacoes-item" data-item-id="ocultarSelecionadas" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); ocultarSelecionadas('romaneiosArmazem');">🙈 Ocultar selecionadas</button>
+            ${linhasOcultas('romaneiosArmazem').size ? `<button class="interacoes-item" data-item-id="mostrarOcultas" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); mostrarTodasLinhasOcultas('romaneiosArmazem');">👁️ Mostrar ocultas (${linhasOcultas('romaneiosArmazem').size})</button>` : ''}
+            <div class="interacoes-divider"></div>
             <button class="interacoes-item" data-item-id="excluirSelecoes" style="color:var(--red);" onclick="excluirSelecionadas('romaneiosArmazem')">🗑️ Excluir seleções</button>
           </div>
         </div>
@@ -2707,7 +2711,9 @@ function renderMonitorEstoque(fazendas){
 function updateTbodyRomaneiosArmazem(){
   if(!document.getElementById('tbody-romaneiosArmazem')) return; // não está na sub-aba de fluxo agora
   const filters = getFilterValues('romaneiosArmazem');
+  const ocultas = linhasOcultas('romaneiosArmazem');
   const lista = [...state.romaneiosArmazem]
+    .filter(r => !ocultas.has(r.id))
     .filter(r => estoqueFluxoTab==='saida' ? r.tipoOperacao==='saida' : r.tipoOperacao!=='saida')
     .sort((a,b)=>(b.dataEntrada||'').localeCompare(a.dataEntrada||'') || (b.createdAt||'').localeCompare(a.createdAt||''));
   const rows = lista.map(r=>{
@@ -3084,6 +3090,79 @@ function colorirSelecionadas(tabela, cor){
   salvarListaDaTabela(tabela);
   renderAll();
 }
+function salvarListaDaTabela(tabela){
+  return (tabela==='cargas'||tabela==='conferencia') ? saveEntregas() : saveEstoque();
+}
+// Ocultar linhas — mesmo espírito do que já existia só em Contratos & Saldos, agora reaproveitando a
+// seleção que já existe nas 3 tabelas. Fica salvo só neste aparelho (localStorage), não altera os dados.
+function chaveLinhasOcultas(tabela){ return 'brc_linhas_ocultas_'+tabela; }
+function linhasOcultas(tabela){
+  try{ return new Set(JSON.parse(localStorage.getItem(chaveLinhasOcultas(tabela))||'[]')); }catch(e){ return new Set(); }
+}
+function ocultarSelecionadas(tabela){
+  const ids = selecaoTabela[tabela];
+  if(!ids.size){ toast('Selecione ao menos uma linha primeiro.', true); return; }
+  const ocultas = linhasOcultas(tabela);
+  ids.forEach(id=>ocultas.add(id));
+  localStorage.setItem(chaveLinhasOcultas(tabela), JSON.stringify([...ocultas]));
+  const n = ids.size;
+  selecaoTabela[tabela].clear();
+  renderAll();
+  toast(`${n} linha(s) ocultada(s) — use "Mostrar ocultas" no Interações pra trazer de volta.`);
+}
+function mostrarTodasLinhasOcultas(tabela){
+  localStorage.removeItem(chaveLinhasOcultas(tabela));
+  renderAll();
+  toast('Linhas ocultas voltaram a aparecer.');
+}
+// Editar em massa — corrige cultura/safra de várias linhas importadas de uma vez, sem precisar abrir
+// item por item. Não mexe em peso/produtor/fazenda, só nesses dois campos.
+function abrirEditarEmMassa(tabela){
+  const ids = [...selecaoTabela[tabela]];
+  if(!ids.length){ toast('Selecione ao menos uma linha primeiro.', true); return; }
+  const overlay = document.createElement('div');
+  overlay.id = 'editarMassaOverlay';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-head"><h3>✏️ Editar em massa — ${ids.length} selecionada(s)</h3><button class="modal-close" onclick="document.getElementById('editarMassaOverlay').remove()">✕</button></div>
+      <p class="small-note" style="margin-top:-4px;">Só altera o que você preencher abaixo — deixe em branco o que não quiser mudar nessas ${ids.length} linha(s).</p>
+      <div class="field"><label>Cultura</label><select id="fMassaCultura"><option value="">— não alterar —</option>${state.culturas.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('')}</select></div>
+      <div class="field"><label>Safra</label><select id="fMassaSafra"><option value="">— não alterar —</option>${optionsSafrasPadrao(null)}</select></div>
+      <div class="actions-row" style="justify-content:flex-end;margin-top:14px;">
+        <button class="btn ghost" onclick="document.getElementById('editarMassaOverlay').remove()">Cancelar</button>
+        <button class="btn" onclick="aplicarEdicaoEmMassa('${tabela}')">Aplicar às ${ids.length} selecionada(s)</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+async function aplicarEdicaoEmMassa(tabela){
+  const culturaId = document.getElementById('fMassaCultura').value;
+  const safra = document.getElementById('fMassaSafra').value;
+  if(!culturaId && !safra){ toast('Preencha ao menos um campo pra alterar.', true); return; }
+  const ids = [...selecaoTabela[tabela]];
+  if(tabela==='romaneiosArmazem'){
+    ids.forEach(id=>{
+      const r = state.romaneiosArmazem.find(x=>x.id===id);
+      if(!r) return;
+      if(culturaId) r.culturaId = culturaId;
+      if(safra) r.safra = safra;
+    });
+    await saveEstoque();
+  } else {
+    ids.forEach(id=>{
+      const e = state.entregas.find(x=>x.id===id);
+      const v = e ? vendaById(e.vendaId) : null;
+      if(v && culturaId) v.culturaId = culturaId;
+      if(v && safra) v.safra = safra;
+    });
+    await saveVendas();
+  }
+  document.getElementById('editarMassaOverlay').remove();
+  selecaoTabela[tabela].clear();
+  renderAll();
+  toast(`${ids.length} linha(s) atualizada(s).`);
+}
 async function excluirSelecionadas(tabela){
   const n = selecaoTabela[tabela].size;
   if(!n) return;
@@ -3099,9 +3178,6 @@ async function excluirSelecionadas(tabela){
   selecaoTabela[tabela].clear();
   renderAll();
   toast(`${n} item(ns) excluído(s).`);
-}
-function salvarListaDaTabela(tabela){
-  return (tabela==='cargas'||tabela==='conferencia') ? saveEntregas() : saveEstoque();
 }
 function barraSelecaoHTML(tabela){
   return `
@@ -3849,6 +3925,10 @@ function renderCargasAtivas(){
             <button class="interacoes-item" data-item-id="colunas" onclick="document.getElementById('interacoesCargasPanel').classList.remove('aberto'); abrirGerenciarColunas('table-cargas');">⚙ Colunas</button>
             <button class="interacoes-item" data-item-id="telaCheia" onclick="document.getElementById('interacoesCargasPanel').classList.remove('aberto'); telaCheiaTabela('cardCargasPlanilha');">⛶ Tela cheia</button>
             <div class="interacoes-divider"></div>
+            <button class="interacoes-item" data-item-id="editarMassa" onclick="document.getElementById('interacoesCargasPanel').classList.remove('aberto'); abrirEditarEmMassa('cargas');">✏️ Editar selecionadas</button>
+            <button class="interacoes-item" data-item-id="ocultarSelecionadas" onclick="document.getElementById('interacoesCargasPanel').classList.remove('aberto'); ocultarSelecionadas('cargas');">🙈 Ocultar selecionadas</button>
+            ${linhasOcultas('cargas').size ? `<button class="interacoes-item" data-item-id="mostrarOcultas" onclick="document.getElementById('interacoesCargasPanel').classList.remove('aberto'); mostrarTodasLinhasOcultas('cargas');">👁️ Mostrar ocultas (${linhasOcultas('cargas').size})</button>` : ''}
+            <div class="interacoes-divider"></div>
             <button class="interacoes-item" data-item-id="excluirSelecoes" style="color:var(--red);" onclick="excluirSelecionadas('cargas')">🗑️ Excluir seleções</button>
           </div>
         </div>
@@ -3954,7 +4034,8 @@ function labelColheita(colheitaId){
 }
 function updateTbodyCargas(){
   const filters = getFilterValues('cargas');
-  let lista = state.entregas.filter(e=>e.status!=='rejeitado').slice().sort((a,b)=>(b.dataSaida||'').localeCompare(a.dataSaida||''));
+  const ocultasCargas = linhasOcultas('cargas');
+  let lista = state.entregas.filter(e=>e.status!=='rejeitado' && !ocultasCargas.has(e.id)).slice().sort((a,b)=>(b.dataSaida||'').localeCompare(a.dataSaida||''));
   if(!mostrarComprovantes){
     lista = lista.filter(e=>{ const v = vendaById(e.vendaId); return !v || v.usarParaConfronto !== false; });
   }
@@ -4063,6 +4144,10 @@ function renderConferenciaMotoristas(){
             <button class="interacoes-item" data-item-id="colunas" onclick="document.getElementById('interacoesConferenciaPanel').classList.remove('aberto'); abrirGerenciarColunas('table-conferencia');">⚙ Colunas</button>
             <button class="interacoes-item" data-item-id="telaCheia" onclick="document.getElementById('interacoesConferenciaPanel').classList.remove('aberto'); telaCheiaTabela('cardConferenciaPlanilha');">⛶ Tela cheia</button>
             <div class="interacoes-divider"></div>
+            <button class="interacoes-item" data-item-id="editarMassa" onclick="document.getElementById('interacoesConferenciaPanel').classList.remove('aberto'); abrirEditarEmMassa('conferencia');">✏️ Editar selecionadas</button>
+            <button class="interacoes-item" data-item-id="ocultarSelecionadas" onclick="document.getElementById('interacoesConferenciaPanel').classList.remove('aberto'); ocultarSelecionadas('conferencia');">🙈 Ocultar selecionadas</button>
+            ${linhasOcultas('conferencia').size ? `<button class="interacoes-item" data-item-id="mostrarOcultas" onclick="document.getElementById('interacoesConferenciaPanel').classList.remove('aberto'); mostrarTodasLinhasOcultas('conferencia');">👁️ Mostrar ocultas (${linhasOcultas('conferencia').size})</button>` : ''}
+            <div class="interacoes-divider"></div>
             <button class="interacoes-item" data-item-id="excluirSelecoes" style="color:var(--red);" onclick="excluirSelecionadas('conferencia')">🗑️ Excluir seleções</button>
           </div>
         </div>
@@ -4108,7 +4193,8 @@ function renderConferenciaMotoristas(){
 function updateTbodyConferencia(){
   const filters = getFilterValues('conferencia');
   const limites = limitesDescontoAtuais();
-  const lista = state.entregas.filter(e=>e.status==='aguardando_conferencia').sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+  const ocultasConferencia = linhasOcultas('conferencia');
+  const lista = state.entregas.filter(e=>e.status==='aguardando_conferencia' && !ocultasConferencia.has(e.id)).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
   const rows = lista.map(e=>{
     const v = vendaById(e.vendaId);
     const extract = {
@@ -9603,6 +9689,41 @@ function getOrCreateEmpresa(nome, cnpj){
   else if(cnpj && !e.cnpj){ e.cnpj = cnpj; }
   return e.id;
 }
+/* ---------------- BUSCA SEM CRIAR — cadastro de produtor/fazenda passou a ser só manual ----------------
+   Diferente de getOrCreateProdutor/getOrCreateFazenda (que criam na hora, usados quando um humano
+   digita um nome novo num formulário manual), estas aqui NUNCA criam nada — só encontram quem já está
+   cadastrado. Usadas nas importações automáticas (XML, planilha), pra evitar que a empresa compradora,
+   ou qualquer nome que apareça na nota, vire sem querer um produtor ou uma fazenda no sistema. Sem
+   cadastro prévio (produtor OU terceiro, fazenda), a importação daquela linha é ignorada. */
+function buscarProdutorCadastrado(nome, doc){
+  const digits = onlyDigits(doc);
+  if(digits){
+    const porDoc = state.produtores.find(x=>onlyDigits(x.cpf)===digits || onlyDigits(x.cnpj)===digits);
+    if(porDoc) return porDoc.id;
+  }
+  if(nome){
+    const porNome = state.produtores.find(x=>stripAccents(x.nome)===stripAccents(nome));
+    if(porNome) return porNome.id;
+  }
+  return null;
+}
+function buscarTerceiroCadastrado(nome, doc){
+  const digits = onlyDigits(doc);
+  if(digits){
+    const porDoc = state.terceiros.find(t=>onlyDigits(t.doc)===digits);
+    if(porDoc) return porDoc.id;
+  }
+  if(nome){
+    const porNome = state.terceiros.find(t=>stripAccents(t.nome)===stripAccents(nome));
+    if(porNome) return porNome.id;
+  }
+  return null;
+}
+function buscarFazendaCadastrada(nome){
+  if(!nome) return null;
+  const f = state.fazendas.find(x=>stripAccents(x.nome)===stripAccents(nome) || stripAccents(nome).includes(stripAccents(x.nome)));
+  return f ? f.id : null;
+}
 function getOrCreateProdutor(nome, doc){
   if(!nome) return null;
   const digits = onlyDigits(doc);
@@ -9958,7 +10079,7 @@ function parseNFeXmlDoc(xmlDoc){
   return { chNFe, nNF, dEmi, natOp, infCpl, cfop, vNF, emitNome, emitCnpj, emitCpf, destNome, destCnpj, destCpf, motorista, placa, pesoKg: pesoKg||null, xProdTexto: xProdTextos.join(' ') };
 }
 async function handleImportXmlNFe(files, origem, colheitaId){
-  let novos=0, duplicados=0, foraDeContexto=0, comErro=0;
+  let novos=0, duplicados=0, foraDeContexto=0, comErro=0, semCadastro=0;
   const gruposTocados = new Set();
 
   for(const file of files){
@@ -9994,7 +10115,8 @@ async function handleImportXmlNFe(files, origem, colheitaId){
         empresaNome = nfe.destNome; empresaDoc = nfe.destCnpj;
       }
 
-      const produtorId = getOrCreateProdutor(produtorNome, produtorDoc);
+      const produtorId = buscarProdutorCadastrado(produtorNome, produtorDoc);
+      if(!produtorId){ semCadastro++; continue; }
       const empresaId = getOrCreateEmpresa(empresaNome, empresaDoc);
       if(nfe.motorista) getOrCreateMotorista(nfe.motorista, nfe.placa);
 
@@ -10033,6 +10155,7 @@ async function handleImportXmlNFe(files, origem, colheitaId){
   if(duplicados) partes.push(`${duplicados} já tinha(m) sido importada(s) antes (ignorada, nunca duplica)`);
   if(foraDeContexto) partes.push(`${foraDeContexto} de outra cultura/safra (fora do contexto atual: ${state.config.cultura||'—'} ${state.config.safra||''})`);
   if(comErro) partes.push(`${comErro} arquivo(s) não reconhecido(s) como XML de NF-e`);
+  if(semCadastro) partes.push(`${semCadastro} produtor(es) ainda não cadastrado(s) — cadastre manualmente antes de importar`);
   avisoImportante(`Importação de XML de NF-e: ${partes.join(', ')}.`);
 }
 
@@ -10063,33 +10186,35 @@ async function handleImportXmlNFeArmazem(files, origem, colheitaId){
       const tipoOperacao = classificarTipoOperacaoArmazem(nfe.cfop, nfe.natOp);
 
       // Numa remessa PRA depósito (entrada), o normal é: emitente = produtor, destinatário = armazém.
-      // Num retorno DE depósito (saída), é o contrário: emitente = armazém, destinatário = produtor.
-      // De qualquer forma, confere contra os cadastros já existentes antes de assumir.
+      // Num retorno DE depósito (saída), é o contrário. De qualquer forma, os DOIS lados precisam já
+      // estar cadastrados — um lado tem que bater com produtor OU terceiro já cadastrado, e o outro
+      // com uma fazenda já cadastrada. Nunca cria fazenda nem produtor novo a partir da nota — isso
+      // evitava, por exemplo, a empresa compradora entrar sem querer como se fosse uma fazenda.
       const emitDoc = onlyDigits(nfe.emitCnpj || nfe.emitCpf);
-      const destEhProdutorConhecido = onlyDigits(nfe.destCnpj||nfe.destCpf) && state.produtores.some(p=>onlyDigits(p.cpf)===onlyDigits(nfe.destCnpj||nfe.destCpf) || onlyDigits(p.cnpj)===onlyDigits(nfe.destCnpj||nfe.destCpf));
-      const emitEhProdutorConhecido = emitDoc && state.produtores.some(p=>onlyDigits(p.cpf)===emitDoc || onlyDigits(p.cnpj)===emitDoc);
+      const destDoc = onlyDigits(nfe.destCnpj || nfe.destCpf);
+      const emitProdutorId = buscarProdutorCadastrado(nfe.emitNome, emitDoc);
+      const destProdutorId = buscarProdutorCadastrado(nfe.destNome, destDoc);
+      const emitTerceiroId = !emitProdutorId ? buscarTerceiroCadastrado(nfe.emitNome, emitDoc) : null;
+      const destTerceiroId = !destProdutorId ? buscarTerceiroCadastrado(nfe.destNome, destDoc) : null;
+      const emitFazendaId = buscarFazendaCadastrada(nfe.emitNome);
+      const destFazendaId = buscarFazendaCadastrada(nfe.destNome);
 
-      let produtorNome, produtorDoc, fazendaNome;
-      const destEhArmazemPorPadrao = tipoOperacao==='entrada'; // entrada: destinatário=armazém; saída: destinatário=produtor
-      if(emitEhProdutorConhecido === destEhProdutorConhecido){
-        // Nenhum dos dois é claramente conhecido (ou os dois são, o que não deveria acontecer) — usa o padrão pelo tipo de operação.
-        if(destEhArmazemPorPadrao){ produtorNome = nfe.emitNome; produtorDoc = nfe.emitCnpj||nfe.emitCpf; fazendaNome = nfe.destNome; }
-        else { produtorNome = nfe.destNome; produtorDoc = nfe.destCnpj||nfe.destCpf; fazendaNome = nfe.emitNome; }
-      } else if(destEhProdutorConhecido){
-        produtorNome = nfe.destNome; produtorDoc = nfe.destCnpj||nfe.destCpf; fazendaNome = nfe.emitNome;
-      } else {
-        produtorNome = nfe.emitNome; produtorDoc = nfe.emitCnpj||nfe.emitCpf; fazendaNome = nfe.destNome;
+      let produtorId=null, terceiroId=null, fazendaId=null;
+      if((emitProdutorId || emitTerceiroId) && destFazendaId){
+        produtorId = emitProdutorId; terceiroId = emitTerceiroId; fazendaId = destFazendaId;
+      } else if((destProdutorId || destTerceiroId) && emitFazendaId){
+        produtorId = destProdutorId; terceiroId = destTerceiroId; fazendaId = emitFazendaId;
       }
-      if(!produtorNome || !fazendaNome || !nfe.pesoKg){ ignorados++; continue; }
+      if((!produtorId && !terceiroId) || !fazendaId || !nfe.pesoKg){ ignorados++; continue; }
 
-      const produtorId = getOrCreateProdutor(produtorNome, produtorDoc);
-      const fazendaId = getOrCreateFazenda(fazendaNome);
       if(nfe.motorista) getOrCreateMotorista(nfe.motorista, nfe.placa);
+      const nomeTitular = produtorId ? produtorNome(produtorId) : terceiroNome(terceiroId);
+      const nomeFazenda = state.fazendas.find(f=>f.id===fazendaId)?.nome || '';
 
       const r = {
         id: uid('romarm'), createdAt: new Date().toISOString(), numeroComprovante: proximoNumeroComprovante(),
         status:'aguardando_aprovacao', tipoOperacao, chaveNFe: nfe.chNFe||'', nrNF: nfe.nNF||'',
-        fazendaId, produtorId, culturaId, colheitaId: colheitaId||null, safra: state.config.safra||'',
+        fazendaId, produtorId, terceiroId, culturaId, colheitaId: colheitaId||null, safra: state.config.safra||'',
         motorista: nfe.motorista||'', placa: nfe.placa||'', nrRomaneio: '',
         dataEntrada: nfe.dEmi || todayISO(),
         pesoBruto: nfe.pesoKg, tara:0, umidade:0, impureza:0, ardido:0,
@@ -10100,11 +10225,11 @@ async function handleImportXmlNFeArmazem(files, origem, colheitaId){
 
       let avisoSaldo = '';
       if(tipoOperacao==='saida'){
-        const saldoAtual = calcSaldoProdutorNaFazenda(produtorId, fazendaId, culturaId);
-        if(saldoAtual < r.pesoLiquido) avisoSaldo = ` ⚠️ saldo insuficiente (${produtorNome}: ${fmt(saldoAtual,0)} kg em ${fazendaNome})`;
+        const saldoAtual = terceiroId ? calcSaldoTerceiroNaFazenda(terceiroId, fazendaId, culturaId) : calcSaldoProdutorNaFazenda(produtorId, fazendaId, culturaId);
+        if(saldoAtual < r.pesoLiquido) avisoSaldo = ` ⚠️ saldo insuficiente (${nomeTitular}: ${fmt(saldoAtual,0)} kg em ${nomeFazenda})`;
       }
       upsertMovimentoEstoque({
-        tipo: tipoOperacao, fazendaId, produtorId, culturaId, safra: r.safra,
+        tipo: tipoOperacao, fazendaId, produtorId, terceiroId, culturaId, safra: r.safra,
         pesoKg: r.pesoLiquido, scs: r.scsLiquido, data: r.dataEntrada, obs: r.obs + avisoSaldo
       }, 'romaneioArmazem', r.id);
       fazendasTocadas.add(fazendaId);
@@ -10118,7 +10243,7 @@ async function handleImportXmlNFeArmazem(files, origem, colheitaId){
   saveCadastros(); saveEstoque(); renderAll();
   const partes = [`${novos} entrada(s) registrada(s)`];
   if(novasSaidas) partes.push(`${novasSaidas} saída(s) registrada(s)`);
-  if(ignorados) partes.push(`${ignorados} nota(s) ignorada(s) (sem peso em KG ou algodão)`);
+  if(ignorados) partes.push(`${ignorados} nota(s) ignorada(s) (produtor/terceiro ou fazenda não cadastrado, sem peso em KG, ou algodão)`);
   if(duplicados) partes.push(`${duplicados} já tinha(m) sido importada(s) antes (ignorada, nunca duplica)`);
   if(foraDeContexto) partes.push(`${foraDeContexto} de outra cultura/safra (fora do contexto atual: ${state.config.cultura||'—'} ${state.config.safra||''})`);
   if(comErro) partes.push(`${comErro} arquivo(s) não reconhecido(s) como XML de NF-e`);
@@ -10635,7 +10760,7 @@ function handleImportArmazem(rows, colheitaId){
     ardido: findKey(headers, ['ardido']) || findKey(headers,['avariado']),
     obs: findKey(headers, ['observacao']) || findKey(headers,['obs']),
   };
-  let novos = 0, ignoradosSemDados = 0, ignoradosAlgodao = 0, ignoradosDuplicado = 0, ignoradosForaContexto = 0;
+  let novos = 0, ignoradosSemDados = 0, ignoradosAlgodao = 0, ignoradosDuplicado = 0, ignoradosForaContexto = 0, ignoradosNaoCadastrado = 0;
   const fazendasTocadas = new Set();
   const maiorUmidadePorFazenda = {}; // pra avisar 1x por fazenda, não linha a linha, se o secador estiver suspenso
   rows.forEach(row=>{
@@ -10655,9 +10780,13 @@ function handleImportArmazem(rows, colheitaId){
     if(keys.cultura && !culturaSafraCompativelComArmazem(culturaId, dataEntrada)){ ignoradosForaContexto++; return; }
 
     const nrRomaneio = keys.romaneio ? String(row[keys.romaneio]||'').trim() : '';
-    // Trava: nunca duplica — mesmo romaneio/armazém/produtor/data/peso já importado antes é ignorado.
-    const fazendaIdPrevia = getOrCreateFazenda(armazemNome);
-    const produtorIdPrevio = getOrCreateProdutor(produtorNomeRaw);
+    // Trava: fazenda e produtor/terceiro precisam já estar cadastrados — nunca cria um novo a partir
+    // da planilha. Sem cadastro prévio, a linha é ignorada (fica só nesse formato mais simples aqui
+    // sem coluna de CPF/CNPJ, então a checagem é só por nome).
+    const fazendaIdPrevia = buscarFazendaCadastrada(armazemNome);
+    const produtorIdPrevio = buscarProdutorCadastrado(produtorNomeRaw, null);
+    const terceiroIdPrevio = !produtorIdPrevio ? buscarTerceiroCadastrado(produtorNomeRaw, null) : null;
+    if(!fazendaIdPrevia || (!produtorIdPrevio && !terceiroIdPrevio)){ ignoradosNaoCadastrado++; return; }
     const jaExiste = state.romaneiosArmazem.some(r=>
       r.fazendaId===fazendaIdPrevia && r.produtorId===produtorIdPrevio && r.dataEntrada===dataEntrada &&
       (nrRomaneio ? r.nrRomaneio===nrRomaneio : Math.abs(num(r.pesoBruto)-pesoBruto)<0.01)
@@ -10666,12 +10795,13 @@ function handleImportArmazem(rows, colheitaId){
 
     const fazendaId = fazendaIdPrevia;
     const produtorId = produtorIdPrevio;
+    const terceiroId = terceiroIdPrevio;
     const motorista = keys.motorista ? String(row[keys.motorista]||'').trim() : '';
     const placa = keys.placa ? String(row[keys.placa]||'').trim().toUpperCase() : '';
     if(motorista) getOrCreateMotorista(motorista, placa);
 
     const r = {
-      id: uid('romarm'), fazendaId, produtorId, culturaId, colheitaId: colheitaId||null, numeroComprovante: proximoNumeroComprovante(), status:'aguardando_aprovacao',
+      id: uid('romarm'), fazendaId, produtorId, terceiroId, culturaId, colheitaId: colheitaId||null, numeroComprovante: proximoNumeroComprovante(), status:'aguardando_aprovacao',
       safra: safraLinha,
       motorista, placa,
       nrRomaneio,
@@ -10700,7 +10830,8 @@ function handleImportArmazem(rows, colheitaId){
   const avisoSemDados = ignoradosSemDados>0 ? ` ${ignoradosSemDados} linha(s) sem dados suficientes (armazém/produtor/peso bruto).` : '';
   const avisoDuplicado = ignoradosDuplicado>0 ? ` ${ignoradosDuplicado} linha(s) já importada(s) antes (ignorada, nunca duplica).` : '';
   const avisoContexto = ignoradosForaContexto>0 ? ` ${ignoradosForaContexto} linha(s) de outra cultura/safra (fora do contexto atual: ${state.config.cultura||'—'} ${state.config.safra||''}).` : '';
-  avisoImportante(`Importação de estoque: ${novos} entrada(s) registrada(s).${avisoAlgodao}${avisoSemDados}${avisoDuplicado}${avisoContexto}`);
+  const avisoNaoCadastrado = ignoradosNaoCadastrado>0 ? ` ${ignoradosNaoCadastrado} linha(s) ignorada(s) — armazém ou produtor/terceiro ainda não cadastrado (cadastre manualmente antes de importar).` : '';
+  avisoImportante(`Importação de estoque: ${novos} entrada(s) registrada(s).${avisoAlgodao}${avisoSemDados}${avisoDuplicado}${avisoContexto}${avisoNaoCadastrado}`);
   fazendasTocadas.forEach(verificarLimiteArmazemEAvisar);
   fazendasTocadas.forEach(verificarLimiteRecebimentoEAvisar);
   fazendasTocadas.forEach(recalibrarAutomaticamenteSeAtivo);
