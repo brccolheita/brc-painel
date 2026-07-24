@@ -6136,7 +6136,7 @@ async function exportarMonitoresEstoquePDF(){
   const escondidos = ocultarElementosPdfHide(alvo);
   try{
     const bgCor = getComputedStyle(document.body).getPropertyValue('--bg').trim() || '#0B0E0C';
-    const canvas = await html2canvas(alvo, {backgroundColor: bgCor, scale:2, useCORS:true});
+    const canvas = await html2canvas(alvo, {backgroundColor: bgCor, scale:2, useCORS:true, ignoreElements: (el) => el.tagName==='CANVAS' && (!el.offsetWidth || !el.offsetHeight)});
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF('p','mm','a4');
     addFittedPage(pdf, canvas, true);
@@ -9319,8 +9319,8 @@ async function exportPDFDiario(){
   const bgCor = getComputedStyle(document.body).getPropertyValue('--bg').trim() || '#0B0E0C';
   const escondidos = ocultarElementosPdfHide(document.getElementById('subDashDiario'));
   try{
-    const canvas1 = await html2canvas(page1, {backgroundColor: bgCor, scale:2, useCORS:true});
-    const canvas2 = await html2canvas(page2, {backgroundColor: bgCor, scale:2, useCORS:true});
+    const canvas1 = await html2canvas(page1, {backgroundColor: bgCor, scale:2, useCORS:true, ignoreElements: (el) => el.tagName==='CANVAS' && (!el.offsetWidth || !el.offsetHeight)});
+    const canvas2 = await html2canvas(page2, {backgroundColor: bgCor, scale:2, useCORS:true, ignoreElements: (el) => el.tagName==='CANVAS' && (!el.offsetWidth || !el.offsetHeight)});
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF('p','mm','a4');
     addFittedPage(pdf, canvas1, true);
@@ -9328,7 +9328,7 @@ async function exportPDFDiario(){
     if(temMonitor){
       // O monitor (armazém+secador, os dois medidores) ganha página própria — tentar espremer
       // junto com os gráficos deixaria os números ilegíveis de tão reduzido.
-      const canvas3 = await html2canvas(monitor, {backgroundColor: bgCor, scale:2, useCORS:true});
+      const canvas3 = await html2canvas(monitor, {backgroundColor: bgCor, scale:2, useCORS:true, ignoreElements: (el) => el.tagName==='CANVAS' && (!el.offsetWidth || !el.offsetHeight)});
       addFittedPage(pdf, canvas3, false);
     }
     const fazendaSlug = fazenda.replace(/\s+/g,'_') || 'fazenda';
@@ -9358,14 +9358,14 @@ async function exportPDF(){
   pdfHeader2.classList.add('show');
   const escondidos = ocultarElementosPdfHide(document.getElementById('subDashGeral'));
   try{
-    const canvas1 = await html2canvas(page1, {backgroundColor: bgCor, scale:2, useCORS:true});
-    const canvas2 = await html2canvas(page2, {backgroundColor: bgCor, scale:2, useCORS:true});
+    const canvas1 = await html2canvas(page1, {backgroundColor: bgCor, scale:2, useCORS:true, ignoreElements: (el) => el.tagName==='CANVAS' && (!el.offsetWidth || !el.offsetHeight)});
+    const canvas2 = await html2canvas(page2, {backgroundColor: bgCor, scale:2, useCORS:true, ignoreElements: (el) => el.tagName==='CANVAS' && (!el.offsetWidth || !el.offsetHeight)});
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF('p','mm','a4');
     addFittedPage(pdf, canvas1, true);
     addFittedPage(pdf, canvas2, false);
     if(temMonitor){
-      const canvas3 = await html2canvas(monitor, {backgroundColor: bgCor, scale:2, useCORS:true});
+      const canvas3 = await html2canvas(monitor, {backgroundColor: bgCor, scale:2, useCORS:true, ignoreElements: (el) => el.tagName==='CANVAS' && (!el.offsetWidth || !el.offsetHeight)});
       addFittedPage(pdf, canvas3, false);
     }
     const fazenda = (state.config.fazenda||'fazenda').trim().replace(/\s+/g,'_') || 'fazenda';
