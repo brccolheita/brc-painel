@@ -182,6 +182,8 @@ body.modo-tela-cheia-tabela .card h2{
   position:sticky; top:0; z-index:200; background:var(--panel);
   margin:-20px -20px 16px -20px; padding:16px 20px; border-bottom:1px solid var(--line);
 }
+.btn-voltar-tela-cheia{ display:none; }
+body.modo-tela-cheia-tabela .btn-voltar-tela-cheia{ display:inline-flex; align-items:center; }
 .card h2{ font-family:'Space Grotesk',sans-serif; font-size:15px; margin:0 0 14px 0; font-weight:700; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
 .card h2 small{ color:var(--ink-dim); font-weight:500; font-size:11.5px; font-family:'JetBrains Mono',monospace; }
 
@@ -2571,6 +2573,7 @@ function renderEstoque(){
             <button class="interacoes-item" data-item-id="excluirSelecoes" style="color:var(--red);" onclick="excluirSelecionadas('romaneiosArmazem')">🗑️ Excluir seleções</button>
           </div>
         </div>
+        <button class="btn ghost sm btn-voltar-tela-cheia" onclick="document.exitFullscreen?.()">← Voltar</button>
         <input type="file" id="importArmazemInput" accept=".xlsx,.xls" style="display:none">
         <input type="file" id="importArmazemInputPDF" accept=".pdf" style="display:none">
         <input type="file" id="importArmazemInputXmlNFe" accept=".xml" multiple style="display:none">
@@ -3801,6 +3804,7 @@ function renderCargasAtivas(){
             <button class="interacoes-item" data-item-id="excluirSelecoes" style="color:var(--red);" onclick="excluirSelecionadas('cargas')">🗑️ Excluir seleções</button>
           </div>
         </div>
+        <button class="btn ghost sm btn-voltar-tela-cheia" onclick="document.exitFullscreen?.()">← Voltar</button>
       </h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:10px;">Dados da NF (importados) e dados do romaneio (foto/manual) na mesma linha, assim que cada carga é pesada.
         Quando um contrato tem NF de venda <b>e</b> NF de remessa/complemento, só a venda entra no confronto com o romaneio — a remessa vira só comprovante de entrega.
@@ -4014,6 +4018,7 @@ function renderConferenciaMotoristas(){
             <button class="interacoes-item" data-item-id="excluirSelecoes" style="color:var(--red);" onclick="excluirSelecionadas('conferencia')">🗑️ Excluir seleções</button>
           </div>
         </div>
+        <button class="btn ghost sm btn-voltar-tela-cheia" onclick="document.exitFullscreen?.()">← Voltar</button>
       </h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:16px;">
         Lançamentos feitos pelo link do motorista caem aqui primeiro. Confira os dados antes de lançar oficialmente no dashboard.
@@ -4455,6 +4460,7 @@ function renderContratos(){
             <button class="interacoes-item" data-item-id="telaCheia" onclick="document.getElementById('interacoesSaldosPanel').classList.remove('aberto'); telaCheiaTabela('cardSaldosPlanilha');">⛶ Tela cheia</button>
           </div>
         </div>
+        <button class="btn ghost sm btn-voltar-tela-cheia" onclick="document.exitFullscreen?.()">← Voltar</button>
       </h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:10px;">Contratos são criados e editados em "Dados de Colheita e Comercialização" → Contratos. Aqui é só acompanhamento. Use a lupa 🔍 no cabeçalho pra filtrar cada coluna (estilo Excel), marque linhas com o checkbox à esquerda pra colorir ou ocultar em lote.</p>
       ${atrasados.length ? `<p class="small-note" style="color:var(--red,#e05555);margin-bottom:12px;">⚠ ${atrasados.length} contrato(s) com entrega e/ou pagamento atrasado — veja as colunas destacadas abaixo.</p>` : ''}
@@ -7427,6 +7433,23 @@ function applyOcrToForm(p){
     const selProd = document.getElementById('fNovaVendaProdutor');
     if(matchProd && selProd) selProd.value = matchProd.id;
   }
+  // Confronta com a NF já importada por XML — corrige produtor/motorista/placa incompletos ou
+  // com leitura errada, usando o dado estruturado da nota em vez de confiar só no que a foto mostrou.
+  const confirmadoEntrega = p.nrNF ? buscarDadosConfirmadosPorNF(p.nrNF) : null;
+  if(confirmadoEntrega){
+    if(confirmadoEntrega.produtorId){
+      const selProd = document.getElementById('fNovaVendaProdutor');
+      if(selProd) selProd.value = confirmadoEntrega.produtorId;
+    }
+    if(confirmadoEntrega.motorista && !p.motorista){
+      const matchMot = state.motoristas.find(m=>stripAccents(m.nome)===stripAccents(confirmadoEntrega.motorista));
+      const sel = document.getElementById('fCargaMotoristaSelect');
+      if(matchMot && sel) sel.value = matchMot.id;
+      setVal('fEntregaMotorista', confirmadoEntrega.motorista);
+      setVal('fEntregaPlaca', confirmadoEntrega.placa);
+    }
+    toast(`Dados confirmados automaticamente pela NF ${p.nrNF} (${confirmadoEntrega.fonte}).`);
+  }
   setVal('fEntregaMotorista', p.motorista);
   setVal('fEntregaPlaca', p.placa);
   setVal('fEntregaRomaneio', p.nrRomaneio);
@@ -7993,6 +8016,25 @@ async function handleRomaneioFileBalanca(file){
     statusWrap.innerHTML = `<div class="ocr-status" style="color:var(--red)">⚠ ${parsedResult.reason?.message||'Falha ao consultar a IA'}. A foto foi mantida — preencha os campos manualmente e salve normalmente.</div>` + statusWrap.innerHTML;
   }
 }
+// Busca dados já confirmados de uma NF que já tenha sido importada por XML antes (produtor, fazenda,
+// motorista, placa) — usado pra corrigir automaticamente qualquer nome incompleto/errado que a IA
+// leu de uma foto de romaneio borrada ou cortada. O XML é sempre mais confiável que uma leitura
+// visual, porque é dado estruturado direto da nota, sem depender de OCR. Só considera registros que
+// vieram mesmo de XML (têm chaveNFe) — nunca usa outro palpite de OCR como se fosse "confirmado".
+function buscarDadosConfirmadosPorNF(nrNF){
+  if(!nrNF) return null;
+  const venda = state.vendas.find(v=>String(v.nrNF)===String(nrNF) && v.chaveNFe);
+  const entrega = venda ? state.entregas.find(e=>e.vendaId===venda.id) : null;
+  const romArm = state.romaneiosArmazem.find(r=>String(r.nrNF)===String(nrNF) && r.chaveNFe);
+  if(!venda && !romArm) return null;
+  return {
+    produtorId: venda?.produtorId || romArm?.produtorId || null,
+    fazendaId: romArm?.fazendaId || null,
+    motorista: entrega?.motorista || romArm?.motorista || '',
+    placa: entrega?.placa || romArm?.placa || '',
+    fonte: venda ? 'NF de venda já importada por XML' : 'romaneio de armazém já importado por XML',
+  };
+}
 function aplicarOcrFormBalanca(p){
   const matchFazenda = p.empresaNome ? state.fazendas.find(f=>stripAccents(f.nome)===stripAccents(p.empresaNome) || stripAccents(p.empresaNome).includes(stripAccents(f.nome))) : null;
   if(matchFazenda) setVal('fRomArmazemFazenda', matchFazenda.id);
@@ -8002,6 +8044,18 @@ function aplicarOcrFormBalanca(p){
   setVal('fRomArmazemPlaca', p.placa);
   setVal('fRomArmazemNr', p.nrRomaneio);
   setVal('fRomArmazemNF', p.nrNF);
+
+  // Confronta com a NF já importada por XML (se houver) e corrige o que a leitura da foto deixou
+  // incompleto ou pegou errado.
+  const confirmado = p.nrNF ? buscarDadosConfirmadosPorNF(p.nrNF) : null;
+  if(confirmado){
+    if(confirmado.produtorId) setVal('fRomArmazemProdutor', confirmado.produtorId);
+    if(confirmado.fazendaId) setVal('fRomArmazemFazenda', confirmado.fazendaId);
+    if(confirmado.motorista && !p.motorista) setVal('fRomArmazemMotorista', confirmado.motorista);
+    if(confirmado.placa && !p.placa) setVal('fRomArmazemPlaca', confirmado.placa);
+    toast(`Dados confirmados automaticamente pela NF ${p.nrNF} (${confirmado.fonte}).`);
+  }
+
   if(p.dataEmissaoNF) setVal('fRomArmazemDataEmissao', p.dataEmissaoNF);
   // O romaneio de quem despachou o caminhão às vezes só imprime "data de saída" (saída DE LÁ), sem
   // imprimir uma "data de entrada" separada — mas pra nós, que estamos recebendo o grão, esse mesmo
