@@ -2374,20 +2374,29 @@ function renderEstoque(){
     </div>
     <div class="card" style="margin-bottom:24px;">
       <h2>Romaneios de Armazém <small>${state.romaneiosArmazem.length} romaneio(s)${nAguardando>0?' — '+nAguardando+' aguardando aprovação':''}</small>
-        <span class="choice-wrap">
-          <button class="btn ghost sm" onclick="toggleChoicePopover('popoverImportarArmazem')">📥 Importar</button>
-          <span class="choice-popover" id="popoverImportarArmazem">
-            <button onclick="fecharChoicePopovers(); document.getElementById('importArmazemInputXmlNFe').click();">🧾 XML da NF-e (oficial)</button>
-            <button onclick="fecharChoicePopovers(); document.getElementById('importArmazemInput').click();">📊 Planilha Excel (.xlsx)</button>
-            <button onclick="fecharChoicePopovers(); document.getElementById('importArmazemInputPDF').click();">📄 Relatório em PDF</button>
-            <button onclick="fecharChoicePopovers(); abrirStatusPastaMonitorada('armazem');">📁 Pasta monitorada</button>
-          </span>
-        </span>
-        <button class="btn ghost sm" onclick="exportarEstoqueXlsx()">📤 Exportar planilha</button>
-        <button class="btn ghost sm" onclick="exportarRelatorioEstoquePDF()">🖨️ Gerar relatório</button>
+        <div class="interacoes-fixed" id="cardInteracoesEstoque" style="display:inline-block;">
+          <button class="interacoes-trigger" id="btnInteracoesEstoqueToggle">☰ Interações</button>
+          <div class="interacoes-panel" id="interacoesEstoquePanel">
+            <span class="choice-wrap" style="width:100%;">
+              <button class="interacoes-item" onclick="toggleChoicePopover('popoverImportarArmazem')">📥 Importar</button>
+              <span class="choice-popover" id="popoverImportarArmazem">
+                <button onclick="fecharChoicePopovers(); document.getElementById('importArmazemInputXmlNFe').click();">🧾 XML da NF-e (oficial)</button>
+                <button onclick="fecharChoicePopovers(); document.getElementById('importArmazemInput').click();">📊 Planilha Excel (.xlsx)</button>
+                <button onclick="fecharChoicePopovers(); document.getElementById('importArmazemInputPDF').click();">📄 Relatório em PDF</button>
+                <button onclick="fecharChoicePopovers(); abrirStatusPastaMonitorada('armazem');">📁 Pasta monitorada</button>
+              </span>
+            </span>
+            <button class="interacoes-item" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); exportarEstoqueXlsx();">📤 Exportar planilha</button>
+            <button class="interacoes-item" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); exportarRelatorioEstoquePDF();">🖨️ Gerar relatório</button>
+            <button class="interacoes-item" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); abrirCulturasArmazemAtivas();">🌱 Culturas/safras aceitas</button>
+            <button class="interacoes-item" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); abrirTerceiros();">🤝 Terceiros</button>
+            <button class="interacoes-item" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); abrirGerenciarColunas('table-romaneiosArmazem');">⚙ Colunas</button>
+            <div class="interacoes-divider"></div>
+            <button class="interacoes-item" style="color:var(--red);" onclick="excluirSelecionadas('romaneiosArmazem')">🗑️ Excluir seleções</button>
+          </div>
+        </div>
         <button class="btn sm" onclick="openCadastroModal('romaneioArmazem')">➕ Nova entrada</button>
-        <button class="btn ghost sm" onclick="abrirCulturasArmazemAtivas()">🌱 Culturas/safras aceitas</button>
-        <button class="btn ghost sm" onclick="abrirTerceiros()">🤝 Terceiros</button>
+        <button class="btn ghost sm" id="btnVerSacas-romaneiosArmazem" onclick="toggleVerEmSacas('romaneiosArmazem')">⇄ Ver em sacas</button>
         <input type="file" id="importArmazemInput" accept=".xlsx,.xls" style="display:none">
         <input type="file" id="importArmazemInputPDF" accept=".pdf" style="display:none">
         <input type="file" id="importArmazemInputXmlNFe" accept=".xml" multiple style="display:none">
@@ -2398,8 +2407,8 @@ function renderEstoque(){
       ${barraSelecaoHTML('romaneiosArmazem')}
       <div class="table-wrap" id="wrap-romaneiosArmazem"><table id="table-romaneiosArmazem">
         <thead>${filterHeaderCells('romaneiosArmazem',[
-          {key:'armazem',label:'Armazém'},{key:'produtor',label:'Produtor'},{key:'cultura',label:'Cultura'},{key:'safra',label:'Safra'},{key:null,label:'Colheita'},
-          {key:'motorista',label:'Motorista'},{key:'placa',label:'Placa'},{key:'romaneio',label:'Nº Romaneio'},{key:'nf',label:'Nº NF'},{key:'data',label:'Data'},{key:'dataEmissao',label:'Data Emissão NF'},
+          {key:'armazem',label:'Armazém'},{key:'data',label:'Data'},{key:'produtor',label:'Produtor'},{key:'cultura',label:'Cultura'},{key:'safra',label:'Safra'},{key:null,label:'Colheita'},
+          {key:'motorista',label:'Motorista'},{key:'placa',label:'Placa'},{key:'nf',label:'Nº NF'},{key:'romaneio',label:'Nº Romaneio'},{key:'dataRomaneio',label:'Data Romaneio'},{key:'dataEmissao',label:'Data Emissão NF'},
           {key:'pesoBruto',label:'Peso Bruto (Kg)'},{key:'tara',label:'Tara (kg)'},{key:'umidade',label:'Umidade (kg)'},{key:'impureza',label:'Impureza (kg)'},
           {key:'ardido',label:'Ardido/Avariado (kg)'},{key:'pesoLiquido',label:'Peso Líquido (Kg)'},{key:'sacas',label:'Sacas Líq.'},
           {key:'comprovante',label:'Comprovante'},{key:'status',label:'Status'},{key:null,label:''}], true)}</thead>
@@ -2456,6 +2465,17 @@ function renderEstoque(){
   document.getElementById('importArmazemInput').addEventListener('change', (e)=>{ if(e.target.files[0]) abrirImportacaoArmazemXlsxComColheita(e.target.files[0]); e.target.value=''; });
   document.getElementById('importArmazemInputPDF').addEventListener('change', (e)=>{ if(e.target.files[0]) abrirImportacaoArmazemPdfComColheita(e.target.files[0]); e.target.value=''; });
   document.getElementById('importArmazemInputXmlNFe').addEventListener('change', (e)=>{ if(e.target.files.length) abrirImportacaoXmlComColheita([...e.target.files], 'armazem'); e.target.value=''; });
+  (function(){
+    const btn = document.getElementById('btnInteracoesEstoqueToggle');
+    const panel = document.getElementById('interacoesEstoquePanel');
+    if(btn && panel && !btn.dataset.bound){
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', (e)=>{ e.stopPropagation(); panel.classList.toggle('aberto'); });
+      document.addEventListener('click', (e)=>{
+        if(panel.classList.contains('aberto') && !panel.contains(e.target) && e.target!==btn) panel.classList.remove('aberto');
+      });
+    }
+  })();
   montarScrollDuploTabelas();
 }
 function updateTbodyRomaneiosArmazem(){
@@ -2464,7 +2484,7 @@ function updateTbodyRomaneiosArmazem(){
   const rows = lista.map(r=>{
     const extract = {
       armazem: state.fazendas.find(f=>f.id===r.fazendaId)?.nome||'', produtor: r.terceiroId ? `🤝 ${terceiroNome(r.terceiroId)}` : produtorNome(r.produtorId), cultura: culturaNome(r.culturaId),
-      safra: r.safra||'', motorista: r.motorista||'', placa: r.placa||'', romaneio: r.nrRomaneio||'', nf: r.nrNF||'', data: dataBR(r.dataEntrada), dataEmissao: r.dataEmissaoNF ? dataBR(r.dataEmissaoNF) : '',
+      safra: r.safra||'', motorista: r.motorista||'', placa: r.placa||'', romaneio: r.nrRomaneio||'', nf: r.nrNF||'', data: dataBR(r.dataEntrada), dataRomaneio: dataBR(r.dataEntrada), dataEmissao: r.dataEmissaoNF ? dataBR(r.dataEmissaoNF) : '',
       pesoBruto: fmt(r.pesoBruto,0), tara: fmt(r.tara,0), umidade: fmt(r.umidade,0), impureza: fmt(r.impureza,0), ardido: fmt(r.ardido,0),
       pesoLiquido: fmt(r.pesoLiquido,0), sacas: fmt(r.scsLiquido,1), comprovante: r.numeroComprovante||'', status: r.status||'aprovado'
     };
@@ -2475,10 +2495,10 @@ function updateTbodyRomaneiosArmazem(){
       : `<button class="btn ghost sm" onclick="openCadastroModal('selecionarColheitaArmazem','${r.id}')">Vincular colheita</button>`;
     const html = `<tr data-id="${r.id}" class="${classeCorLinha(r)}">
       <td class="tbl-chk-cell"><input type="checkbox" class="chk-linha" data-id="${r.id}" ${selecaoTabela.romaneiosArmazem.has(r.id)?'checked':''} onchange="toggleSelecaoLinha('romaneiosArmazem','${r.id}',this.checked)"></td>
-      <td>${r.marcado?'🔖 ':''}${extract.armazem||'—'}</td><td>${extract.produtor} ${finalidadeTag}</td><td>${extract.cultura}</td><td>${extract.safra||'—'}</td><td>${colheitaCellArmazem}</td>
-      <td>${extract.motorista||'—'}</td><td>${extract.placa||'—'}</td><td>${extract.romaneio||'—'}</td><td>${extract.nf||'—'}</td><td>${extract.data}</td><td>${extract.dataEmissao||'—'}</td>
-      <td>${extract.pesoBruto} kg</td><td>${extract.tara} kg</td><td>${extract.umidade} kg</td><td>${extract.impureza} kg</td>
-      <td>${extract.ardido} kg</td><td><b>${extract.pesoLiquido} kg</b></td><td>${extract.sacas}</td>
+      <td>${r.marcado?'🔖 ':''}${extract.armazem||'—'}</td><td>${extract.data}</td><td>${extract.produtor} ${finalidadeTag}</td><td>${extract.cultura}</td><td>${extract.safra||'—'}</td><td>${colheitaCellArmazem}</td>
+      <td>${extract.motorista||'—'}</td><td>${extract.placa||'—'}</td><td>${extract.nf||'—'}</td><td>${extract.romaneio||'—'}</td><td>${extract.dataRomaneio}</td><td>${extract.dataEmissao||'—'}</td>
+      <td>${fmtPesoTabela('romaneiosArmazem',r.pesoBruto)}</td><td>${fmtPesoTabela('romaneiosArmazem',r.tara)}</td><td>${fmtPesoTabela('romaneiosArmazem',r.umidade)}</td><td>${fmtPesoTabela('romaneiosArmazem',r.impureza)}</td>
+      <td>${fmtPesoTabela('romaneiosArmazem',r.ardido)}</td><td><b>${fmtPesoTabela('romaneiosArmazem',r.pesoLiquido)}</b></td><td>${extract.sacas}</td>
       <td>${extract.comprovante} ${r.tipoOperacao==='saida' ? '<span class="tag" style="color:var(--red);border-color:var(--red-dim);">⬆️ saída</span>' : ''}</td><td>${statusRomaneioArmazemTag(r.status)}</td>
       <td><div class="actions-row">
         ${r.status==='aguardando_aprovacao' ? `<button class="btn ghost sm" onclick="aprovarRomaneioArmazem('${r.id}')">✓ Aprovar</button>` : `<button class="btn ghost sm" style="visibility:hidden;" tabindex="-1" aria-hidden="true">✓ Aprovar</button>`}
@@ -2490,7 +2510,7 @@ function updateTbodyRomaneiosArmazem(){
     </tr>`;
     return {extract, html};
   }).filter(r=>rowMatches(r.extract, filters));
-  document.getElementById('tbody-romaneiosArmazem').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(22,'Nenhum romaneio de armazém registrado ainda.');
+  document.getElementById('tbody-romaneiosArmazem').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(23,'Nenhum romaneio de armazém registrado ainda.');
   montarScrollDuploTabelas();
   atualizarBarraSelecao('romaneiosArmazem');
 }
@@ -2689,7 +2709,61 @@ function compartilharAcessoUsuario(usuarioId){
 // Espelha a barra de rolagem horizontal no topo da tabela também — em planilhas com muitas
 // linhas, sem isso só dava pra rolar pro lado descendo até o fim. Um div fino e translúcido
 // (.table-scroll-top) fica sincronizado com o scroll real do .table-wrap logo abaixo.
+const unidadePesoTabela = { romaneiosArmazem: 'kg', cargas: 'kg', conferencia: 'kg' };
+function toggleVerEmSacas(tabela){
+  unidadePesoTabela[tabela] = unidadePesoTabela[tabela]==='kg' ? 'sacas' : 'kg';
+  const btn = document.getElementById('btnVerSacas-'+tabela);
+  if(btn) btn.innerHTML = unidadePesoTabela[tabela]==='sacas' ? '⇄ Ver em kg' : '⇄ Ver em sacas';
+  if(tabela==='romaneiosArmazem') updateTbodyRomaneiosArmazem();
+  else if(tabela==='cargas') updateTbodyCargas();
+  else if(tabela==='conferencia') updateTbodyConferencia();
+}
+function fmtPesoTabela(tabela, kg){
+  return unidadePesoTabela[tabela]==='sacas' ? fmt(num(kg)/60,1)+' sc' : fmt(kg,0)+' kg';
+}
+function colunasOcultasChave(tableId){ return 'brc_colunas_ocultas_'+tableId; }
+function aplicarColunasOcultas(tableId){
+  const ocultas = JSON.parse(localStorage.getItem(colunasOcultasChave(tableId))||'[]');
+  let styleEl = document.getElementById('style-cols-'+tableId);
+  if(!styleEl){ styleEl = document.createElement('style'); styleEl.id = 'style-cols-'+tableId; document.head.appendChild(styleEl); }
+  styleEl.textContent = ocultas.map(i=>`#${tableId} > thead > tr > *:nth-child(${i+1}), #${tableId} > tbody > tr > *:nth-child(${i+1}){display:none;}`).join('\n');
+}
+function abrirGerenciarColunas(tableId){
+  const ths = [...document.querySelectorAll(`#${tableId} > thead > tr:first-child > th`)];
+  const colunas = ths.map(th=>(th.querySelector('span')?.textContent || th.textContent || '').trim());
+  const ocultas = new Set(JSON.parse(localStorage.getItem(colunasOcultasChave(tableId))||'[]'));
+  const overlay = document.createElement('div');
+  overlay.id = 'colunasOverlay';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:360px;">
+      <div class="modal-head"><h3>⚙ Colunas visíveis</h3><button class="modal-close" onclick="document.getElementById('colunasOverlay').remove()">✕</button></div>
+      <p class="small-note" style="margin-top:-4px;">Desmarque para ocultar — fica salvo só neste aparelho.</p>
+      <div style="max-height:50vh;overflow-y:auto;">
+        ${colunas.map((label,i)=>label ? `
+          <label style="display:flex;align-items:center;gap:8px;font-weight:400;padding:5px 0;cursor:pointer;">
+            <input type="checkbox" style="width:auto;" ${ocultas.has(i)?'':'checked'} onchange="toggleColunaOculta('${tableId}',${i},!this.checked)">
+            ${label}
+          </label>` : '').join('')}
+      </div>
+      <div class="actions-row" style="justify-content:flex-end;margin-top:14px;">
+        <button class="btn ghost sm" onclick="localStorage.removeItem(colunasOcultasChave('${tableId}')); aplicarColunasOcultas('${tableId}'); document.getElementById('colunasOverlay').remove();">Mostrar todas</button>
+        <button class="btn" onclick="document.getElementById('colunasOverlay').remove()">Fechar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+function toggleColunaOculta(tableId, idx, ocultar){
+  const chave = colunasOcultasChave(tableId);
+  const ocultas = new Set(JSON.parse(localStorage.getItem(chave)||'[]'));
+  if(ocultar) ocultas.add(idx); else ocultas.delete(idx);
+  localStorage.setItem(chave, JSON.stringify([...ocultas]));
+  aplicarColunasOcultas(tableId);
+}
 function montarScrollDuploTabelas(){
+  ['table-romaneiosArmazem','table-cargas','table-conferencia'].forEach(id=>{
+    if(document.getElementById(id)) aplicarColunasOcultas(id);
+  });
   document.querySelectorAll('.table-scroll-top[data-sync]').forEach(top=>{
     const wrap = document.getElementById(top.dataset.sync);
     const inner = top.querySelector('.table-scroll-top-inner');
@@ -3479,17 +3553,26 @@ function renderCargasAtivas(){
   el.innerHTML = `
     <div class="card">
       <h2>Cargas &amp; Romaneios <small>${state.entregas.filter(e=>e.status!=='rejeitado').length} carga(s) — ${state.entregas.filter(e=>e.status==='completo').length} com pesagem completa</small>
-        <span class="choice-wrap">
-          <button class="btn ghost sm" onclick="toggleChoicePopover('popoverImportar')">📥 Importar</button>
-          <span class="choice-popover" id="popoverImportar">
-            <button onclick="fecharChoicePopovers(); document.getElementById('importInputXmlNFe').click();">🧾 XML da NF-e (oficial)</button>
-            <button onclick="fecharChoicePopovers(); document.getElementById('importInput').click();">📊 Planilha Excel (.xlsx)</button>
-            <button onclick="fecharChoicePopovers(); document.getElementById('importInputPDF').click();">📄 Relatório em PDF</button>
-            <button onclick="fecharChoicePopovers(); abrirStatusPastaMonitorada('cargas');">📁 Pasta monitorada</button>
-          </span>
-        </span>
-        <button class="btn ghost sm" onclick="openCadastroModal('filtroRelatorioCargas')">📤 Gerar relatório</button>
+        <div class="interacoes-fixed" id="cardInteracoesCargas" style="display:inline-block;">
+          <button class="interacoes-trigger" id="btnInteracoesCargasToggle">☰ Interações</button>
+          <div class="interacoes-panel" id="interacoesCargasPanel">
+            <span class="choice-wrap" style="width:100%;">
+              <button class="interacoes-item" onclick="toggleChoicePopover('popoverImportar')">📥 Importar</button>
+              <span class="choice-popover" id="popoverImportar">
+                <button onclick="fecharChoicePopovers(); document.getElementById('importInputXmlNFe').click();">🧾 XML da NF-e (oficial)</button>
+                <button onclick="fecharChoicePopovers(); document.getElementById('importInput').click();">📊 Planilha Excel (.xlsx)</button>
+                <button onclick="fecharChoicePopovers(); document.getElementById('importInputPDF').click();">📄 Relatório em PDF</button>
+                <button onclick="fecharChoicePopovers(); abrirStatusPastaMonitorada('cargas');">📁 Pasta monitorada</button>
+              </span>
+            </span>
+            <button class="interacoes-item" onclick="document.getElementById('interacoesCargasPanel').classList.remove('aberto'); openCadastroModal('filtroRelatorioCargas');">📤 Gerar relatório</button>
+            <button class="interacoes-item" onclick="document.getElementById('interacoesCargasPanel').classList.remove('aberto'); abrirGerenciarColunas('table-cargas');">⚙ Colunas</button>
+            <div class="interacoes-divider"></div>
+            <button class="interacoes-item" style="color:var(--red);" onclick="excluirSelecionadas('cargas')">🗑️ Excluir seleções</button>
+          </div>
+        </div>
         <button class="btn sm" id="btnNovaCarga">➕ Nova entrega</button>
+        <button class="btn ghost sm" id="btnVerSacas-cargas" onclick="toggleVerEmSacas('cargas')">⇄ Ver em sacas</button>
       </h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:10px;">Dados da NF (importados) e dados do romaneio (foto/manual) na mesma linha, assim que cada carga é pesada.
         Quando um contrato tem NF de venda <b>e</b> NF de remessa/complemento, só a venda entra no confronto com o romaneio — a remessa vira só comprovante de entrega.
@@ -3501,10 +3584,11 @@ function renderCargasAtivas(){
       ${barraSelecaoHTML('cargas')}
       <div class="table-wrap resizable-wrap" id="wrap-cargas"><table id="table-cargas">
         <thead>${filterHeaderCells('cargas',[
-          {key:'empresa',label:'Empresa'},{key:'produtor',label:'Proprietário'},{key:'natureza',label:'Natureza'},
-          {key:'contrato',label:'Contrato nº'},{key:'nfVenda',label:'Nº NF'},{key:'data',label:'Data saída'},{key:'colheita',label:'Colheita'},
-          {key:'pesoFiscal',label:'Peso fiscal'},{key:'valorFiscal',label:'Valor fiscal'},{key:'motorista',label:'Motorista'},{key:'placa',label:'Placa'},
-          {key:'romaneio',label:'Nº Romaneio'},{key:'pesoBruto',label:'Peso Bruto (Kg)'},{key:'umidade',label:'Umidade (kg)'},{key:'impureza',label:'Impureza (kg)'},
+          {key:'empresa',label:'Empresa'},{key:'data',label:'Data saída'},{key:'produtor',label:'Proprietário'},{key:'natureza',label:'Natureza'},
+          {key:'contrato',label:'Contrato nº'},{key:'colheita',label:'Colheita'},{key:'motorista',label:'Motorista'},{key:'placa',label:'Placa'},
+          {key:'nfVenda',label:'Nº NF'},{key:'romaneio',label:'Nº Romaneio'},
+          {key:'pesoFiscal',label:'Peso fiscal'},{key:'valorFiscal',label:'Valor fiscal'},
+          {key:'pesoBruto',label:'Peso Bruto (Kg)'},{key:'umidade',label:'Umidade (kg)'},{key:'impureza',label:'Impureza (kg)'},
           {key:'ardido',label:'Ardido/Avariado (kg)'},{key:'txRecebimento',label:'Tx Depósito (kg)'},
           {key:'pesoLiqCom',label:'Peso Líq. COM desc. Depósito (Kg)'},{key:'pesoLiqSem',label:'Peso Líq. SEM desc. Depósito (Kg)'},
           {key:'scsBruto',label:'Scs Bruto'},{key:'scsLiqCom',label:'Scs Líq. COM desc. Depósito'},{key:'scsLiqSem',label:'Scs Líq. SEM desc. Depósito'},
@@ -3516,6 +3600,17 @@ function renderCargasAtivas(){
   updateTbodyCargas();
   tornarColunasRedimensionaveis('table-cargas');
   document.getElementById('btnNovaCarga').addEventListener('click', ()=>openEntregaModal());
+  (function(){
+    const btn = document.getElementById('btnInteracoesCargasToggle');
+    const panel = document.getElementById('interacoesCargasPanel');
+    if(btn && panel && !btn.dataset.bound){
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', (e)=>{ e.stopPropagation(); panel.classList.toggle('aberto'); });
+      document.addEventListener('click', (e)=>{
+        if(panel.classList.contains('aberto') && !panel.contains(e.target) && e.target!==btn) panel.classList.remove('aberto');
+      });
+    }
+  })();
   montarScrollDuploTabelas();
   atualizarBarraSelecao('cargas');
 }
@@ -3609,19 +3704,18 @@ function updateTbodyCargas(){
     const pesado = e.status!=='pendente';
     const html = `<tr data-id="${e.id}" class="${classeCorLinha(e)}"${ehComprovante?' style="opacity:.6"':''}>
       <td class="tbl-chk-cell"><input type="checkbox" class="chk-linha" data-id="${e.id}" ${selecaoTabela.cargas.has(e.id)?'checked':''} onchange="toggleSelecaoLinha('cargas','${e.id}',this.checked)"></td>
-      <td>${e.marcado?'🔖 ':''}${extract.empresa}</td><td>${produtorCell}</td><td>${naturezaCell}</td>
-      <td class="mono" style="font-size:11.5px">${extract.contrato||'—'}</td><td>${extract.nfVenda||'—'}</td><td>${extract.data}</td>
-      <td>${colheitaCell}</td>
+      <td>${e.marcado?'🔖 ':''}${extract.empresa}</td><td>${extract.data}</td><td>${produtorCell}</td><td>${naturezaCell}</td>
+      <td class="mono" style="font-size:11.5px">${extract.contrato||'—'}</td><td>${colheitaCell}</td><td>${extract.motorista||'—'}</td><td>${extract.placa||'—'}</td>
+      <td>${extract.nfVenda||'—'}</td><td>${extract.romaneio||'—'}</td>
       <td>${extract.pesoFiscal ? extract.pesoFiscal+' kg' : '<span class="small-note">a informar</span>'}</td>
-      <td>${extract.valorFiscal||'—'}</td><td>${extract.motorista||'—'}</td><td>${extract.placa||'—'}</td>
-      <td>${extract.romaneio||'—'}</td>
-      <td>${pesado ? extract.pesoBruto+' kg' : '—'}</td>
-      <td>${pesado ? extract.umidade+' kg' : '—'}</td>
-      <td>${pesado ? extract.impureza+' kg' : '—'}</td>
-      <td>${pesado ? extract.ardido+' kg' : '—'}</td>
-      <td>${pesado ? extract.txRecebimento+' kg' : '—'}</td>
-      <td>${pesado ? extract.pesoLiqCom+' kg' : '—'}</td>
-      <td>${pesado ? extract.pesoLiqSem+' kg' : '—'}</td>
+      <td>${extract.valorFiscal||'—'}</td>
+      <td>${pesado ? fmtPesoTabela('cargas',e.pesoBruto) : '—'}</td>
+      <td>${pesado ? fmtPesoTabela('cargas',e.umidade) : '—'}</td>
+      <td>${pesado ? fmtPesoTabela('cargas',e.impureza) : '—'}</td>
+      <td>${pesado ? fmtPesoTabela('cargas',e.ardido) : '—'}</td>
+      <td>${pesado ? fmtPesoTabela('cargas',e.txRecebimento) : '—'}</td>
+      <td>${pesado ? fmtPesoTabela('cargas',e.pesoLiquidoComDesc) : '—'}</td>
+      <td>${pesado ? fmtPesoTabela('cargas',e.pesoLiquidoSemDesc) : '—'}</td>
       <td>${pesado ? extract.scsBruto : '—'}</td>
       <td>${pesado ? extract.scsLiqCom : '—'}</td>
       <td>${pesado ? extract.scsLiqSem : '—'}</td>
@@ -3677,7 +3771,18 @@ function renderConferenciaMotoristas(){
   const el = document.getElementById('conferenciaConteudo');
   el.innerHTML = `
     <div class="card">
-      <h2>Enviados por motoristas <small>${state.entregas.filter(e=>e.status==='aguardando_conferencia').length} aguardando conferência</small></h2>
+      <h2>Enviados por motoristas <small>${state.entregas.filter(e=>e.status==='aguardando_conferencia').length} aguardando conferência</small>
+        <div class="interacoes-fixed" id="cardInteracoesConferencia" style="display:inline-block;">
+          <button class="interacoes-trigger" id="btnInteracoesConferenciaToggle">☰ Interações</button>
+          <div class="interacoes-panel" id="interacoesConferenciaPanel">
+            <button class="interacoes-item" onclick="document.getElementById('interacoesConferenciaPanel').classList.remove('aberto'); forcarSincronizacao();">🔄 Forçar sincronização</button>
+            <button class="interacoes-item" onclick="document.getElementById('interacoesConferenciaPanel').classList.remove('aberto'); abrirGerenciarColunas('table-conferencia');">⚙ Colunas</button>
+            <div class="interacoes-divider"></div>
+            <button class="interacoes-item" style="color:var(--red);" onclick="excluirSelecionadas('conferencia')">🗑️ Excluir seleções</button>
+          </div>
+        </div>
+        <button class="btn ghost sm" id="btnVerSacas-conferencia" onclick="toggleVerEmSacas('conferencia')">⇄ Ver em sacas</button>
+      </h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:16px;">
         Lançamentos feitos pelo link do motorista caem aqui primeiro. Confira os dados antes de lançar oficialmente no dashboard.
       </p>
@@ -3685,8 +3790,8 @@ function renderConferenciaMotoristas(){
       ${barraSelecaoHTML('conferencia')}
       <div class="table-wrap resizable-wrap" id="wrap-conferencia"><table id="table-conferencia">
         <thead>${filterHeaderCells('conferencia',[
-          {key:'recebido',label:'Recebido em'},{key:'empresa',label:'Empresa venda'},{key:'produtor',label:'Produtor'},
-          {key:'nfRemessa',label:'Nº NF'},{key:'motorista',label:'Motorista'},{key:'romaneio',label:'Nº Romaneio'},{key:'data',label:'Data saída'},
+          {key:'empresa',label:'Empresa venda'},{key:'data',label:'Data saída'},{key:'produtor',label:'Produtor'},{key:'recebido',label:'Recebido em'},
+          {key:'motorista',label:'Motorista'},{key:'nfRemessa',label:'Nº NF'},{key:'romaneio',label:'Nº Romaneio'},
           {key:'pesoBruto',label:'Peso Bruto (Kg)'},{key:'umidade',label:'Umidade (kg)'},{key:'impureza',label:'Impureza'},{key:'ardido',label:'Ardido/Avariado'},
           {key:'txRecebimento',label:'Tx Recebimento (kg)'},
           {key:'pesoLiqCom',label:'Peso Líquido com desc. de Taxa de Depósito(Kg)'},{key:'pesoLiqSem',label:'Peso Líquido sem taxa de desconto de Depósito (Kg)'},
@@ -3699,6 +3804,17 @@ function renderConferenciaMotoristas(){
   updateTbodyConferencia();
   tornarColunasRedimensionaveis('table-conferencia');
   montarScrollDuploTabelas();
+  (function(){
+    const btn = document.getElementById('btnInteracoesConferenciaToggle');
+    const panel = document.getElementById('interacoesConferenciaPanel');
+    if(btn && panel && !btn.dataset.bound){
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', (e)=>{ e.stopPropagation(); panel.classList.toggle('aberto'); });
+      document.addEventListener('click', (e)=>{
+        if(panel.classList.contains('aberto') && !panel.contains(e.target) && e.target!==btn) panel.classList.remove('aberto');
+      });
+    }
+  })();
 }
 function updateTbodyConferencia(){
   const filters = getFilterValues('conferencia');
@@ -3723,11 +3839,11 @@ function updateTbodyConferencia(){
     const estiloLinha = acimaDoLimite ? ' style="background:var(--red-dim);"' : '';
     const html = `<tr data-id="${e.id}" class="${classeCorLinha(e)}"${estiloLinha}>
       <td class="tbl-chk-cell"><input type="checkbox" class="chk-linha" data-id="${e.id}" ${selecaoTabela.conferencia.has(e.id)?'checked':''} onchange="toggleSelecaoLinha('conferencia','${e.id}',this.checked)"></td>
-      <td>${e.marcado?'🔖 ':''}${extract.recebido}</td><td>${extract.empresa}</td><td>${extract.produtor}</td>
-      <td>${extract.nfRemessa||'—'}</td><td>${e.motorista||'—'}${e.placa?` (${e.placa})`:''}</td>
-      <td>${extract.romaneio||'—'}${acimaDoLimite?' <span class="tag neg" title="Desconto acima do limite">⚠️</span>':''}</td><td>${extract.data}</td>
-      <td>${extract.pesoBruto} kg</td><td>${extract.umidade} kg</td><td>${extract.impureza} kg</td><td>${extract.ardido} kg</td>
-      <td>${extract.txRecebimento} kg</td><td>${extract.pesoLiqCom} kg</td><td>${extract.pesoLiqSem} kg</td>
+      <td>${e.marcado?'🔖 ':''}${extract.empresa}</td><td>${extract.data}</td><td>${extract.produtor}</td><td>${extract.recebido}</td>
+      <td>${e.motorista||'—'}${e.placa?` (${e.placa})`:''}</td><td>${extract.nfRemessa||'—'}</td>
+      <td>${extract.romaneio||'—'}${acimaDoLimite?' <span class="tag neg" title="Desconto acima do limite">⚠️</span>':''}</td>
+      <td>${fmtPesoTabela('conferencia',e.pesoBruto)}</td><td>${fmtPesoTabela('conferencia',e.umidade)}</td><td>${fmtPesoTabela('conferencia',e.impureza)}</td><td>${fmtPesoTabela('conferencia',e.ardido)}</td>
+      <td>${fmtPesoTabela('conferencia',e.txRecebimento)}</td><td>${fmtPesoTabela('conferencia',e.pesoLiquidoComDesc)}</td><td>${fmtPesoTabela('conferencia',e.pesoLiquidoSemDesc)}</td>
       <td>${extract.scsBruto}</td><td>${extract.scsLiqCom}</td><td>${extract.scsLiqSem}</td>
       <td><div class="actions-row" style="flex-wrap:nowrap;">
         <button class="btn ghost sm" onclick="openEntregaModal('${e.id}')">Revisar</button>
