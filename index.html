@@ -7,6 +7,7 @@
 <link rel="manifest" href="./manifest.json">
 <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/dist/tabler-icons.min.css">
 <meta name="theme-color" content="#2F8F44">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -438,6 +439,66 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
   .tabs{ padding:2px 3px 0 3px; gap:2px; }
   .tab-btn{ padding:8px 9px; font-size:12px; }
 }
+/* ---------------- MONITOR DE CAPACIDADE OPERACIONAL v2 (design novo) ----------------
+   Escopado em .monv2 pra não vazar pro resto do app — mesma lógica de sempre por trás,
+   só a apresentação visual muda (modelo pedido pelo usuário). */
+.monv2 {
+  --mv2-bg: #030810; --mv2-card: #071120; --mv2-border: rgba(34,211,238,0.16);
+  --mv2-cyan: #22d3ee; --mv2-blue: #3b82f6; --mv2-green: #4ade80; --mv2-amber: #fbbf24;
+  --mv2-text: #eaf6ff; --mv2-dim: #7c8ba3;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  color: var(--mv2-text);
+  background: radial-gradient(circle at 50% 20%, #071726 0%, var(--mv2-bg) 60%);
+  padding: 22px; border-radius: 16px; margin-bottom: 18px;
+}
+.monv2 * { box-sizing: border-box; }
+.monv2-layout { display:grid; grid-template-columns: 240px 1fr 240px; gap:16px; align-items:stretch; }
+@media (max-width:980px){ .monv2-layout{ grid-template-columns:1fr; } }
+.monv2-col { display:flex; flex-direction:column; gap:12px; }
+.monv2-card { background:var(--mv2-card); border:1px solid var(--mv2-border); border-radius:14px; padding:14px 16px; position:relative; }
+.monv2-mini { display:flex; align-items:center; gap:12px; }
+.monv2-iconbox { width:40px; height:40px; min-width:40px; border:1px solid rgba(34,211,238,.35); border-radius:10px; display:flex; align-items:center; justify-content:center; background:rgba(34,211,238,.06); box-shadow:0 0 12px rgba(34,211,238,.15) inset; }
+.monv2-iconbox i { font-size:19px; color:var(--mv2-cyan); }
+.monv2-iconbox.green { border-color:rgba(74,222,128,.35); background:rgba(74,222,128,.06); }
+.monv2-iconbox.green i { color:var(--mv2-green); }
+.monv2-iconbox.red { border-color:rgba(220,70,70,.4); background:rgba(220,70,70,.08); }
+.monv2-iconbox.red i { color:#ff6b6b; }
+.monv2-label { font-size:10px; letter-spacing:1px; color:var(--mv2-dim); text-transform:uppercase; font-weight:600; }
+.monv2-value { font-size:19px; font-weight:700; margin-top:2px; color:#fff; }
+.monv2-sub { font-size:11px; color:var(--mv2-dim); margin-top:1px; }
+.monv2-badge { display:inline-block; font-size:9px; font-weight:700; letter-spacing:.5px; padding:3px 7px; border-radius:5px; background:rgba(74,222,128,.12); color:var(--mv2-green); border:1px solid rgba(74,222,128,.3); margin-top:5px; }
+.monv2-gauge-card { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:16px 6px 4px; min-height:100%; }
+.monv2-gauge-wrap { position:relative; width:100%; }
+.monv2-gauge-wrap svg { width:100%; overflow:visible; display:block; }
+.monv2-gauge-center { position:absolute; top:54%; left:50%; transform:translate(-50%,-50%); text-align:center; width:80%; }
+.monv2-gauge-icon { font-size:22px; color:var(--mv2-cyan); text-shadow:0 0 14px rgba(34,211,238,.6); }
+.monv2-gauge-title { font-size:10.5px; letter-spacing:1.5px; color:var(--mv2-dim); font-weight:700; text-transform:uppercase; margin-top:5px; }
+.monv2-gauge-big { font-size:46px; font-weight:800; line-height:1; margin-top:3px; letter-spacing:-1.5px; color:#fff; text-shadow:0 0 20px rgba(34,211,238,.35); }
+.monv2-gauge-big span { font-size:22px; font-weight:700; color:var(--mv2-dim); }
+.monv2-gauge-divider { width:60%; height:1px; background:linear-gradient(90deg,transparent,var(--mv2-border),transparent); margin:8px auto; }
+.monv2-gauge-ton { font-size:19px; font-weight:700; color:var(--mv2-cyan); }
+.monv2-gauge-ton-label { font-size:10px; letter-spacing:1.2px; color:var(--mv2-dim); text-transform:uppercase; margin-top:2px; }
+.monv2-tick { fill:var(--mv2-cyan); font-size:13px; font-weight:700; }
+.monv2-alerts-title { font-size:11px; letter-spacing:1.2px; color:var(--mv2-dim); text-transform:uppercase; font-weight:700; margin-bottom:8px; }
+.monv2-alert-item { display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid rgba(255,255,255,.04); font-size:12.5px; }
+.monv2-alert-item:last-of-type{ border-bottom:none; }
+.monv2-alert-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.monv2-alert-dot.amber{ background:var(--mv2-amber); box-shadow:0 0 7px var(--mv2-amber); }
+.monv2-alert-dot.red{ background:#ff6b6b; box-shadow:0 0 7px #ff6b6b; }
+.monv2-alert-loc{ margin-left:auto; color:var(--mv2-dim); font-size:11px; }
+.monv2-progress-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+.monv2-progress-title{ font-size:11px; letter-spacing:1.2px; color:var(--mv2-dim); text-transform:uppercase; font-weight:700; }
+.monv2-progress-badge{ background:rgba(34,211,238,.1); border:1px solid rgba(34,211,238,.3); color:var(--mv2-cyan); font-weight:700; font-size:12px; padding:3px 11px; border-radius:20px; }
+.monv2-seg-track{ display:flex; gap:3px; height:18px; }
+.monv2-seg{ flex:1; border-radius:3px; background:#101b2c; }
+.monv2-panel-card{ background:rgba(7,17,32,.6); border:1px solid var(--mv2-border); border-radius:14px; padding:12px 14px; color:var(--mv2-text); }
+.monv2-panel-card .small-note{ color:var(--mv2-dim); }
+.monv2-panel-card input, .monv2-panel-card select{ background:rgba(255,255,255,.05); border:1px solid var(--mv2-border); color:var(--mv2-text); }
+.monv2-btn{ background:rgba(34,211,238,.08); border:1px solid rgba(34,211,238,.3); color:var(--mv2-cyan); border-radius:8px; padding:6px 12px; font-size:12px; font-weight:600; cursor:pointer; }
+.monv2-btn:hover{ background:rgba(34,211,238,.16); }
+.monv2-btn.red{ background:rgba(220,70,70,.1); border-color:rgba(220,70,70,.4); color:#ff6b6b; }
+.monv2-btn.red:hover{ background:rgba(220,70,70,.2); }
+.monv2-btn.solid{ background:var(--mv2-cyan); color:#04141c; border-color:var(--mv2-cyan); }
 </style>
 </head>
 <body>
@@ -2068,7 +2129,119 @@ function barraProgressoCapacidade(pct, rotulo){
     <div class="small-note" style="text-align:right;margin-top:2px;">${fmt(pct,0)}%</div>
   </div>`;
 }
+/* ---------------- GAUGE DE AGULHA v2 (modelo do anexo) ----------------
+   Mesma matemática do modelo enviado (arco de 270°, agulha giratória, brilho na régua) — só que
+   já calculado no valor final (sem a animação de simulação, que era só demonstrativa no anexo;
+   aqui é sempre o valor real e atual do sistema). Cada instância tem ids com sufixo próprio,
+   porque cada fazenda mostra dois gauges (armazém + secador) na mesma tela. */
+function gaugeAgulhaSVG(pctBruto, idSufixo, opts){
+  opts = opts || {};
+  const pct = Math.max(0, Math.min(100, pctBruto||0));
+  const escala = opts.escala || 1;
+  const iconClass = opts.iconClass || 'ti ti-building-warehouse';
+  const rotulo = opts.rotulo || 'CAPACIDADE';
+  const valorCentroSub = opts.valorCentroSub || '';
+  const subLabel = opts.subLabel || 'DEPOSITADAS';
+  const sufixo = 'g'+(idSufixo||Math.random().toString(36).slice(2));
+
+  const START = 135, SWEEP = 270;
+  const cx = 210, cy = 210, rMain = 165, rMinor = 190;
+  function polar(cx,cy,r,deg){ const rad = deg*Math.PI/180; return {x: cx+r*Math.cos(rad), y: cy+r*Math.sin(rad)}; }
+  function arcPath(cx,cy,r,a0,a1){ const s=polar(cx,cy,r,a0), e=polar(cx,cy,r,a1); const large=(a1-a0)%360>180?1:0; return `M ${s.x} ${s.y} A ${r} ${r} 0 ${large} 1 ${e.x} ${e.y}`; }
+  function valueAngle(p){ return START + (p/100)*SWEEP; }
+
+  let s = `<div class="monv2-gauge-wrap" style="max-width:${(420*escala).toFixed(0)}px;margin:0 auto;">
+    <svg viewBox="0 0 420 400">
+    <defs>
+      <linearGradient id="ringGrad_${sufixo}" gradientUnits="userSpaceOnUse" x1="${cx-rMain}" y1="${cy}" x2="${cx+rMain}" y2="${cy}">
+        <stop offset="0%" stop-color="#3b82f6"/><stop offset="50%" stop-color="#22d3ee"/><stop offset="100%" stop-color="#4ade80"/>
+      </linearGradient>
+      <filter id="softGlow_${sufixo}" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      <filter id="needleGlow_${sufixo}" x="-120%" y="-120%" width="340%" height="340%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    </defs>`;
+
+  for(let d=0; d<360; d+=6){
+    const p1 = polar(cx,cy,rMinor,d), p2 = polar(cx,cy,rMinor-7,d);
+    const rel = (d-START+360)%360;
+    const inRange = rel <= SWEEP;
+    s += `<line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="${inRange?'#2a4a63':'#132133'}" stroke-width="1.5"/>`;
+  }
+  const segCount = 46;
+  for(let i=0;i<segCount;i++){
+    const a0 = START + (i/segCount)*SWEEP;
+    const a1 = START + ((i+0.72)/segCount)*SWEEP;
+    s += `<path d="${arcPath(cx,cy,rMain,a0,a1)}" fill="none" stroke="url(#ringGrad_${sufixo})" stroke-width="20" stroke-linecap="round"/>`;
+  }
+  [[0,'0'],[25,'25'],[50,'50'],[75,'75'],[100,'100']].forEach(([v,label])=>{
+    const ang = valueAngle(v);
+    const p = polar(cx,cy,rMain+32,ang);
+    s += `<text class="monv2-tick" x="${p.x}" y="${p.y}" text-anchor="middle" dominant-baseline="middle">${label}</text>`;
+  });
+
+  const ang = valueAngle(pct);
+  s += `<g transform="rotate(${(ang-270).toFixed(2)} ${cx} ${cy})">
+    <line x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy-rMain+26}" stroke="#f8fdff" stroke-width="3.4" stroke-linecap="round" filter="url(#needleGlow_${sufixo})"/>
+    <circle cx="${cx}" cy="${cy-rMain+26}" r="6" fill="#f8fdff" filter="url(#needleGlow_${sufixo})"/>
+  </g>`;
+  s += `<circle cx="${cx}" cy="${cy}" r="10" fill="#050b14" stroke="#2a4a63" stroke-width="2"/>`;
+  const glintPos = polar(cx,cy,rMain,ang);
+  s += `<circle cx="${glintPos.x}" cy="${glintPos.y}" r="13" fill="#ffffff" opacity="0.9" filter="url(#softGlow_${sufixo})"/>`;
+  s += `</svg>
+    <div class="monv2-gauge-center">
+      <div class="monv2-gauge-icon"><i class="${iconClass}"></i></div>
+      <div class="monv2-gauge-title">${rotulo}</div>
+      <div class="monv2-gauge-big">${fmt(pct,0)}<span>%</span></div>
+      <div class="monv2-gauge-divider"></div>
+      <div class="monv2-gauge-ton">${valorCentroSub}</div>
+      <div class="monv2-gauge-ton-label">${subLabel}</div>
+    </div>
+  </div>`;
+  return s;
+}
+function iconCardV2(iconClass, label, value, sub, badgeText, corClasse){
+  return `<div class="monv2-card monv2-mini">
+    <div class="monv2-iconbox ${corClasse||''}"><i class="${iconClass}"></i></div>
+    <div>
+      <div class="monv2-label">${label}</div>
+      <div class="monv2-value">${value}</div>
+      <div class="monv2-sub">${sub||''}</div>
+      ${badgeText ? `<div class="monv2-badge">${badgeText}</div>` : ''}
+    </div>
+  </div>`;
+}
+function corSegmentoV2(t){
+  const stops = [{p:0,c:[59,130,246]},{p:0.5,c:[34,211,238]},{p:1,c:[74,222,128]}];
+  let a = stops[0], b = stops[1];
+  if(t>0.5){ a = stops[1]; b = stops[2]; }
+  const localT = a.p===0 ? t/0.5 : (t-0.5)/0.5;
+  const r = Math.round(a.c[0]+(b.c[0]-a.c[0])*localT);
+  const g = Math.round(a.c[1]+(b.c[1]-a.c[1])*localT);
+  const bl = Math.round(a.c[2]+(b.c[2]-a.c[2])*localT);
+  return `rgb(${r},${g},${bl})`;
+}
+function segmentedProgressBarV2(pct, rotulo){
+  const p = Math.max(0, Math.min(100, pct||0));
+  const SEG_N = 40;
+  const filled = Math.round((p/100)*SEG_N);
+  let segs = '';
+  for(let i=0;i<SEG_N;i++){
+    if(i<filled){
+      const cor = corSegmentoV2(i/SEG_N);
+      segs += `<div class="monv2-seg" style="background:${cor};box-shadow:0 0 6px ${cor}55;"></div>`;
+    } else {
+      segs += `<div class="monv2-seg"></div>`;
+    }
+  }
+  return `<div class="monv2-card" style="margin-top:0;">
+    <div class="monv2-progress-head">
+      <div class="monv2-progress-title">${rotulo||'PROGRESSO DA CAPACIDADE'}</div>
+      <div class="monv2-progress-badge">${fmt(p,0)}%</div>
+    </div>
+    <div class="monv2-seg-track">${segs}</div>
+  </div>`;
+}
 let unidadeGaugeArmazem = 'ton'; // 'ton' ou 'sacas' — alterna a descrição ao lado do medidor em todo o sistema
+
 function toggleUnidadeGaugeArmazem(){
   unidadeGaugeArmazem = unidadeGaugeArmazem==='ton' ? 'sacas' : 'ton';
   renderEstoque();
@@ -2207,96 +2380,67 @@ function monitorCapacidadeOperacional(f){
 
   const pushProg = f.pushProgramado || { ativo:false, periodoHoras:12, usuarioIds:[] };
 
-  return `<div class="card" style="padding:20px;">
-    <h3 style="margin:0 0 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-      ${f.nome} — Monitor de Capacidade Operacional
-      <button class="btn ghost sm" style="text-transform:none;letter-spacing:0;" onclick="toggleUnidadeGaugeArmazem()">⇄ Ver em ${unidadeGaugeArmazem==='sacas'?'toneladas':'sacas'}</button>
+  return `<div class="monv2">
+    <h3 style="margin:0 0 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#fff;">
+      <i class="ti ti-building-warehouse" style="color:var(--mv2-cyan, #22d3ee);"></i> ${f.nome} — Monitor de Capacidade Operacional
+      <button class="monv2-btn" onclick="toggleUnidadeGaugeArmazem()">⇄ Ver em ${unidadeGaugeArmazem==='sacas'?'toneladas':'sacas'}</button>
     </h3>
 
-    <div class="grid cols-4" style="margin-bottom:18px;">
-      <div class="card" style="padding:10px 12px;">
-        <div class="small-note">CAPACIDADE TOTAL</div>
-        <div style="font-size:19px;font-weight:700;">${capacidadeKg ? fmtUnidade(capacidadeKg) : '—'}</div>
-        <div class="small-note">100%</div>
+    <div class="monv2-layout">
+      <div class="monv2-col">
+        ${iconCardV2('ti ti-building-warehouse', 'Capacidade total', capacidadeKg?fmtUnidade(capacidadeKg):'—', '100%')}
+        ${iconCardV2('ti ti-leaf', 'Recebido hoje', fmtUnidade(recebidoHoje), `${capacidadeKg?fmt(recebidoHoje/capacidadeKg*100,1):'0'}% da capacidade`, '', 'green')}
+        ${iconCardV2('ti ti-calendar-event', `Recebido (${horasJanela}h)`, infoRecebimento?fmtUnidade(infoRecebimento.recebidoKg):'—', `${infoRecebimento && capacidadeKg ? fmt(infoRecebimento.recebidoKg/capacidadeKg*100,1) : '0'}% da capacidade`)}
+        ${iconCardV2('ti ti-door-exit', 'Disponível p/ depósito', capacidadeKg?fmtUnidade(disponivelKg):'—', `${capacidadeKg?fmt(disponivelKg/capacidadeKg*100,1):'0'}% livre`)}
       </div>
-      <div class="card" style="padding:10px 12px;">
-        <div class="small-note">RECEBIDO HOJE</div>
-        <div style="font-size:19px;font-weight:700;">${fmtUnidade(recebidoHoje)}</div>
-        <div class="small-note">${capacidadeKg?fmt(recebidoHoje/capacidadeKg*100,1):'0'}% da capacidade</div>
-      </div>
-      <div class="card" style="padding:10px 12px;">
-        <div class="small-note">RECEBIDO (${horasJanela}H)</div>
-        <div style="font-size:19px;font-weight:700;">${infoRecebimento ? fmtUnidade(infoRecebimento.recebidoKg) : '—'}</div>
-        <div class="small-note">${infoRecebimento && capacidadeKg ? fmt(infoRecebimento.recebidoKg/capacidadeKg*100,1) : '0'}% da capacidade</div>
-      </div>
-      <div class="card" style="padding:10px 12px;">
-        <div class="small-note">DISPONÍVEL P/ DEPÓSITO</div>
-        <div style="font-size:19px;font-weight:700;">${capacidadeKg ? fmtUnidade(disponivelKg) : '—'}</div>
-        <div class="small-note">${capacidadeKg?fmt(disponivelKg/capacidadeKg*100,1):'0'}% livre</div>
-      </div>
-    </div>
 
-    <div style="display:flex;flex-wrap:wrap;gap:24px;justify-content:center;align-items:flex-end;">
-      <div style="flex:1;min-width:280px;max-width:440px;">
-        ${capacidadeKg ? gaugeArmazemSVG(pct, f.id+'_arm', {rotulo:'CAPACIDADE DO ARMAZÉM'}) : '<p class="small-note" style="text-align:center;padding:30px 0;">Defina a capacidade do armazém no cadastro desta fazenda pra ver o medidor.</p>'}
-      </div>
-      <div style="flex:0 1 ${(440*0.85).toFixed(0)}px;min-width:240px;max-width:${(440*0.85).toFixed(0)}px;">
-        ${secador ? `<div style="text-align:center;margin-bottom:4px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap;">
-          <button class="btn ghost sm" onclick="abrirCalibradorSecador('${f.id}')">🎯 Calibrar</button>
-          ${secador.suspenso
-            ? `<button class="btn sm" style="background:var(--red);border-color:var(--red);color:#fff;" onclick="retomarSecador('${f.id}')">▶️ Retomar secador</button>`
-            : `<button class="btn ghost sm" style="color:var(--red);border-color:var(--red-dim);" onclick="suspenderSecador('${f.id}')">🛑 Suspender secador</button>`}
-        </div>` : ''}
-        ${!secador ? '<p class="small-note" style="text-align:center;padding:30px 0;">Cadastre a capacidade do secador (t/h) na fazenda pra ver este medidor.</p>'
-          : secador.suspenso ? `<div style="text-align:center;padding:18px 0;">
-              <div style="font-size:38px;">🛑</div>
-              <div style="font-weight:800;color:var(--red);margin-top:6px;letter-spacing:1px;">SECADOR SUSPENSO</div>
-              <div class="small-note" style="margin-top:4px;">desde ${new Date(f.secadorSuspensoDesde).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</div>
-            </div>`
-          : gaugeArmazemSVG(secador.pct, f.id+'_sec', {escala:0.85, rotulo:`SECADOR (${horasJanela}H)`})}
-      </div>
-    </div>
-    <div style="display:flex;flex-wrap:wrap;gap:24px;justify-content:center;margin-bottom:18px;">
-      <div style="flex:1;min-width:280px;max-width:440px;">
-        <div style="text-align:center;margin-top:-6px;margin-bottom:10px;">
-          <span style="font-size:22px;font-weight:800;color:var(--gold);">${fmtUnidade(saldoKg)}</span>
-          <span class="small-note" style="font-size:13px;"> depositadas</span>
+      <div class="monv2-col" style="flex-direction:row;flex-wrap:wrap;">
+        <div class="monv2-card monv2-gauge-card" style="flex:1;min-width:260px;">
+          ${capacidadeKg ? gaugeAgulhaSVG(pct, f.id+'_arm', {iconClass:'ti ti-building-warehouse', rotulo:'CAPACIDADE DO ARMAZÉM', valorCentroSub: fmtUnidade(saldoKg), subLabel:'DEPOSITADAS'}) : '<p class="monv2-sub" style="text-align:center;padding:30px 0;">Defina a capacidade do armazém no cadastro desta fazenda pra ver o medidor.</p>'}
         </div>
-        ${capacidadeKg ? barraProgressoCapacidade(pct, 'PROGRESSO DA CAPACIDADE') : ''}
-      </div>
-      <div style="flex:0 1 ${(440*0.85).toFixed(0)}px;min-width:240px;max-width:${(440*0.85).toFixed(0)}px;">
-        ${secador ? (secador.suspenso ? renderMoegaCardHTML(f.id) : `<div style="text-align:center;margin-top:-6px;margin-bottom:10px;">
-          <span style="font-size:22px;font-weight:800;color:var(--gold);">${fmtUnidade(secador.kgNoSecador)}</span>
-          <span class="small-note" style="font-size:13px;"> secadas de ${fmtUnidade(secador.capacidadeSecadorKg)}</span>
+        <div class="monv2-card monv2-gauge-card" style="flex:1;min-width:260px;">
+          ${secador ? `<div style="text-align:center;margin-bottom:8px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap;">
+            <button class="monv2-btn" onclick="abrirCalibradorSecador('${f.id}')">🎯 Calibrar</button>
+            ${secador.suspenso
+              ? `<button class="monv2-btn solid" onclick="retomarSecador('${f.id}')">▶️ Retomar secador</button>`
+              : `<button class="monv2-btn red" onclick="suspenderSecador('${f.id}')">🛑 Suspender secador</button>`}
+          </div>` : ''}
+          ${!secador ? '<p class="monv2-sub" style="text-align:center;padding:30px 0;">Cadastre a capacidade do secador (t/h) na fazenda pra ver este medidor.</p>'
+            : secador.suspenso ? `<div style="text-align:center;padding:14px 0;">
+                <div style="font-size:34px;">🛑</div>
+                <div style="font-weight:800;color:#ff6b6b;margin-top:6px;letter-spacing:1px;">SECADOR SUSPENSO</div>
+                <div class="monv2-sub" style="margin-top:4px;">desde ${new Date(f.secadorSuspensoDesde).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</div>
+              </div>`
+            : gaugeAgulhaSVG(secador.pct, f.id+'_sec', {iconClass:'ti ti-flame', rotulo:`SECADOR (${horasJanela}H)`, valorCentroSub: fmtUnidade(secador.kgNoSecador), subLabel:'SECADAS'})}
         </div>
-        ${barraProgressoCapacidade(secador.pct, 'COMPROMETIMENTO DO SECADOR')}
-        <p class="small-note" style="text-align:center;margin-top:6px;">${secador.nCargas} carga(s) acima da umidade segura · umidade média ${secador.umidadeMediaSecador!==null?fmt(secador.umidadeMediaSecador,1)+'%':'—'}</p>
-        ${secador.calibrado ? `<p class="small-note" style="text-align:center;margin-top:2px;">Capacidade efetiva calibrada: <b>${fmt(secador.capacidadeEfetivaTonHora,1)} t/h</b> <span style="opacity:.7;">(nominal ${fmt(secador.capacidadeNominalTonHora,1)} t/h)</span></p>` : ''}`) : ''}
+      </div>
+
+      <div class="monv2-col">
+        ${iconCardV2('ti ti-droplet', 'Umidade média (24h)', umidadeMedia!==null?fmt(umidadeMedia,1)+'%':'—', umidadeMedia===null?'sem entradas recentes':(umidadeOk?'dentro do ideal':'acima do ideal'), umidadeOk&&umidadeMedia!==null?'DENTRO DO IDEAL':'', umidadeOk?'green':'red')}
+        ${iconCardV2('ti ti-seeding', 'Grão armazenado', culturaPrincipal, `Safra ${state.config.safra||'—'}`, '', 'green')}
+        <div class="monv2-card" style="flex:1;">
+          <div class="monv2-alerts-title">Alertas</div>
+          ${alertas.length ? alertas.map(a=>`<div class="monv2-alert-item"><span class="monv2-alert-dot ${a.cor==='var(--red)'?'red':'amber'}"></span>${a.txt}</div>`).join('') : `<p class="monv2-sub">Nenhum alerta no momento.</p>`}
+        </div>
       </div>
     </div>
 
-    <div class="grid cols-3" style="margin-bottom:4px;">
-      <div class="card" style="padding:10px 12px;">
-        <div class="small-note">UMIDADE MÉDIA (24H)</div>
-        <div style="font-size:19px;font-weight:700;">${umidadeMedia!==null ? fmt(umidadeMedia,1)+'%' : '—'}</div>
-        <div class="small-note" style="color:${umidadeOk?'var(--lime)':'var(--gold)'};">${umidadeMedia===null?'sem entradas recentes':(umidadeOk?'dentro do ideal':'acima do ideal')}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:16px;">
+      <div style="flex:1;min-width:280px;">
+        ${capacidadeKg ? segmentedProgressBarV2(pct, 'PROGRESSO DA CAPACIDADE') : ''}
       </div>
-      <div class="card" style="padding:10px 12px;">
-        <div class="small-note">GRÃO ARMAZENADO</div>
-        <div style="font-size:16px;font-weight:700;">${culturaPrincipal}</div>
-        <div class="small-note">Safra ${state.config.safra||'—'}</div>
-      </div>
-      <div class="card" style="padding:10px 12px;">
-        <div class="small-note" style="margin-bottom:2px;">ALERTAS</div>
-        ${alertasHtml}
+      <div style="flex:1;min-width:280px;">
+        ${secador ? (secador.suspenso ? `<div class="monv2-card">${renderMoegaCardHTML(f.id)}</div>` : `${segmentedProgressBarV2(secador.pct, 'COMPROMETIMENTO DO SECADOR')}
+        <p class="monv2-sub" style="text-align:center;margin-top:6px;">${secador.nCargas} carga(s) acima da umidade segura · umidade média ${secador.umidadeMediaSecador!==null?fmt(secador.umidadeMediaSecador,1)+'%':'—'}</p>
+        ${secador.calibrado ? `<p class="monv2-sub" style="text-align:center;margin-top:2px;">Capacidade efetiva calibrada: <b style="color:var(--mv2-cyan,#22d3ee);">${fmt(secador.capacidadeEfetivaTonHora,1)} t/h</b> (nominal ${fmt(secador.capacidadeNominalTonHora,1)} t/h)</p>` : ''}`) : ''}
       </div>
     </div>
 
-    <div class="monitor-push-grid">
-      <div class="card" style="padding:12px 14px;">
+    <div class="monitor-push-grid" style="margin-top:16px;">
+      <div class="monv2-panel-card">
         <div style="font-size:13px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:6px;">
           <span>🕒 Push programado</span>
-          <button class="btn ghost sm" title="Disparar agora" onclick="dispararPushManualProgramado('${f.id}')">🔔</button>
+          <button class="monv2-btn" title="Disparar agora" onclick="dispararPushManualProgramado('${f.id}')">🔔</button>
         </div>
         <p class="small-note" style="margin:0 0 8px;">Resumo periódico: armazenado, livre, comprometimento do secador e umidade média.</p>
         <label class="small-note" style="display:flex;align-items:center;gap:6px;margin-bottom:8px;cursor:pointer;">
@@ -2310,16 +2454,16 @@ function monitorCapacidadeOperacional(f){
         </div>
         <details style="margin-bottom:8px;">
           <summary class="small-note" style="cursor:pointer;">Quem recebe (${(pushProg.usuarioIds||[]).length} selecionado(s))</summary>
-          <div style="max-height:110px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin-top:6px;">
+          <div style="max-height:110px;overflow:auto;border:1px solid var(--mv2-border);border-radius:8px;padding:6px 8px;margin-top:6px;">
             ${optionsUsuariosChecklist(pushProg.usuarioIds||[], 'prog_'+f.id)}
           </div>
         </details>
-        <button class="btn ghost sm" onclick="salvarPushProgramadoInline('${f.id}')">Salvar</button>
+        <button class="monv2-btn" onclick="salvarPushProgramadoInline('${f.id}')">Salvar</button>
       </div>
-      <div class="card" style="padding:12px 14px;">
+      <div class="monv2-panel-card">
         <div style="font-size:13px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:6px;">
           <span>🔔 Aviso de armazenagem</span>
-          <button class="btn ghost sm" title="Disparar agora" onclick="dispararPushManualArmazenagem('${f.id}')">🔔</button>
+          <button class="monv2-btn" title="Disparar agora" onclick="dispararPushManualArmazenagem('${f.id}')">🔔</button>
         </div>
         <p class="small-note" style="margin:0 0 8px;">Avisa subindo e descendo do percentual.</p>
         <div class="actions-row" style="gap:6px;margin-bottom:8px;">
@@ -2327,16 +2471,16 @@ function monitorCapacidadeOperacional(f){
         </div>
         <details style="margin-bottom:8px;">
           <summary class="small-note" style="cursor:pointer;">Quem recebe (${(f.avisoArmazenagemUsuarios||[]).length ? (f.avisoArmazenagemUsuarios||[]).length+' selecionado(s)' : 'todos com push ativo'})</summary>
-          <div style="max-height:110px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin-top:6px;">
+          <div style="max-height:110px;overflow:auto;border:1px solid var(--mv2-border);border-radius:8px;padding:6px 8px;margin-top:6px;">
             ${optionsUsuariosChecklist(f.avisoArmazenagemUsuarios||[], 'arm_'+f.id)}
           </div>
         </details>
-        <button class="btn ghost sm" onclick="salvarLimiteArmazemInline('${f.id}')">Salvar</button>
+        <button class="monv2-btn" onclick="salvarLimiteArmazemInline('${f.id}')">Salvar</button>
       </div>
-      <div class="card" style="padding:12px 14px;">
+      <div class="monv2-panel-card">
         <div style="font-size:13px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:6px;">
           <span>🔔 Aviso de recebimento / secador</span>
-          <button class="btn ghost sm" title="Disparar agora" onclick="dispararPushManualRecebimento('${f.id}')">🔔</button>
+          <button class="monv2-btn" title="Disparar agora" onclick="dispararPushManualRecebimento('${f.id}')">🔔</button>
         </div>
         <p class="small-note" style="margin:0 0 8px;">Mesma lógica, aplicada ao comprometimento do secador.</p>
         <div class="actions-row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px;">
@@ -2347,11 +2491,11 @@ function monitorCapacidadeOperacional(f){
         </div>
         <details style="margin-bottom:8px;">
           <summary class="small-note" style="cursor:pointer;">Quem recebe (${(f.avisoRecebimentoUsuarios||[]).length ? (f.avisoRecebimentoUsuarios||[]).length+' selecionado(s)' : 'todos com push ativo'})</summary>
-          <div style="max-height:110px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin-top:6px;">
+          <div style="max-height:110px;overflow:auto;border:1px solid var(--mv2-border);border-radius:8px;padding:6px 8px;margin-top:6px;">
             ${optionsUsuariosChecklist(f.avisoRecebimentoUsuarios||[], 'rec_'+f.id)}
           </div>
         </details>
-        <button class="btn ghost sm" onclick="salvarLimiteRecebimentoInline('${f.id}')">Salvar</button>
+        <button class="monv2-btn" onclick="salvarLimiteRecebimentoInline('${f.id}')">Salvar</button>
       </div>
     </div>
   </div>`;
