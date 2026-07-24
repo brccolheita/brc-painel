@@ -296,6 +296,8 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover{ opacity:1; }
 .interacoes-item:hover{ background:rgba(127,127,127,.14); }
 .interacoes-item.arrastando{ opacity:.4; }
 .interacoes-item.drag-over{ border-top:2px solid var(--gold); }
+[draggable="true"].arrastando{ opacity:.4; }
+[draggable="true"].drag-over{ outline:2px dashed var(--gold); outline-offset:3px; border-radius:8px; }
 .interacoes-divider{ height:1px; background:var(--line); margin:6px 6px; }
 body.read-only .interacoes-fixed{ display:none; }
 .choice-wrap{ position:relative; display:inline-block; }
@@ -2524,10 +2526,10 @@ function renderEstoque(){
     </div>
     <div class="card" style="margin-bottom:24px;">
       <h2>Romaneios de Armazém <small>${state.romaneiosArmazem.length} romaneio(s)${nAguardando>0?' — '+nAguardando+' aguardando aprovação':''}</small>
-        <div class="interacoes-fixed" id="cardInteracoesEstoque" style="display:inline-block;">
+        <div class="interacoes-fixed" id="cardInteracoesEstoque" data-header-tabela="romaneiosArmazem" data-header-item-id="interacoes" style="display:inline-block;">
           <button class="interacoes-trigger" id="btnInteracoesEstoqueToggle">☰ Interações</button>
           <div class="interacoes-panel" id="interacoesEstoquePanel">
-            <span class="choice-wrap" style="width:100%;">
+            <span class="choice-wrap" data-item-id="importar" style="width:100%;">
               <button class="interacoes-item" onclick="toggleChoicePopover('popoverImportarArmazem')">📥 Importar</button>
               <span class="choice-popover" id="popoverImportarArmazem">
                 <button onclick="fecharChoicePopovers(); document.getElementById('importArmazemInputXmlNFe').click();">🧾 XML da NF-e (oficial)</button>
@@ -2536,17 +2538,17 @@ function renderEstoque(){
                 <button onclick="fecharChoicePopovers(); abrirStatusPastaMonitorada('armazem');">📁 Pasta monitorada</button>
               </span>
             </span>
-            <button class="interacoes-item" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); exportarEstoqueXlsx();">📤 Exportar planilha</button>
-            <button class="interacoes-item" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); exportarRelatorioEstoquePDF();">🖨️ Gerar relatório</button>
-            <button class="interacoes-item" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); abrirCulturasArmazemAtivas();">🌱 Culturas/safras aceitas</button>
-            <button class="interacoes-item" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); abrirTerceiros();">🤝 Terceiros</button>
-            <button class="interacoes-item" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); abrirGerenciarColunas('table-romaneiosArmazem');">⚙ Colunas</button>
+            <button class="interacoes-item" data-item-id="exportarPlanilha" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); exportarEstoqueXlsx();">📤 Exportar planilha</button>
+            <button class="interacoes-item" data-item-id="gerarRelatorio" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); exportarRelatorioEstoquePDF();">🖨️ Gerar relatório</button>
+            <button class="interacoes-item" data-item-id="culturasSafras" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); abrirCulturasArmazemAtivas();">🌱 Culturas/safras aceitas</button>
+            <button class="interacoes-item" data-item-id="terceiros" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); abrirTerceiros();">🤝 Terceiros</button>
+            <button class="interacoes-item" data-item-id="colunas" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); abrirGerenciarColunas('table-romaneiosArmazem');">⚙ Colunas</button>
             <div class="interacoes-divider"></div>
-            <button class="interacoes-item" style="color:var(--red);" onclick="excluirSelecionadas('romaneiosArmazem')">🗑️ Excluir seleções</button>
+            <button class="interacoes-item" data-item-id="excluirSelecoes" style="color:var(--red);" onclick="excluirSelecionadas('romaneiosArmazem')">🗑️ Excluir seleções</button>
           </div>
         </div>
         <button class="btn sm" onclick="openCadastroModal('romaneioArmazem')">➕ Nova entrada</button>
-        <button class="btn ghost sm" id="btnVerSacas-romaneiosArmazem" onclick="toggleVerEmSacas('romaneiosArmazem')">⇄ Ver em sacas</button>
+        <button class="btn ghost sm" id="btnVerSacas-romaneiosArmazem" data-header-tabela="romaneiosArmazem" data-header-item-id="verSacas" onclick="toggleVerEmSacas('romaneiosArmazem')">⇄ Ver em sacas</button>
         <input type="file" id="importArmazemInput" accept=".xlsx,.xls" style="display:none">
         <input type="file" id="importArmazemInputPDF" accept=".pdf" style="display:none">
         <input type="file" id="importArmazemInputXmlNFe" accept=".xml" multiple style="display:none">
@@ -2626,6 +2628,10 @@ function renderEstoque(){
       });
     }
   })();
+  restaurarOrdemInteracoes('interacoesEstoquePanel');
+  inicializarDragReorderInteracoes('interacoesEstoquePanel');
+  restaurarOrdemHeader('romaneiosArmazem');
+  inicializarDragReorderHeader('romaneiosArmazem');
   montarScrollDuploTabelas();
 }
 function updateTbodyRomaneiosArmazem(){
@@ -3737,10 +3743,10 @@ function renderCargasAtivas(){
   el.innerHTML = `
     <div class="card">
       <h2>Cargas &amp; Romaneios <small>${state.entregas.filter(e=>e.status!=='rejeitado').length} carga(s) — ${state.entregas.filter(e=>e.status==='completo').length} com pesagem completa</small>
-        <div class="interacoes-fixed" id="cardInteracoesCargas" style="display:inline-block;">
+        <div class="interacoes-fixed" id="cardInteracoesCargas" data-header-tabela="cargas" data-header-item-id="interacoes" style="display:inline-block;">
           <button class="interacoes-trigger" id="btnInteracoesCargasToggle">☰ Interações</button>
           <div class="interacoes-panel" id="interacoesCargasPanel">
-            <span class="choice-wrap" style="width:100%;">
+            <span class="choice-wrap" data-item-id="importar" style="width:100%;">
               <button class="interacoes-item" onclick="toggleChoicePopover('popoverImportar')">📥 Importar</button>
               <span class="choice-popover" id="popoverImportar">
                 <button onclick="fecharChoicePopovers(); document.getElementById('importInputXmlNFe').click();">🧾 XML da NF-e (oficial)</button>
@@ -3749,14 +3755,14 @@ function renderCargasAtivas(){
                 <button onclick="fecharChoicePopovers(); abrirStatusPastaMonitorada('cargas');">📁 Pasta monitorada</button>
               </span>
             </span>
-            <button class="interacoes-item" onclick="document.getElementById('interacoesCargasPanel').classList.remove('aberto'); openCadastroModal('filtroRelatorioCargas');">📤 Gerar relatório</button>
-            <button class="interacoes-item" onclick="document.getElementById('interacoesCargasPanel').classList.remove('aberto'); abrirGerenciarColunas('table-cargas');">⚙ Colunas</button>
+            <button class="interacoes-item" data-item-id="gerarRelatorio" onclick="document.getElementById('interacoesCargasPanel').classList.remove('aberto'); openCadastroModal('filtroRelatorioCargas');">📤 Gerar relatório</button>
+            <button class="interacoes-item" data-item-id="colunas" onclick="document.getElementById('interacoesCargasPanel').classList.remove('aberto'); abrirGerenciarColunas('table-cargas');">⚙ Colunas</button>
             <div class="interacoes-divider"></div>
-            <button class="interacoes-item" style="color:var(--red);" onclick="excluirSelecionadas('cargas')">🗑️ Excluir seleções</button>
+            <button class="interacoes-item" data-item-id="excluirSelecoes" style="color:var(--red);" onclick="excluirSelecionadas('cargas')">🗑️ Excluir seleções</button>
           </div>
         </div>
         <button class="btn sm" id="btnNovaCarga">➕ Nova entrega</button>
-        <button class="btn ghost sm" id="btnVerSacas-cargas" onclick="toggleVerEmSacas('cargas')">⇄ Ver em sacas</button>
+        <button class="btn ghost sm" id="btnVerSacas-cargas" data-header-tabela="cargas" data-header-item-id="verSacas" onclick="toggleVerEmSacas('cargas')">⇄ Ver em sacas</button>
       </h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:10px;">Dados da NF (importados) e dados do romaneio (foto/manual) na mesma linha, assim que cada carga é pesada.
         Quando um contrato tem NF de venda <b>e</b> NF de remessa/complemento, só a venda entra no confronto com o romaneio — a remessa vira só comprovante de entrega.
@@ -3795,6 +3801,10 @@ function renderCargasAtivas(){
       });
     }
   })();
+  restaurarOrdemInteracoes('interacoesCargasPanel');
+  inicializarDragReorderInteracoes('interacoesCargasPanel');
+  restaurarOrdemHeader('cargas');
+  inicializarDragReorderHeader('cargas');
   montarScrollDuploTabelas();
   atualizarBarraSelecao('cargas');
 }
@@ -3943,7 +3953,6 @@ function renderConferencia(){
     <div class="actions-row" style="margin-bottom:16px;">
       <button class="btn ${conferenciaModo==='motoristas'?'':'ghost'} sm" onclick="setConferenciaModo('motoristas')">Conferência de motoristas</button>
       <button class="btn ${conferenciaModo==='conciliacao'?'':'ghost'} sm" onclick="setConferenciaModo('conciliacao')">Conciliação com empresa compradora</button>
-      <button class="btn ghost sm" onclick="forcarSincronizacao()">🔄 Forçar sincronização</button>
     </div>
     <div id="conferenciaConteudo"></div>
   `;
@@ -3956,16 +3965,16 @@ function renderConferenciaMotoristas(){
   el.innerHTML = `
     <div class="card">
       <h2>Enviados por motoristas <small>${state.entregas.filter(e=>e.status==='aguardando_conferencia').length} aguardando conferência</small>
-        <div class="interacoes-fixed" id="cardInteracoesConferencia" style="display:inline-block;">
+        <div class="interacoes-fixed" id="cardInteracoesConferencia" data-header-tabela="conferencia" data-header-item-id="interacoes" style="display:inline-block;">
           <button class="interacoes-trigger" id="btnInteracoesConferenciaToggle">☰ Interações</button>
           <div class="interacoes-panel" id="interacoesConferenciaPanel">
-            <button class="interacoes-item" onclick="document.getElementById('interacoesConferenciaPanel').classList.remove('aberto'); forcarSincronizacao();">🔄 Forçar sincronização</button>
-            <button class="interacoes-item" onclick="document.getElementById('interacoesConferenciaPanel').classList.remove('aberto'); abrirGerenciarColunas('table-conferencia');">⚙ Colunas</button>
+            <button class="interacoes-item" data-item-id="forcarSincronizacao" onclick="document.getElementById('interacoesConferenciaPanel').classList.remove('aberto'); forcarSincronizacao();">🔄 Forçar sincronização</button>
+            <button class="interacoes-item" data-item-id="colunas" onclick="document.getElementById('interacoesConferenciaPanel').classList.remove('aberto'); abrirGerenciarColunas('table-conferencia');">⚙ Colunas</button>
             <div class="interacoes-divider"></div>
-            <button class="interacoes-item" style="color:var(--red);" onclick="excluirSelecionadas('conferencia')">🗑️ Excluir seleções</button>
+            <button class="interacoes-item" data-item-id="excluirSelecoes" style="color:var(--red);" onclick="excluirSelecionadas('conferencia')">🗑️ Excluir seleções</button>
           </div>
         </div>
-        <button class="btn ghost sm" id="btnVerSacas-conferencia" onclick="toggleVerEmSacas('conferencia')">⇄ Ver em sacas</button>
+        <button class="btn ghost sm" id="btnVerSacas-conferencia" data-header-tabela="conferencia" data-header-item-id="verSacas" onclick="toggleVerEmSacas('conferencia')">⇄ Ver em sacas</button>
       </h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:16px;">
         Lançamentos feitos pelo link do motorista caem aqui primeiro. Confira os dados antes de lançar oficialmente no dashboard.
@@ -3999,6 +4008,10 @@ function renderConferenciaMotoristas(){
       });
     }
   })();
+  restaurarOrdemInteracoes('interacoesConferenciaPanel');
+  inicializarDragReorderInteracoes('interacoesConferenciaPanel');
+  restaurarOrdemHeader('conferencia');
+  inicializarDragReorderHeader('conferencia');
 }
 function updateTbodyConferencia(){
   const filters = getFilterValues('conferencia');
@@ -4390,19 +4403,18 @@ function renderContratos(){
   el.innerHTML = `
     <div class="card" style="margin-bottom:20px;">
       <h2>Controle de saldos de contrato <small>${state.contratos.length} contrato(s) · somente visualização</small>
-        <button class="btn ghost sm" onclick="toggleSaldosUnidade()">⇄ Ver em ${saldosUnidade==='kg'?'sacas':'kg'}</button>
-        <button class="btn ghost sm" onclick="exportarRelacaoContratosPDF()">🖨️ Exportar relação em PDF</button>
-        <button class="btn danger sm" onclick="limparFiltrosSaldos()">✕ Excluir todos os filtros</button>
-        <div class="interacoes-fixed" id="interacoesSaldos" style="position:relative;display:inline-block;">
-          <button class="interacoes-trigger" style="padding:8px 14px;font-size:12.5px;" onclick="document.getElementById('interacoesSaldosPanel').classList.toggle('aberto')">☰ Interações</button>
+        <div class="interacoes-fixed" id="interacoesSaldos" data-header-tabela="saldos" data-header-item-id="interacoes" style="display:inline-block;">
+          <button class="interacoes-trigger" id="btnInteracoesSaldosToggle" style="padding:8px 14px;font-size:12.5px;">☰ Interações</button>
           <div class="interacoes-panel" id="interacoesSaldosPanel">
-            <button class="interacoes-item" onclick="limparFiltrosSaldos(); document.getElementById('interacoesSaldosPanel').classList.remove('aberto');">🧹 Limpar todos os filtros</button>
-            <button class="interacoes-item" onclick="document.getElementById('interacoesSaldosPanel').classList.remove('aberto'); abrirSeletorCores();">🎨 Selecionar cores</button>
-            <button class="interacoes-item" onclick="document.getElementById('interacoesSaldosPanel').classList.remove('aberto'); ocultarLinhasSelecionadas();">🙈 Ocultar linha(s) selecionada(s)</button>
-            <button class="interacoes-item" onclick="document.getElementById('interacoesSaldosPanel').classList.remove('aberto'); abrirOcultarColunasSaldos();">📐 Ocultar coluna(s)</button>
-            ${linhasOcultasSaldos.size ? `<button class="interacoes-item" onclick="document.getElementById('interacoesSaldosPanel').classList.remove('aberto'); mostrarLinhasOcultasSaldos();">👁️ Mostrar linhas ocultas (${linhasOcultasSaldos.size})</button>` : ''}
+            <button class="interacoes-item" data-item-id="exportarPdf" onclick="document.getElementById('interacoesSaldosPanel').classList.remove('aberto'); exportarRelacaoContratosPDF();">🖨️ Exportar relação em PDF</button>
+            <button class="interacoes-item" data-item-id="limparFiltros" onclick="limparFiltrosSaldos(); document.getElementById('interacoesSaldosPanel').classList.remove('aberto');">🧹 Limpar todos os filtros</button>
+            <button class="interacoes-item" data-item-id="cores" onclick="document.getElementById('interacoesSaldosPanel').classList.remove('aberto'); abrirSeletorCores();">🎨 Selecionar cores</button>
+            <button class="interacoes-item" data-item-id="ocultarLinhas" onclick="document.getElementById('interacoesSaldosPanel').classList.remove('aberto'); ocultarLinhasSelecionadas();">🙈 Ocultar linha(s) selecionada(s)</button>
+            <button class="interacoes-item" data-item-id="ocultarColunas" onclick="document.getElementById('interacoesSaldosPanel').classList.remove('aberto'); abrirOcultarColunasSaldos();">📐 Ocultar coluna(s)</button>
+            ${linhasOcultasSaldos.size ? `<button class="interacoes-item" data-item-id="mostrarOcultas" onclick="document.getElementById('interacoesSaldosPanel').classList.remove('aberto'); mostrarLinhasOcultasSaldos();">👁️ Mostrar linhas ocultas (${linhasOcultasSaldos.size})</button>` : ''}
           </div>
         </div>
+        <button class="btn ghost sm" id="btnVerSacas-saldos" data-header-tabela="saldos" data-header-item-id="verSacas" onclick="toggleSaldosUnidade()">⇄ Ver em ${saldosUnidade==='kg'?'sacas':'kg'}</button>
       </h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:10px;">Contratos são criados e editados em "Dados de Colheita e Comercialização" → Contratos. Aqui é só acompanhamento. Use a lupa 🔍 no cabeçalho pra filtrar cada coluna (estilo Excel), marque linhas com o checkbox à esquerda pra colorir ou ocultar em lote.</p>
       ${atrasados.length ? `<p class="small-note" style="color:var(--red,#e05555);margin-bottom:12px;">⚠ ${atrasados.length} contrato(s) com entrega e/ou pagamento atrasado — veja as colunas destacadas abaixo.</p>` : ''}
@@ -4421,6 +4433,21 @@ function renderContratos(){
   `;
   updateTbodyContratos();
   tornarColunasRedimensionaveis('table-contratos');
+  (function(){
+    const btn = document.getElementById('btnInteracoesSaldosToggle');
+    const panel = document.getElementById('interacoesSaldosPanel');
+    if(btn && panel && !btn.dataset.bound){
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', (e)=>{ e.stopPropagation(); panel.classList.toggle('aberto'); });
+      document.addEventListener('click', (e)=>{
+        if(panel.classList.contains('aberto') && !panel.contains(e.target) && e.target!==btn) panel.classList.remove('aberto');
+      });
+    }
+  })();
+  restaurarOrdemInteracoes('interacoesSaldosPanel');
+  inicializarDragReorderInteracoes('interacoesSaldosPanel');
+  restaurarOrdemHeader('saldos');
+  inicializarDragReorderHeader('saldos');
 }
 function updateTbodyContratos(){
   const saldos = calcSaldos();
@@ -4591,31 +4618,39 @@ function bindShellEvents(){
   inicializarDragReorderInteracoes();
 }
 bindShellEvents();
-function restaurarOrdemInteracoes(){
+/* ---------------- ARRASTAR BOTÕES DO CABEÇALHO (☰ Interações / ⇄ Ver em sacas) ----------------
+   Diferente do reordenar dentro do painel — aqui é a posição dos PRÓPRIOS botões soltos no
+   cabeçalho da planilha, pra cada usuário posicionar onde achar melhor. Ordem salva por tabela,
+   só neste aparelho. */
+function chaveOrdemHeader(tabela){ return 'brc_ordem_header_'+tabela; }
+function restaurarOrdemHeader(tabela){
   try{
-    const ordemSalva = JSON.parse(localStorage.getItem('brc_ordem_interacoes') || 'null');
+    const ordemSalva = JSON.parse(localStorage.getItem(chaveOrdemHeader(tabela))||'null');
     if(!Array.isArray(ordemSalva)) return;
-    const container = document.getElementById('interacoesPanel');
+    const itens = document.querySelectorAll(`[data-header-tabela="${tabela}"]`);
+    if(!itens.length) return;
+    const container = itens[0].parentElement;
     ordemSalva.forEach(itemId=>{
-      const el = container.querySelector(`[data-item-id="${itemId}"]`);
+      const el = container.querySelector(`[data-header-tabela="${tabela}"][data-header-item-id="${itemId}"]`);
       if(el) container.appendChild(el);
     });
   }catch(e){ /* ignora erro de restauração de ordem */ }
 }
-function salvarOrdemInteracoes(){
-  const ids = Array.from(document.querySelectorAll('#interacoesPanel .interacoes-item[data-item-id]')).map(el=>el.dataset.itemId);
-  localStorage.setItem('brc_ordem_interacoes', JSON.stringify(ids));
+function salvarOrdemHeader(tabela){
+  const itens = document.querySelectorAll(`[data-header-tabela="${tabela}"]`);
+  const ids = Array.from(itens).map(el=>el.dataset.headerItemId);
+  localStorage.setItem(chaveOrdemHeader(tabela), JSON.stringify(ids));
 }
-function inicializarDragReorderInteracoes(){
-  const itens = document.querySelectorAll('#interacoesPanel .interacoes-item[data-item-id]');
+function inicializarDragReorderHeader(tabela){
+  const itens = document.querySelectorAll(`[data-header-tabela="${tabela}"]`);
   let arrastando = null;
   itens.forEach(item=>{
     item.setAttribute('draggable', 'true');
     item.addEventListener('dragstart', ()=>{ arrastando = item; item.classList.add('arrastando'); });
     item.addEventListener('dragend', ()=>{
       item.classList.remove('arrastando');
-      document.querySelectorAll('.interacoes-item.drag-over').forEach(el=>el.classList.remove('drag-over'));
-      salvarOrdemInteracoes();
+      document.querySelectorAll(`[data-header-tabela="${tabela}"].drag-over`).forEach(el=>el.classList.remove('drag-over'));
+      salvarOrdemHeader(tabela);
     });
     item.addEventListener('dragover', e=>{ e.preventDefault(); if(item!==arrastando) item.classList.add('drag-over'); });
     item.addEventListener('dragleave', ()=>{ item.classList.remove('drag-over'); });
@@ -4624,7 +4659,54 @@ function inicializarDragReorderInteracoes(){
       item.classList.remove('drag-over');
       if(!arrastando || arrastando===item) return;
       const container = item.parentElement;
-      const itensAtuais = Array.from(container.querySelectorAll('.interacoes-item[data-item-id]'));
+      const itensAtuais = Array.from(container.querySelectorAll(`[data-header-tabela="${tabela}"]`));
+      const idxArrastando = itensAtuais.indexOf(arrastando);
+      const idxAlvo = itensAtuais.indexOf(item);
+      if(idxArrastando < idxAlvo) item.after(arrastando);
+      else item.before(arrastando);
+    });
+  });
+}
+function restaurarOrdemInteracoes(painelId){
+  painelId = painelId || 'interacoesPanel';
+  try{
+    const chave = painelId==='interacoesPanel' ? 'brc_ordem_interacoes' : 'brc_ordem_interacoes_'+painelId;
+    const ordemSalva = JSON.parse(localStorage.getItem(chave) || 'null');
+    if(!Array.isArray(ordemSalva)) return;
+    const container = document.getElementById(painelId);
+    if(!container) return;
+    ordemSalva.forEach(itemId=>{
+      const el = container.querySelector(`[data-item-id="${itemId}"]`);
+      if(el) container.appendChild(el);
+    });
+  }catch(e){ /* ignora erro de restauração de ordem */ }
+}
+function salvarOrdemInteracoes(painelId){
+  painelId = painelId || 'interacoesPanel';
+  const chave = painelId==='interacoesPanel' ? 'brc_ordem_interacoes' : 'brc_ordem_interacoes_'+painelId;
+  const ids = Array.from(document.querySelectorAll(`#${painelId} > [data-item-id]`)).map(el=>el.dataset.itemId);
+  localStorage.setItem(chave, JSON.stringify(ids));
+}
+function inicializarDragReorderInteracoes(painelId){
+  painelId = painelId || 'interacoesPanel';
+  const itens = document.querySelectorAll(`#${painelId} > [data-item-id]`);
+  let arrastando = null;
+  itens.forEach(item=>{
+    item.setAttribute('draggable', 'true');
+    item.addEventListener('dragstart', ()=>{ arrastando = item; item.classList.add('arrastando'); });
+    item.addEventListener('dragend', ()=>{
+      item.classList.remove('arrastando');
+      document.querySelectorAll('.interacoes-item.drag-over, .choice-wrap.drag-over').forEach(el=>el.classList.remove('drag-over'));
+      salvarOrdemInteracoes(painelId);
+    });
+    item.addEventListener('dragover', e=>{ e.preventDefault(); if(item!==arrastando) item.classList.add('drag-over'); });
+    item.addEventListener('dragleave', ()=>{ item.classList.remove('drag-over'); });
+    item.addEventListener('drop', e=>{
+      e.preventDefault();
+      item.classList.remove('drag-over');
+      if(!arrastando || arrastando===item) return;
+      const container = item.parentElement;
+      const itensAtuais = Array.from(container.querySelectorAll(':scope > [data-item-id]'));
       const idxArrastando = itensAtuais.indexOf(arrastando);
       const idxAlvo = itensAtuais.indexOf(item);
       if(idxArrastando < idxAlvo) item.after(arrastando);
