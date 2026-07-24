@@ -418,13 +418,13 @@ body.read-only .interacoes-fixed{ display:none; }
 .dash-scope .pdf-header h1{ font-family:'Space Grotesk',sans-serif; font-size:26px; margin:6px 0 0 0; }
 .dash-scope .pdf-header .meta-line{ margin-top:10px; font-size:15px; color:var(--ink); font-family:'JetBrains Mono',monospace; font-weight:600; }
 .dash-scope .pdf-header .meta-line b{ color:var(--lime); }
-.dash-scope .comp-card{ display:flex; flex-direction:column; justify-content:center; gap:14px; height:100%; }
-.dash-scope .comp-item{ display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); }
+.dash-scope .comp-card{ display:flex; flex-direction:column; justify-content:center; gap:13px; height:100%; }
+.dash-scope .comp-item{ display:flex; align-items:center; gap:9px; padding:9px 0; border-bottom:1px solid var(--line); }
 .dash-scope .comp-item:last-child{ border-bottom:none; }
-.dash-scope .comp-dot{ width:12px; height:12px; border-radius:50%; flex-shrink:0; }
-.dash-scope .comp-name{ flex:1; font-size:14px; color:var(--ink); font-weight:500; }
-.dash-scope .comp-val{ font-family:'Space Grotesk',sans-serif; font-size:26px; font-weight:800; color:var(--gold); text-shadow:0 0 14px rgba(255,221,0,.4); }
-.dash-scope .comp-sub{ font-size:11px; color:var(--ink-dim); font-family:'JetBrains Mono',monospace; min-width:90px; text-align:right; }
+.dash-scope .comp-dot{ width:11px; height:11px; border-radius:50%; flex-shrink:0; }
+.dash-scope .comp-name{ flex:1; font-size:12.5px; color:var(--ink); font-weight:500; }
+.dash-scope .comp-val{ font-family:'Space Grotesk',sans-serif; font-size:23px; font-weight:800; color:var(--gold); text-shadow:0 0 14px rgba(255,221,0,.4); min-width:76px; text-align:right; }
+.dash-scope .comp-sub{ font-size:10px; color:var(--ink-dim); font-family:'JetBrains Mono',monospace; min-width:81px; text-align:right; }
 footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); margin-top:56px; font-family:'JetBrains Mono',monospace;}
 @media (max-width:900px){ .dash-scope .grid2{grid-template-columns:1fr;} .dash-scope .hectbox{flex-direction:column; align-items:stretch;} }
 @media (max-width:640px){ #btnMaximizarTela{ display:none; } }
@@ -443,12 +443,13 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
    Escopado em .monv2 pra não vazar pro resto do app — mesma lógica de sempre por trás,
    só a apresentação visual muda (modelo pedido pelo usuário). */
 .monv2 {
-  --mv2-bg: #030810; --mv2-card: #071120; --mv2-border: rgba(34,211,238,0.16);
+  --mv2-bg: var(--bg); --mv2-card: var(--panel); --mv2-border: var(--line);
   --mv2-cyan: #22d3ee; --mv2-blue: #3b82f6; --mv2-green: #4ade80; --mv2-amber: #fbbf24;
-  --mv2-text: #eaf6ff; --mv2-dim: #7c8ba3;
-  font-family: 'Segoe UI', system-ui, sans-serif;
+  --mv2-text: var(--ink); --mv2-dim: var(--ink-dim);
+  font-family: inherit;
   color: var(--mv2-text);
-  background: radial-gradient(circle at 50% 20%, #071726 0%, var(--mv2-bg) 60%);
+  background: var(--bg-2, var(--panel));
+  border: 1px solid var(--line);
   padding: 22px; border-radius: 16px; margin-bottom: 18px;
 }
 .monv2 * { box-sizing: border-box; }
@@ -464,7 +465,7 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
 .monv2-iconbox.red { border-color:rgba(220,70,70,.4); background:rgba(220,70,70,.08); }
 .monv2-iconbox.red i { color:#ff6b6b; }
 .monv2-label { font-size:10px; letter-spacing:1px; color:var(--mv2-dim); text-transform:uppercase; font-weight:600; }
-.monv2-value { font-size:19px; font-weight:700; margin-top:2px; color:#fff; }
+.monv2-value { font-size:19px; font-weight:700; margin-top:2px; color:var(--mv2-text); }
 .monv2-sub { font-size:11px; color:var(--mv2-dim); margin-top:1px; }
 .monv2-badge { display:inline-block; font-size:9px; font-weight:700; letter-spacing:.5px; padding:3px 7px; border-radius:5px; background:rgba(74,222,128,.12); color:var(--mv2-green); border:1px solid rgba(74,222,128,.3); margin-top:5px; }
 .monv2-gauge-card { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:16px 6px 4px; min-height:100%; }
@@ -473,7 +474,7 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
 .monv2-gauge-center { position:absolute; top:54%; left:50%; transform:translate(-50%,-50%); text-align:center; width:80%; }
 .monv2-gauge-icon { font-size:22px; color:var(--mv2-cyan); text-shadow:0 0 14px rgba(34,211,238,.6); }
 .monv2-gauge-title { font-size:10.5px; letter-spacing:1.5px; color:var(--mv2-dim); font-weight:700; text-transform:uppercase; margin-top:5px; }
-.monv2-gauge-big { font-size:46px; font-weight:800; line-height:1; margin-top:3px; letter-spacing:-1.5px; color:#fff; text-shadow:0 0 20px rgba(34,211,238,.35); }
+.monv2-gauge-big { font-size:46px; font-weight:800; line-height:1; margin-top:3px; letter-spacing:-1.5px; color:var(--mv2-text); text-shadow:0 0 20px rgba(34,211,238,.35); }
 .monv2-gauge-big span { font-size:22px; font-weight:700; color:var(--mv2-dim); }
 .monv2-gauge-divider { width:60%; height:1px; background:linear-gradient(90deg,transparent,var(--mv2-border),transparent); margin:8px auto; }
 .monv2-gauge-ton { font-size:19px; font-weight:700; color:var(--mv2-cyan); }
@@ -527,6 +528,7 @@ footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); mar
           <button class="interacoes-item" id="btnLinkProdutor" data-item-id="linkProdutor">🔗 Link p/ produtor</button>
           <button class="interacoes-item" id="btnLinkMotorista" data-item-id="linkMotorista">📱 Link p/ motorista</button>
           <button class="interacoes-item" id="btnLinkBalanca" data-item-id="linkBalanca">⚖️ Link p/ balança</button>
+          <button class="interacoes-item" id="btnLinkPainel" data-item-id="linkPainel">🖥️ Link p/ painel (TV/tablet do escritório)</button>
           <button class="interacoes-item" id="btnExportBackup" data-item-id="exportBackup">💾 Exportar backup completo (Excel)</button>
           <button class="interacoes-item" id="btnGerarDashboard" data-item-id="gerarDashboard">📊 Gerar Dashboard</button>
           <div class="interacoes-divider"></div>
@@ -2351,7 +2353,9 @@ async function dispararPushManualRecebimento(fazendaId){
 // recebimento/secador) num único painel por fazenda, no estilo do modelo de referência: caixas de
 // estatística à esquerda, o medidor grande no centro, informações + alertas à direita, e logo abaixo,
 // a configuração de aviso por push de cada uma das duas frentes.
-function monitorCapacidadeOperacional(f){
+function monitorCapacidadeOperacional(f, opts){
+  opts = opts || {};
+  const mostrarPush = opts.mostrarPush !== false; // Estoque (padrão) mostra; Dashboard passa false
   const saldoKg = calcSaldoFazendaKg(f.id);
   const capacidadeKg = num(f.armazemKg);
   const pct = capacidadeKg ? (saldoKg/capacidadeKg*100) : 0;
@@ -2436,6 +2440,7 @@ function monitorCapacidadeOperacional(f){
       </div>
     </div>
 
+${mostrarPush ? `
     <div class="monitor-push-grid" style="margin-top:16px;">
       <div class="monv2-panel-card">
         <div style="font-size:13px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:6px;">
@@ -2498,6 +2503,7 @@ function monitorCapacidadeOperacional(f){
         <button class="monv2-btn" onclick="salvarLimiteRecebimentoInline('${f.id}')">Salvar</button>
       </div>
     </div>
+` : ''}
   </div>`;
 }
 function renderEstoque(){
@@ -2769,7 +2775,26 @@ function linkAcessoSistema(tipo){
   const base = location.origin + location.pathname;
   if(tipo==='motorista') return base + '#motorista';
   if(tipo==='balanca') return base + '#balanca';
+  if(tipo==='painel') return base + '#painel';
   return base;
+}
+function textoAcessoPainel(usuarioId){
+  const u = state.usuarios.find(x=>x.id===usuarioId && x.papel==='painel');
+  if(!u) return { erro: 'Usuário de painel não encontrado.' };
+  if(!u.senha) return { erro: 'Defina uma senha pra este usuário antes de compartilhar o acesso.' };
+  const link = linkAcessoSistema('painel');
+  if(!link) return { erro: 'Você está com o arquivo aberto localmente no computador, não pelo link publicado do sistema — abra pelo endereço de verdade antes de gerar o acesso.' };
+  return { texto: `Acesso ao sistema BRC - Smart Agribusiness Solutions — Painel de visualização (só leitura)\nLink: ${link}\nUsuário: ${u.usuario}\nSenha: ${u.senha}\n\nEsse link é feito pra ficar aberto numa TV/tablet do escritório mostrando o operacional — não dá pra editar nada por ele, e usar num outro aparelho não desconecta ninguém dos outros logins.` };
+}
+function compartilharAcessoPainel(usuarioId){
+  const r = textoAcessoPainel(usuarioId);
+  if(r.erro){ toast(r.erro, true); return; }
+  copiarTexto(r.texto);
+}
+function enviarAcessoPainelWhatsapp(usuarioId){
+  const r = textoAcessoPainel(usuarioId);
+  if(r.erro){ toast(r.erro, true); return; }
+  enviarWhatsapp(r.texto);
 }
 function textoAcessoBalanca(usuarioId){
   const u = state.usuarios.find(x=>x.id===usuarioId && x.papel==='balanca');
@@ -2812,6 +2837,21 @@ function enviarWhatsapp(texto){
   window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank');
 }
 let linkMotoristaTextoAtual = '';
+function onLinkPainelSelectChange(){
+  const id = document.getElementById('fLinkPainelSelect').value;
+  const wrap = document.getElementById('linkPainelResultado');
+  if(!id){ wrap.innerHTML = ''; linkMotoristaTextoAtual = ''; return; }
+  const r = textoAcessoPainel(id);
+  if(r.erro){
+    wrap.innerHTML = `<p class="small-note" style="color:var(--red);margin-top:10px;">${r.erro}</p>`;
+    linkMotoristaTextoAtual = '';
+    return;
+  }
+  linkMotoristaTextoAtual = r.texto;
+  wrap.innerHTML = `
+    <div class="card" style="margin-top:12px;padding:12px;white-space:pre-wrap;font-size:13px;">${r.texto.replace(/</g,'&lt;')}</div>
+    <button class="btn sm" style="margin-top:10px;" onclick="copiarTexto(linkMotoristaTextoAtual)">📋 Copiar dados de acesso</button>`;
+}
 function onLinkBalancaSelectChange(){
   const id = document.getElementById('fLinkBalancaSelect').value;
   const wrap = document.getElementById('linkBalancaResultado');
@@ -3172,7 +3212,7 @@ function updateBadge(){
 }
 
 /* ---------------- USUÁRIOS (login / papéis / expiração) ---------------- */
-function labelPapel(papel){ return papel==='admin' ? 'Admin' : papel==='produtor' ? 'Produtor' : papel==='motorista' ? 'Motorista' : papel==='balanca' ? 'Balança do armazém' : papel; }
+function labelPapel(papel){ return papel==='admin' ? 'Admin' : papel==='produtor' ? 'Produtor' : papel==='motorista' ? 'Motorista' : papel==='balanca' ? 'Balança do armazém' : papel==='painel' ? 'Painel (só leitura)' : papel; }
 function labelPermissoesAdmin(u){
   const restricoes = [];
   if(u.podeGerenciarUsuarios===false) restricoes.push('sem aba Usuários');
@@ -4527,6 +4567,10 @@ function bindShellEvents(){
     panel.classList.remove('aberto');
     openCadastroModal('linkBalanca');
   });
+  document.getElementById('btnLinkPainel').addEventListener('click', ()=>{
+    panel.classList.remove('aberto');
+    openCadastroModal('linkPainel');
+  });
   document.getElementById('btnToggleTema').addEventListener('click', ()=>{ panel.classList.remove('aberto'); openCadastroModal('configuracoes'); });
 
   // Popover de busca global — mesmo padrão de abrir/fechar do "Interações"
@@ -4862,10 +4906,11 @@ function openCadastroModal(kind, id){
           </div>
         </div>
         <div class="field"><label>Papel</label>
-          <select id="fUsuarioPapel" onchange="document.getElementById('fUsuarioAdminPermsWrap').style.display = this.value==='admin' ? '' : 'none'; document.getElementById('fUsuarioAcessoBalancaWrap').style.display = this.value==='balanca' ? '' : 'none';">
+          <select id="fUsuarioPapel" onchange="document.getElementById('fUsuarioAdminPermsWrap').style.display = this.value==='admin' ? '' : 'none'; document.getElementById('fUsuarioAcessoBalancaWrap').style.display = this.value==='balanca' ? '' : 'none'; document.getElementById('fUsuarioAcessoPainelWrap').style.display = this.value==='painel' ? '' : 'none';">
             <option value="admin" ${u?.papel==='admin'?'selected':''}>Admin</option>
             <option value="produtor" ${u?.papel==='produtor'?'selected':''}>Produtor (visualização e filtros, sem alterações)</option>
             <option value="balanca" ${u?.papel==='balanca'?'selected':''}>Balança do armazém (só a tela de registrar entrada no armazém)</option>
+            <option value="painel" ${u?.papel==='painel'?'selected':''}>Painel de visualização (só o Monitor, sem editar nada)</option>
           </select>
         </div>
         <div class="field"><label>Expira em (opcional)</label><input type="date" id="fUsuarioExpira" value="${u?.expiraEm||''}"></div>
@@ -4889,6 +4934,12 @@ function openCadastroModal(kind, id){
         <p class="small-note" style="margin:0 0 8px;">Este usuário só enxerga a tela de registrar entrada no armazém (foto do romaneio + peso/descontos) — sem acesso a nenhuma outra aba do sistema. Compartilhe o link junto com o usuário e senha acima.</p>
         ${u ? `<button type="button" class="btn ghost sm" style="width:100%;margin-bottom:4px;" onclick="compartilharAcessoBalanca('${u.id}')">📋 Copiar dados de acesso (link + usuário + senha)</button>
         <button type="button" class="btn ghost sm" style="width:100%;" onclick="enviarAcessoBalancaWhatsapp('${u.id}')">💬 Enviar por WhatsApp</button>`
+        : `<p class="small-note">Salve o usuário primeiro — depois, ao reabrir esta tela de edição, aparece aqui o botão pra compartilhar o link de acesso.</p>`}
+      </div>
+      <div id="fUsuarioAcessoPainelWrap" style="display:${u?.papel==='painel'?'':'none'};margin-top:10px;">
+        <p class="small-note" style="margin:0 0 8px;">Este usuário só enxerga o Monitor de Capacidade Operacional, em modo leitura — não dá pra editar nada, nem acessar as outras abas. Feito pra deixar aberto numa TV/tablet do escritório sem usar a senha real de ninguém.</p>
+        ${u ? `<button type="button" class="btn ghost sm" style="width:100%;margin-bottom:4px;" onclick="compartilharAcessoPainel('${u.id}')">📋 Copiar dados de acesso (link + usuário + senha)</button>
+        <button type="button" class="btn ghost sm" style="width:100%;" onclick="enviarAcessoPainelWhatsapp('${u.id}')">💬 Enviar por WhatsApp</button>`
         : `<p class="small-note">Salve o usuário primeiro — depois, ao reabrir esta tela de edição, aparece aqui o botão pra compartilhar o link de acesso.</p>`}
       </div>
       <p class="small-note">Motoristas não são criados aqui — libere o acesso deles na aba Cadastros, ao lado de cada motorista cadastrado.</p>
@@ -5324,6 +5375,24 @@ function openCadastroModal(kind, id){
         </select>
       </div>
       <div id="linkBalancaResultado"></div>`}
+      <div class="actions-row" style="justify-content:flex-end;margin-top:14px;">
+        <button class="btn ghost" onclick="closeCadastroModal()">Fechar</button>
+      </div>`;
+  }
+
+  if(kind==='linkPainel'){
+    const usuariosPainel = state.usuarios.filter(u=>u.papel==='painel');
+    title.textContent = 'Link de acesso para o painel do escritório';
+    body.innerHTML = `
+      <p class="small-note" style="margin-top:-4px;">Pensado pra deixar aberto numa TV ou tablet do escritório mostrando o operacional — só leitura, não edita nada, e não usa a senha real de ninguém. Abrir esse link num aparelho separado não desconecta ninguém dos outros logins.</p>
+      ${!usuariosPainel.length ? `<p class="small-note">Nenhum usuário com papel "Painel de visualização" cadastrado ainda — crie um na aba Usuários primeiro.</p>` : `
+      <div class="field"><label>Usuário do painel</label>
+        <select id="fLinkPainelSelect" onchange="onLinkPainelSelectChange()">
+          <option value="">— selecione —</option>
+          ${usuariosPainel.map(u=>`<option value="${u.id}">${u.usuario}</option>`).join('')}
+        </select>
+      </div>
+      <div id="linkPainelResultado"></div>`}
       <div class="actions-row" style="justify-content:flex-end;margin-top:14px;">
         <button class="btn ghost" onclick="closeCadastroModal()">Fechar</button>
       </div>`;
@@ -8353,6 +8422,7 @@ function renderDashboard(){
               <div class="card comp-card" id="descCompLegend"></div>
             </div>
           </section>
+        <div id="estoqueGaugesGeral"></div>
         </div>
       </div>
       </div>
@@ -8365,23 +8435,45 @@ function renderDashboard(){
   paintDashboardDiario();
   renderGaugesDashboard();
 }
-// Mesmo medidor da aba Estoque, só que resumido — aparece só no Dashboard Diário (é a visão
-// operacional do dia a dia, onde a capacidade de recebimento nas próximas 24h faz mais sentido).
-// Some sozinho se a cultura ativa for Algodão ou se nenhuma fazenda do contexto tiver capacidade cadastrada.
+// Mesmo medidor da aba Estoque (mesma função, mesmos dados) — aparece nos dois dashboards (Diário
+// e Geral) agora, sem os 3 painéis de configuração de push (isso já é feito na aba Estoque > Operações,
+// não faz sentido duplicar aqui). Some sozinho se a cultura ativa for Algodão ou se nenhuma fazenda
+// do contexto tiver capacidade cadastrada.
 function renderGaugesDashboard(){
   const semArmazem = culturaEhAlgodao((state.culturas.find(c=>c.nome===state.config.cultura)||{}).id)
     || state.config.cultura==='Algodão' || !armazensCadastradosNoContexto().length;
   const fazendas = semArmazem ? [] : armazensCadastradosNoContexto();
   const html = !fazendas.length ? '' : `
-    <section style="margin-top:22px;margin-bottom:4px;">
-      <h2>Monitor de Capacidade Operacional</h2>
+    <section style="margin-top:22px;margin-bottom:4px;position:relative;">
+      <h2>Monitor de Capacidade Operacional
+        <button class="btn ghost sm" style="position:absolute;right:0;top:0;" title="Tela cheia" onclick="telaCheiaMonitor(this)">⛶ Tela cheia</button>
+      </h2>
       <div style="display:flex;flex-direction:column;gap:18px;">
-        ${fazendas.map(f=>monitorCapacidadeOperacional(f)).join('')}
+        ${fazendas.map(f=>monitorCapacidadeOperacional(f, {mostrarPush:false})).join('')}
       </div>
     </section>`;
   const diario = document.getElementById('estoqueGaugesDiario');
   if(diario) diario.innerHTML = html;
+  const geral = document.getElementById('estoqueGaugesGeral');
+  if(geral) geral.innerHTML = html;
 }
+// Tela cheia do Monitor — útil pra deixar um painel ligado no escritório mostrando só isso, ou
+// numa tela/tablet dedicado. Usa a Fullscreen API do navegador; o botão vira "Sair" quando já
+// estiver em tela cheia. Some sozinho ao apertar Esc (comportamento nativo do navegador).
+function telaCheiaMonitor(btn){
+  const section = btn.closest('section');
+  if(!document.fullscreenElement){
+    section.requestFullscreen?.().catch(()=>toast('Seu navegador não permitiu abrir em tela cheia.', true));
+  } else {
+    document.exitFullscreen?.();
+  }
+}
+document.addEventListener('fullscreenchange', ()=>{
+  document.querySelectorAll('section button[onclick^="telaCheiaMonitor"]').forEach(btn=>{
+    const emTelaCheia = document.fullscreenElement && document.fullscreenElement.contains(btn);
+    btn.innerHTML = emTelaCheia ? '✕ Sair da tela cheia' : '⛶ Tela cheia';
+  });
+});
 function mostrarSubDashboard(qual){
   document.getElementById('subDashDiario').style.display = qual==='diario' ? '' : 'none';
   document.getElementById('subDashGeral').style.display = qual==='geral' ? '' : 'none';
@@ -10708,13 +10800,57 @@ function setSessao(s){
     else localStorage.removeItem(CHAVE_SESSAO_STORAGE);
   }catch(e){}
 }
+/* ============================================================
+   MODO PAINEL — tela só de visualização, pensada pra ficar aberta numa TV/tablet do escritório
+   mostrando o Monitor de Capacidade Operacional. Não tem nenhum botão de editar nada, não acessa
+   Cadastros/Cargas/Estoque/Usuários — só o monitor, com atualização automática de tempos em tempos
+   (a pessoa não precisa ficar mexendo). Como é um usuário/sessão próprio, abrir esse link num
+   segundo aparelho nunca desconecta ninguém dos outros logins.
+   ============================================================ */
+let painelAutoRefreshInterval = null;
+async function renderModoPainel(){
+  const semArmazem = culturaEhAlgodao((state.culturas.find(c=>c.nome===state.config.cultura)||{}).id)
+    || state.config.cultura==='Algodão' || !armazensCadastradosNoContexto().length;
+  const fazendas = semArmazem ? [] : armazensCadastradosNoContexto();
+  document.body.innerHTML = `
+    <div style="max-width:1400px;margin:0 auto;padding:22px 18px 60px 18px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
+        <h1 class="disp" style="font-size:20px;margin:0;color:var(--gold);letter-spacing:-.3px;">BRC - Smart Agribusiness Solutions</h1>
+        <div class="actions-row" style="gap:6px;">
+          <button class="btn ghost sm" onclick="toggleTelaCheiaPainel()">⛶ Tela cheia</button>
+          <button class="btn ghost sm" onclick="logout()">Sair</button>
+        </div>
+      </div>
+      <p class="small-note" style="margin:0 0 16px;">Painel de visualização (só leitura) · ${state.config.fazenda||'todas as fazendas'} · Safra ${state.config.safra||'—'} · ${state.config.cultura||'—'} · atualiza sozinho a cada 5 min</p>
+      <div id="painelMonitorSection">
+        ${!fazendas.length ? '<p class="small-note">Nenhuma fazenda com armazém cadastrado no contexto atual.</p>' : fazendas.map(f=>monitorCapacidadeOperacional(f, {mostrarPush:false})).join('')}
+      </div>
+    </div>
+  `;
+  if(painelAutoRefreshInterval) clearInterval(painelAutoRefreshInterval);
+  painelAutoRefreshInterval = setInterval(async ()=>{
+    await loadState();
+    renderModoPainel();
+  }, 5*60*1000);
+}
+function toggleTelaCheiaPainel(){
+  const el = document.getElementById('painelMonitorSection');
+  if(!document.fullscreenElement){
+    el.requestFullscreen?.().catch(()=>toast('Seu navegador não permitiu abrir em tela cheia.', true));
+  } else {
+    document.exitFullscreen?.();
+  }
+}
 function logout(){ setSessao(null); location.reload(); }
+
 
 function isModoMotoristaHash(){ return String(location.hash||'').toLowerCase()==='#motorista'; }
 function isModoBalancaHash(){ return String(location.hash||'').toLowerCase()==='#balanca'; }
+function isModoPainelHash(){ return String(location.hash||'').toLowerCase()==='#painel'; }
 function loginStorageKey(){
   if(isModoMotoristaHash()) return 'brc_login_placa_salva';
   if(isModoBalancaHash()) return 'brc_login_balanca_salvo';
+  if(isModoPainelHash()) return 'brc_login_painel_salvo';
   return 'brc_login_usuario_salvo';
 }
 function renderLoginScreen(erro){
@@ -11073,6 +11209,10 @@ function bootAfterLogin(){
     renderModoBalanca();
     return;
   }
+  if(s.papel==='painel'){
+    renderModoPainel();
+    return;
+  }
   renderTelaEntrada();
 }
 
@@ -11094,6 +11234,14 @@ function bootAfterLogin(){
   if(isModoBalancaHash() && (!sessaoValida || sessao.papel!=='balanca')){
     // mesma lógica do link do motorista: o link da balança sempre força um login novo de balança,
     // nunca reaproveita uma sessão de admin/produtor já ativa no mesmo navegador.
+    renderLoginScreen();
+    document.body.style.visibility = 'visible';
+    return;
+  }
+
+  if(isModoPainelHash() && (!sessaoValida || sessao.papel!=='painel')){
+    // mesma lógica: o link do painel sempre força um login novo de painel, nunca reaproveita
+    // uma sessão de admin/produtor já ativa no mesmo navegador/aparelho.
     renderLoginScreen();
     document.body.style.visibility = 'visible';
     return;
