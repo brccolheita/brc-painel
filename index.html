@@ -4042,7 +4042,7 @@ function renderConferencia(){
   el.innerHTML = `
     <div class="actions-row" style="margin-bottom:16px;">
       <button class="btn ${conferenciaModo==='motoristas'?'':'ghost'} sm" onclick="setConferenciaModo('motoristas')">Conferência de motoristas</button>
-      <button class="btn ${conferenciaModo==='conciliacao'?'':'ghost'} sm" onclick="setConferenciaModo('conciliacao')">Conciliação com empresa compradora</button>
+      <button class="btn ${conferenciaModo==='conciliacao'?'':'ghost'} sm" onclick="setConferenciaModo('conciliacao')">🤖 Conciliação &amp; Fechamento com IA</button>
     </div>
     <div id="conferenciaConteudo"></div>
   `;
@@ -4155,94 +4155,290 @@ function updateTbodyConferencia(){
 Object.assign(TBODY_UPDATERS, { conferencia: updateTbodyConferencia });
 
 /* ---------------- CONCILIAÇÃO COM ROMANEIO DA EMPRESA COMPRADORA ---------------- */
-let conciliacaoResultado = null; // não persiste — é só um comparativo pontual
+let conciliacaoIA_resultado = null;
+let conciliacaoIA_arquivoAtual = null; // não persiste — é só uma análise pontual
 function renderConciliacao(){
   const el = document.getElementById('conferenciaConteudo');
-  const resumo = conciliacaoResultado ? conciliacaoResultado.reduce((acc,r)=>{ acc[r.status]=(acc[r.status]||0)+1; return acc; }, {}) : null;
+  const resumo = conciliacaoIA_resultado ? conciliacaoIA_resultado.reduce((acc,r)=>{ acc[r.situacao]=(acc[r.situacao]||0)+1; return acc; }, {}) : null;
   el.innerHTML = `
     <div class="card" style="margin-bottom:20px;">
-      <h2>Conciliação com romaneio da empresa compradora</h2>
+      <h2>🤖 Conciliação &amp; Fechamento com IA</h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:14px;">
-        Importe a planilha de romaneios que a empresa (destino final) te enviar. O sistema tenta casar cada linha pela NF
-        e compara o peso que ela registrou com o peso que já temos aqui.
+        Filtre por empresa/contrato/intervalo de NF, anexe o extrato que a empresa compradora te enviar (PDF ou Excel/CSV),
+        e diga em poucas palavras o que você quer. A IA cruza o peso fiscal e o peso real que já temos aqui com o que
+        está no extrato, e aponta se cada NF confere, precisa de complemento ou de devolução — sem lançar nada sozinha,
+        você confere o resultado antes de decidir qualquer coisa.
       </p>
-      <div class="actions-row">
-        <button class="btn sm" id="btnImportConciliacao">📥 Importar romaneio da empresa</button>
-        <input type="file" id="importConciliacaoInput" accept=".xlsx,.xls" style="display:none">
+      <div class="form-grid">
+        <div class="field"><label>Empresa</label><select id="fConcEmpresa" onchange="atualizarContratosConciliacaoIA()"><option value="">Todas</option>${optionsEmpresas(null)}</select></div>
+        <div class="field"><label>Contrato</label><select id="fConcContrato"><option value="">Todos</option></select></div>
       </div>
+      <div class="form-grid">
+        <div class="field"><label>NF de</label><input id="fConcNfDe" type="number" placeholder="Ex: 100"></div>
+        <div class="field"><label>NF até</label><input id="fConcNfAte" type="number" placeholder="Ex: 150"></div>
+      </div>
+      <div class="field">
+        <label>Extrato da empresa compradora <span class="small-note">(PDF ou Excel/CSV)</span></label>
+        <div class="dropzone" id="dropzoneConciliacaoIA">
+          <input type="file" id="fConcArquivo" accept=".pdf,.xlsx,.xls,.csv">
+          <div class="icon">📎</div>
+          <div><b>Anexe o extrato</b> pra IA comparar</div>
+          <small id="fConcArquivoNome">Arraste, cole ou clique pra escolher</small>
+        </div>
+      </div>
+      <div class="field">
+        <label>O que você quer que a IA faça?</label>
+        <textarea id="fConcPedido" rows="2" placeholder='Ex: "Concilie essas NFs com o extrato e me diga se sobrou complemento ou devolução."'></textarea>
+      </div>
+      <button class="btn" id="btnRodarConciliacaoIA" onclick="executarConciliacaoIA()">🤖 Analisar com IA</button>
       ${resumo ? `<div class="actions-row" style="margin-top:14px;">
-        <span class="tag ok">${resumo.ok||0} conferem</span>
-        <span class="tag pending">${resumo.divergente||0} divergentes</span>
-        <span class="tag muted">${resumo.nao_encontrado||0} não encontrados aqui</span>
+        <span class="tag ok">${resumo.confere||0} conferem</span>
+        <span class="tag pending">${resumo.complemento||0} complemento</span>
+        <span class="tag neg">${resumo.devolucao||0} devolução</span>
+        <span class="tag muted">${resumo.nao_encontrado||0} não encontrados</span>
       </div>` : ''}
     </div>
-    ${conciliacaoResultado ? `
+    ${conciliacaoIA_resultado ? `
     <div class="card">
-      <div class="table-wrap resizable-wrap"><table id="table-conciliacao">
-        <thead><tr><th>Nº NF</th><th>Placa</th><th>Peso — empresa</th><th>Peso — nosso</th><th>Diferença</th><th>Status</th></tr></thead>
+      <div class="actions-row" style="margin-bottom:12px;">
+        <button class="btn ghost sm" onclick="exportarConciliacaoIAXlsx()">📤 Exportar resultado</button>
+        <button class="btn ghost sm" onclick="exportarConciliacaoIAPdf()">🖨️ Exportar relatório PDF</button>
+      </div>
+      <div class="table-wrap"><table id="table-conciliacao-ia">
+        <thead><tr><th>Nº NF</th><th>Peso fiscal</th><th>Peso real (nosso)</th><th>Peso no extrato</th><th>Diferença</th><th>Situação</th><th>Observação da IA</th></tr></thead>
         <tbody>
-          ${conciliacaoResultado.map(r=>`<tr>
-            <td>${r.nrNF||'—'}</td><td>${r.placa||'—'}</td><td>${r.pesoEmpresa!=null?fmt(r.pesoEmpresa,0)+' kg':'—'}</td>
-            <td>${r.pesoNosso!=null?fmt(r.pesoNosso,0)+' kg':'sem pesagem aqui'}</td>
+          ${conciliacaoIA_resultado.map(r=>`<tr>
+            <td>${r.nrNF||'—'}</td>
+            <td>${r.pesoFiscal!=null?fmt(r.pesoFiscal,0)+' kg':'—'}</td>
+            <td>${r.pesoReal!=null?fmt(r.pesoReal,0)+' kg':'—'}</td>
+            <td>${r.pesoExtrato!=null?fmt(r.pesoExtrato,0)+' kg':'—'}</td>
             <td>${r.diferenca!=null?fmt(r.diferenca,0)+' kg':'—'}</td>
-            <td>${r.status==='ok'?'<span class="tag ok">confere</span>':r.status==='divergente'?'<span class="tag pending">divergente</span>':'<span class="tag muted">não encontrado</span>'}</td>
+            <td>${situacaoTagConciliacaoIA(r.situacao)}</td>
+            <td class="small-note">${r.observacao||''}</td>
           </tr>`).join('')}
         </tbody>
       </table></div>
-    </div>` : `<div class="empty-state"><div class="icon">📄</div>Importe um romaneio da empresa para ver o comparativo.</div>`}
+    </div>` : `<div class="empty-state"><div class="icon">🤖</div>Preencha o filtro, anexe o extrato e peça a análise pra IA.</div>`}
   `;
-  if(conciliacaoResultado) tornarColunasRedimensionaveis('table-conciliacao');
-  document.getElementById('btnImportConciliacao').addEventListener('click', ()=>document.getElementById('importConciliacaoInput').click());
-  document.getElementById('importConciliacaoInput').addEventListener('change', (e)=>{
-    if(e.target.files[0]) handleImportConciliacao(e.target.files[0]);
-    e.target.value = '';
+  if(conciliacaoIA_resultado) tornarColunasRedimensionaveis('table-conciliacao-ia');
+  atualizarContratosConciliacaoIA();
+  const dz = document.getElementById('dropzoneConciliacaoIA');
+  const input = document.getElementById('fConcArquivo');
+  dz.addEventListener('click', ()=>input.click());
+  input.addEventListener('change', (e)=>{
+    if(e.target.files[0]){
+      conciliacaoIA_arquivoAtual = e.target.files[0];
+      document.getElementById('fConcArquivoNome').textContent = conciliacaoIA_arquivoAtual.name;
+    }
+  });
+  ['dragover','dragenter'].forEach(evt=>dz.addEventListener(evt, e=>{ e.preventDefault(); dz.classList.add('drag'); }));
+  ['dragleave','drop'].forEach(evt=>dz.addEventListener(evt, e=>{ e.preventDefault(); dz.classList.remove('drag'); }));
+  dz.addEventListener('drop', e=>{
+    if(e.dataTransfer.files.length){
+      conciliacaoIA_arquivoAtual = e.dataTransfer.files[0];
+      document.getElementById('fConcArquivoNome').textContent = conciliacaoIA_arquivoAtual.name;
+    }
   });
 }
-function handleImportConciliacao(file){
-  const reader = new FileReader();
-  reader.onload = (ev)=>{
-    try{
-      const wb = XLSX.read(ev.target.result, {type:'array', cellDates:true});
-      const sheet = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(sheet, {defval:null});
-      if(!rows.length){ toast('Não encontrei linhas nessa planilha.', true); return; }
-      const headers = Object.keys(rows[0]);
-      const keyNF = findKey(headers, ['nf']) || findKey(headers, ['nota']) || findKey(headers, ['numero']);
-      const keyPlaca = findKey(headers, ['placa']);
-      const keyPeso = findKey(headers, ['peso','liquido']) || findKey(headers, ['peso']);
-      if(!keyNF && !keyPlaca){ toast('Não consegui identificar as colunas de NF/placa nessa planilha.', true); return; }
-
-      conciliacaoResultado = rows.map(row=>{
-        const nrNF = keyNF ? row[keyNF] : null;
-        const placa = keyPlaca ? String(row[keyPlaca]||'').trim().toUpperCase() : '';
-        const pesoEmpresa = keyPeso ? num(row[keyPeso]) : null;
-
-        let e = null;
-        if(nrNF){
-          e = state.entregas.find(x=>x.nrNFRemessa && String(x.nrNFRemessa)===String(nrNF));
-          if(!e){ const v = state.vendas.find(v=>String(v.nrNF)===String(nrNF)); if(v) e = state.entregas.find(x=>x.vendaId===v.id); }
-        }
-        if(!e && placa){ e = state.entregas.find(x=>x.placa===placa && x.status!=='pendente'); }
-
-        const pesoNosso = e && e.status!=='pendente' ? (e.pesoLiquidoSemDesc || e.pesoBruto || null) : null;
-        let status = 'nao_encontrado';
-        let diferenca = null;
-        if(e && pesoNosso!=null && pesoEmpresa!=null){
-          diferenca = pesoEmpresa - pesoNosso;
-          status = Math.abs(diferenca) <= 50 ? 'ok' : 'divergente';
-        } else if(e){
-          status = 'divergente'; // achamos a carga, mas ainda não temos peso nosso pra comparar
-        }
-        return { nrNF, placa, pesoEmpresa, pesoNosso, diferenca, status };
-      });
-      renderConciliacao();
-      toast(`Conciliação: ${conciliacaoResultado.length} linha(s) comparada(s).`);
-    }catch(err){
-      console.error(err);
-      toast('Não foi possível ler essa planilha de conciliação.', true);
+function atualizarContratosConciliacaoIA(){
+  const empresaId = document.getElementById('fConcEmpresa').value;
+  const sel = document.getElementById('fConcContrato');
+  const contratos = state.contratos.filter(c=>!empresaId || c.empresaId===empresaId);
+  sel.innerHTML = `<option value="">Todos</option>` + contratos.map(c=>`<option value="${c.id}">${c.doc||c.id} — ${empresaNome(c.empresaId)}</option>`).join('');
+}
+function situacaoTagConciliacaoIA(s){
+  if(s==='confere') return '<span class="tag ok">confere</span>';
+  if(s==='complemento') return '<span class="tag pending">complemento</span>';
+  if(s==='devolucao') return '<span class="tag neg">devolução</span>';
+  return '<span class="tag muted">não encontrado</span>';
+}
+async function extrairTextoArquivoConciliacaoIA(file){
+  const nome = file.name.toLowerCase();
+  if(nome.endsWith('.pdf')){
+    if(!window.pdfjsLib) throw new Error('Biblioteca de leitura de PDF não carregou — verifique sua conexão.');
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+    let texto = '';
+    for(let i=1;i<=pdf.numPages;i++){
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      texto += content.items.map(it=>it.str).join(' ') + '\n';
     }
-  };
-  reader.readAsArrayBuffer(file);
+    if(!texto.trim()) throw new Error('Não consegui extrair texto desse PDF (pode ser uma imagem escaneada sem texto).');
+    return texto;
+  }
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, {type:'array', cellDates:true});
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, {defval:''});
+  if(!rows.length) throw new Error('Essa planilha não tem linhas de dados.');
+  const headers = Object.keys(rows[0]);
+  return [headers.join(' | ')].concat(rows.map(r=>headers.map(h=>r[h]).join(' | '))).join('\n');
+}
+async function analisarConciliacaoIA(linhasNossas, textoExtrato, pedido){
+  const prompt = `Você é um assistente de conferência fiscal/logística de uma empresa de agronegócio. Sua tarefa é conciliar
+os dados que JÁ TEMOS registrados (peso fiscal da NF e peso real pesado no romaneio) com o EXTRATO que a empresa
+compradora enviou, e apontar, para cada NF, se está tudo certo, se falta complemento (entregamos/registramos menos do
+que deveria) ou se sobra devolução (entregamos a mais do que deveria).
+
+PEDIDO DO OPERADOR: "${pedido || 'Faça a conciliação padrão comparando peso fiscal, peso real e o extrato.'}"
+
+NOSSOS DADOS (peso fiscal = o que a NF diz; peso real = o que pesamos de verdade no romaneio):
+${linhasNossas.map(l=>`NF ${l.nrNF} — produtor ${l.produtor} — peso fiscal: ${l.pesoFiscal??'não informado'} kg — peso real: ${l.pesoReal??'sem pesagem registrada'} kg`).join('\n')}
+
+TEXTO/TABELA DO EXTRATO DA EMPRESA (pode ter cabeçalho e colunas em qualquer ordem — identifique NF e peso pelo contexto):
+"""
+${textoExtrato.slice(0, 12000)}
+"""
+
+Pra cada NF da nossa lista, tente achar a linha correspondente no extrato (pelo número da NF, ou por outro identificador
+se a NF não aparecer claramente) e responda SOMENTE um JSON no formato abaixo, um item por NF:
+[
+  {
+    "nrNF": string,
+    "pesoFiscal": number ou null,
+    "pesoReal": number ou null,
+    "pesoExtrato": number ou null (o peso que você achou no extrato pra essa NF, ou null se não achou),
+    "diferenca": number ou null,
+    "situacao": "confere" | "complemento" | "devolucao" | "nao_encontrado",
+    "observacao": string curta explicando o motivo
+  }
+]
+Regras: "confere" = as fontes batem dentro de uma margem razoável (até uns 0,5%). "complemento" = falta produto a
+entregar (recebido/registrado é menor que o devido). "devolucao" = sobrou produto (recebido é maior que o devido).
+"nao_encontrado" = não achou essa NF no extrato de jeito nenhum. Responda SOMENTE o array JSON, sem markdown, sem
+texto antes ou depois.`;
+
+  const response = await fetch(`${API_BASE}/analisar-contrato`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-api-key": API_KEY },
+    body: JSON.stringify({ prompt, maxTokens: 4096 })
+  });
+  if(!response.ok){
+    let detalhe = '';
+    try{ const errBody = await response.json(); detalhe = errBody.error?.message || errBody.error || errBody.message || ''; }catch(e){}
+    throw new Error('Falha ao consultar IA (status ' + response.status + ')' + (detalhe ? ': ' + detalhe : ''));
+  }
+  const data = await response.json();
+  const textoResposta = (data.content||[]).map(c=>c.text||'').join('');
+  const limpo = textoResposta.replace(/```json|```/g,'').trim();
+  let resultado;
+  try{ resultado = JSON.parse(limpo); }
+  catch(e){ throw new Error('A IA respondeu num formato que não consegui interpretar.'); }
+  if(!Array.isArray(resultado)) throw new Error('A IA não devolveu uma lista de resultados.');
+  return resultado;
+}
+async function executarConciliacaoIA(){
+  const empresaId = document.getElementById('fConcEmpresa').value;
+  const contratoId = document.getElementById('fConcContrato').value;
+  const nfDe = num(document.getElementById('fConcNfDe').value);
+  const nfAte = num(document.getElementById('fConcNfAte').value);
+  const pedido = document.getElementById('fConcPedido').value.trim();
+
+  if(!conciliacaoIA_arquivoAtual){ toast('Anexe o extrato da empresa antes de pedir a análise.', true); return; }
+
+  let vendas = state.vendas.filter(v=>v.usarParaConfronto!==false);
+  if(empresaId) vendas = vendas.filter(v=>v.empresaId===empresaId);
+  if(contratoId) vendas = vendas.filter(v=>v.contratoId===contratoId);
+  if(nfDe) vendas = vendas.filter(v=>num(v.nrNF)>=nfDe);
+  if(nfAte) vendas = vendas.filter(v=>num(v.nrNF)<=nfAte);
+  if(!vendas.length){ toast('Nenhuma NF encontrada com esse filtro — ajuste empresa/contrato/intervalo.', true); return; }
+
+  const linhasNossas = vendas.map(v=>{
+    const e = state.entregas.find(x=>x.vendaId===v.id);
+    return {
+      nrNF: v.nrNF, produtor: produtorNome(v.produtorId),
+      pesoFiscal: v.pesoFiscal, pesoReal: e ? (e.pesoLiquidoSemDesc || e.pesoBruto || null) : null,
+    };
+  });
+
+  const btn = document.getElementById('btnRodarConciliacaoIA');
+  const label = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '⏳ Lendo o extrato...';
+  try{
+    const textoExtrato = await extrairTextoArquivoConciliacaoIA(conciliacaoIA_arquivoAtual);
+    btn.innerHTML = '🤖 Analisando com IA...';
+    const resultado = await analisarConciliacaoIA(linhasNossas, textoExtrato, pedido);
+    conciliacaoIA_resultado = resultado;
+    renderConciliacao();
+    avisoImportante(`Análise concluída — ${resultado.length} NF(s) processada(s). Confira o resultado antes de decidir qualquer complemento/devolução.`);
+  }catch(err){
+    console.error(err);
+    avisoImportante('Não consegui concluir a análise: ' + err.message, true);
+  }finally{
+    const btnAtual = document.getElementById('btnRodarConciliacaoIA');
+    if(btnAtual){ btnAtual.disabled = false; btnAtual.innerHTML = label; }
+  }
+}
+function exportarConciliacaoIAPdf(){
+  if(!conciliacaoIA_resultado || !conciliacaoIA_resultado.length){ toast('Nenhum resultado de conciliação pra exportar ainda.', true); return; }
+  const empresaId = document.getElementById('fConcEmpresa')?.value;
+  const contratoId = document.getElementById('fConcContrato')?.value;
+  const nfDe = document.getElementById('fConcNfDe')?.value;
+  const nfAte = document.getElementById('fConcNfAte')?.value;
+  const filtroPartes = [];
+  if(empresaId) filtroPartes.push(`Empresa: ${empresaNome(empresaId)}`);
+  if(contratoId){ const c = state.contratos.find(x=>x.id===contratoId); if(c) filtroPartes.push(`Contrato: ${c.doc||c.id}`); }
+  if(nfDe || nfAte) filtroPartes.push(`NF ${nfDe||'—'} a ${nfAte||'—'}`);
+
+  const resumo = conciliacaoIA_resultado.reduce((acc,r)=>{ acc[r.situacao]=(acc[r.situacao]||0)+1; return acc; }, {});
+  const totalDiferenca = conciliacaoIA_resultado.reduce((acc,r)=>acc + (num(r.diferenca)||0), 0);
+
+  const linhas = conciliacaoIA_resultado.map(r=>`<tr>
+    <td>${r.nrNF||'—'}</td>
+    <td>${r.pesoFiscal!=null?fmtInt(r.pesoFiscal):'—'}</td>
+    <td>${r.pesoReal!=null?fmtInt(r.pesoReal):'—'}</td>
+    <td>${r.pesoExtrato!=null?fmtInt(r.pesoExtrato):'—'}</td>
+    <td style="${num(r.diferenca)<0?'color:#b91c1c;':num(r.diferenca)>0?'color:#166534;':''}">${r.diferenca!=null?fmtInt(r.diferenca):'—'}</td>
+    <td>${r.situacao==='confere'?'Confere':r.situacao==='complemento'?'Complemento':r.situacao==='devolucao'?'Devolução':'Não encontrado'}</td>
+    <td style="font-size:10px;">${r.observacao||''}</td>
+  </tr>`).join('');
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Relatório de Conciliação & Fechamento com IA — ${todayISO()}</title>
+    <style>
+      body{ font-family: Arial, Helvetica, sans-serif; padding:24px; color:#111; }
+      h1{ font-size:18px; margin-bottom:4px; }
+      p.sub{ color:#555; font-size:12px; margin-top:0; margin-bottom:8px; }
+      .resumo{ display:flex; gap:16px; flex-wrap:wrap; margin-bottom:14px; font-size:12px; }
+      .resumo span{ border:1px solid #ccc; border-radius:6px; padding:4px 10px; }
+      table{ width:100%; border-collapse:collapse; font-size:11px; margin-top:10px; }
+      th, td{ border:1px solid #ccc; padding:6px 8px; text-align:left; }
+      th{ background:#f0f0f0; }
+      tfoot td{ font-weight:bold; background:#f7f7f7; }
+      #btnImprimir{ margin-top:20px; padding:10px 18px; font-size:14px; cursor:pointer; }
+      @media print{ #btnImprimir{ display:none; } }
+    </style>
+  </head><body>
+    <h1>Relatório de Conciliação &amp; Fechamento com IA — BRC - Smart Agribusiness Solutions</h1>
+    <p class="sub">Gerado em ${new Date().toLocaleString('pt-BR')} · Safra ${state.config.safra||'—'}${filtroPartes.length ? ' · '+filtroPartes.join(' · ') : ''}</p>
+    <div class="resumo">
+      <span>${resumo.confere||0} conferem</span>
+      <span>${resumo.complemento||0} complemento</span>
+      <span>${resumo.devolucao||0} devolução</span>
+      <span>${resumo.nao_encontrado||0} não encontrados</span>
+    </div>
+    <table>
+      <thead><tr><th>Nº NF</th><th>Peso fiscal (kg)</th><th>Peso real — nosso (kg)</th><th>Peso no extrato (kg)</th><th>Diferença (kg)</th><th>Situação</th><th>Observação da IA</th></tr></thead>
+      <tbody>${linhas}</tbody>
+      <tfoot><tr><td colspan="4" style="text-align:right;">Total de diferença do relatório</td><td>${fmtInt(totalDiferenca)} kg</td><td colspan="2"></td></tr></tfoot>
+    </table>
+    <p style="font-size:10px;color:#555;margin-top:10px;">Diferença carga a carga = peso real (nosso) − peso no extrato da empresa. Valores negativos (vermelho) indicam falta de produto entregue; positivos (verde) indicam excedente.</p>
+    <button id="btnImprimir" onclick="window.print()">🖨️ Salvar como PDF / Imprimir</button>
+  </body></html>`;
+  const win = window.open('', '_blank');
+  if(!win){ toast('Seu navegador bloqueou a nova aba. Permita pop-ups para este site e tente de novo.', true); return; }
+  win.document.write(html);
+  win.document.close();
+}
+function exportarConciliacaoIAXlsx(){
+  if(!conciliacaoIA_resultado || !conciliacaoIA_resultado.length) return;
+  const headers = ['Nº NF','Peso fiscal (kg)','Peso real - nosso (kg)','Peso no extrato (kg)','Diferença (kg)','Situação','Observação da IA'];
+  const rows = conciliacaoIA_resultado.map(r=>[r.nrNF||'', r.pesoFiscal??'', r.pesoReal??'', r.pesoExtrato??'', r.diferenca??'', r.situacao||'', r.observacao||'']);
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'CONCILIAÇÃO IA');
+  XLSX.writeFile(wb, `Conciliacao_IA_${todayISO()}.xlsx`);
+  avisoImportante('Resultado da conciliação exportado.');
 }
 
 function confirmarEntrega(id){
