@@ -27,6 +27,7 @@
   --gold: #2FD9A0; --gold-dim: #1F6B54; --lime: #6BE1C6;
   --amber-glow: rgba(47,217,160,.16); --red: #FF5C7A; --red-dim: rgba(255,92,122,.16);
   --cyan: #3EC6FF; --menu-bg: rgba(10,18,28,.72);
+  --gold-glow-strong: rgba(47,217,160,.45); --lime-glow-strong: rgba(107,225,198,.45); --red-glow-strong: rgba(255,92,122,.45);
 }
 body.tema-escuro{
   --bg: #0B0E0C; --bg-2: #12160F; --panel: #161C16; --panel-2: #1C231B;
@@ -34,6 +35,7 @@ body.tema-escuro{
   --gold: #FFDD00; --gold-dim: #7A611F; --lime: #C6FF3D;
   --amber-glow: rgba(255,221,0,.16); --red: #FF3D5A; --red-dim: rgba(255,61,90,.16);
   --cyan: #3DFFE8; --menu-bg: rgba(15,18,14,.72);
+  --gold-glow-strong: rgba(255,221,0,.45); --lime-glow-strong: rgba(198,255,61,.45); --red-glow-strong: rgba(255,61,90,.45);
 }
 body.tema-padrao{
   --bg: #F3F6EF; --bg-2: #FFFFFF; --panel: #FFFFFF; --panel-2: #EEF3E8;
@@ -41,6 +43,7 @@ body.tema-padrao{
   --gold: #2F8F44; --gold-dim: #A8D5B0; --lime: #8BC34A;
   --amber-glow: rgba(47,143,68,.10); --red: #D6534B; --red-dim: rgba(214,83,75,.10);
   --cyan: #2E9E8C; --menu-bg: rgba(255,255,255,.85);
+  --gold-glow-strong: rgba(47,143,68,.28); --lime-glow-strong: rgba(139,195,74,.28); --red-glow-strong: rgba(214,83,75,.28);
 }
 *{box-sizing:border-box;}
 html,body{ margin:0; background:var(--bg); color:var(--ink); }
@@ -344,9 +347,9 @@ body.read-only .interacoes-fixed{ display:none; }
 .dash-scope .kpis{ display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:14px; margin-top:6px; }
 .dash-scope .kpi{ background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:18px 20px; }
 .dash-scope .kpi .label{ font-size:11px; text-transform:uppercase; letter-spacing:1.6px; color:var(--ink-dim); font-weight:600; font-family:'JetBrains Mono',monospace; }
-.dash-scope .kpi .value{ font-family:'Space Grotesk',sans-serif; font-size:36px; font-weight:800; color:var(--gold); margin-top:6px; font-variant-numeric:tabular-nums; text-shadow:0 0 18px rgba(255,221,0,.45); letter-spacing:-.5px; }
-.dash-scope .kpi .value.ok{ color:var(--lime); text-shadow:0 0 18px rgba(198,255,61,.45); }
-.dash-scope .kpi .value.warn{ color:var(--red); text-shadow:0 0 18px rgba(255,61,90,.45); }
+.dash-scope .kpi .value{ font-family:'Space Grotesk',sans-serif; font-size:36px; font-weight:800; color:var(--gold); margin-top:6px; font-variant-numeric:tabular-nums; text-shadow:0 0 18px var(--gold-glow-strong); letter-spacing:-.5px; }
+.dash-scope .kpi .value.ok{ color:var(--lime); text-shadow:0 0 18px var(--lime-glow-strong); }
+.dash-scope .kpi .value.warn{ color:var(--red); text-shadow:0 0 18px var(--red-glow-strong); }
 .dash-scope .kpi .sub{ font-size:12px; color:var(--ink-dim); margin-top:3px;}
 .dash-scope .kpi .sacas-box{
   display:inline-block; font-size:15px; font-weight:800; color:#FF1A3D;
@@ -364,14 +367,14 @@ body.read-only .interacoes-fixed{ display:none; }
 .dash-scope th{ text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.8px; color:var(--ink-dim); border-bottom:1px solid var(--line); padding:9px 8px; font-family:'JetBrains Mono',monospace; font-weight:600; }
 .dash-scope td{ padding:9px 8px; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; }
 .dash-scope tr:hover td{ background:rgba(242,183,5,.045); }
-.dash-scope tr.total-row td{ font-weight:800; font-size:15px; background:var(--amber-glow); border-top:1px solid var(--gold-dim); color:var(--gold); text-shadow:0 0 10px rgba(255,221,0,.3); }
+.dash-scope tr.total-row td{ font-weight:800; font-size:15px; background:var(--amber-glow); border-top:1px solid var(--gold-dim); color:var(--gold); text-shadow:0 0 10px var(--gold-glow-strong); }
 .dash-scope .tag.pending{ background:var(--red-dim); color:var(--red); }
 .dash-scope .pct{ font-size:13px; font-weight:700; color:var(--lime); }
 .dash-scope .hectbox{
-  background:linear-gradient(135deg, #182015 0%, #0F1710 100%); border:1px solid var(--gold-dim); border-radius:16px;
+  background:linear-gradient(135deg, var(--panel-2) 0%, var(--panel) 100%); border:1px solid var(--gold-dim); border-radius:16px;
   padding:26px 28px; display:flex; flex-wrap:wrap; gap:24px; align-items:center; justify-content:space-between; position:relative; overflow:hidden;
 }
-.dash-scope .hectbox::after{ content:""; position:absolute; right:-40px; top:-60px; width:200px;height:200px; background:radial-gradient(circle, rgba(242,183,5,.18), transparent 70%); }
+.dash-scope .hectbox::after{ content:""; position:absolute; right:-40px; top:-60px; width:200px;height:200px; background:radial-gradient(circle, var(--amber-glow), transparent 70%); }
 .dash-scope .hectbox-left{ max-width:280px; }
 .dash-scope .hectbox h3{ margin:0 0 6px 0; font-family:'Space Grotesk',sans-serif; font-size:17px; }
 .dash-scope .hectbox p{ margin:0; font-size:12.5px; color:var(--ink-dim); line-height:1.5;}
@@ -379,9 +382,9 @@ body.read-only .interacoes-fixed{ display:none; }
 .dash-scope .hect-input-group input{ width:140px; padding:12px 14px; border-radius:8px; border:1px solid var(--line); background:var(--bg-2); color:var(--ink); font-size:15px; font-weight:600; font-family:'JetBrains Mono',monospace; }
 .dash-scope .hect-input-group input:focus{ outline:none; border-color:var(--gold); }
 .dash-scope .hect-input-group button{ background:var(--gold); color:#181300; border:none; padding:12px 22px; border-radius:8px; font-weight:700; cursor:pointer; font-size:14px; }
-.dash-scope .hect-input-group button:hover{ background:#ffce33; }
+.dash-scope .hect-input-group button:hover{ filter:brightness(1.12); }
 .dash-scope .hect-results{ display:flex; gap:30px; flex-wrap:wrap; position:relative; z-index:2;}
-.dash-scope .hect-results .n{ font-family:'Space Grotesk',sans-serif; font-size:34px; font-weight:800; color:var(--lime); text-shadow:0 0 18px rgba(198,255,61,.45); letter-spacing:-.5px; }
+.dash-scope .hect-results .n{ font-family:'Space Grotesk',sans-serif; font-size:34px; font-weight:800; color:var(--lime); text-shadow:0 0 18px var(--lime-glow-strong); letter-spacing:-.5px; }
 .dash-scope .hect-results .l{ font-size:10.5px; text-transform:uppercase; letter-spacing:1.2px; color:var(--ink-dim); font-family:'JetBrains Mono',monospace; }
 .dash-scope .pending-note{ font-size:12.5px; color:var(--ink-dim); background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:12px 16px; margin-top:12px; }
 .dash-scope .pending-note b{ color:var(--gold); }
@@ -415,7 +418,7 @@ body.read-only .interacoes-fixed{ display:none; }
 .dash-scope .periodo-auto b{ color:var(--lime); font-weight:600; }
 .dash-scope .pdf-header{ display:none; }
 .dash-scope .pdf-header.show{ display:block; margin-bottom:20px; padding-bottom:16px; border-bottom:1px solid var(--line); }
-.dash-scope .pdf-header .eyebrow{ font-size:20px; letter-spacing:1px; text-transform:uppercase; color:var(--gold); font-family:'Space Grotesk',sans-serif; font-weight:700; text-shadow:0 0 14px rgba(255,221,0,.35); }
+.dash-scope .pdf-header .eyebrow{ font-size:20px; letter-spacing:1px; text-transform:uppercase; color:var(--gold); font-family:'Space Grotesk',sans-serif; font-weight:700; text-shadow:0 0 14px var(--gold-glow-strong); }
 .dash-scope .pdf-header .pdf-subline{ font-size:12.5px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-dim); font-family:'JetBrains Mono',monospace; font-weight:600; margin-top:4px; }
 .dash-scope .pdf-header h1{ font-family:'Space Grotesk',sans-serif; font-size:26px; margin:6px 0 0 0; }
 .dash-scope .pdf-header .meta-line{ margin-top:10px; font-size:15px; color:var(--ink); font-family:'JetBrains Mono',monospace; font-weight:600; }
@@ -425,7 +428,7 @@ body.read-only .interacoes-fixed{ display:none; }
 .dash-scope .comp-item:last-child{ border-bottom:none; }
 .dash-scope .comp-dot{ width:11px; height:11px; border-radius:50%; flex-shrink:0; }
 .dash-scope .comp-name{ flex:1; font-size:12.5px; color:var(--ink); font-weight:500; }
-.dash-scope .comp-val{ font-family:'Space Grotesk',sans-serif; font-size:23px; font-weight:800; color:var(--gold); text-shadow:0 0 14px rgba(255,221,0,.4); min-width:76px; text-align:right; }
+.dash-scope .comp-val{ font-family:'Space Grotesk',sans-serif; font-size:23px; font-weight:800; color:var(--gold); text-shadow:0 0 14px var(--gold-glow-strong); min-width:76px; text-align:right; }
 .dash-scope .comp-sub{ font-size:10px; color:var(--ink-dim); font-family:'JetBrains Mono',monospace; min-width:81px; text-align:right; }
 footer.dash-footer{ text-align:center; font-size:12px; color:var(--ink-dim); margin-top:56px; font-family:'JetBrains Mono',monospace;}
 @media (max-width:900px){ .dash-scope .grid2{grid-template-columns:1fr;} .dash-scope .hectbox{flex-direction:column; align-items:stretch;} }
@@ -2387,9 +2390,9 @@ function monitorCapacidadeOperacional(f, opts){
   const pushProg = f.pushProgramado || { ativo:false, periodoHoras:12, usuarioIds:[] };
 
   return `<div class="monv2">
-    <h3 style="margin:0 0 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#fff;">
+    <h3 style="margin:0 0 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:var(--mv2-text);">
       <i class="ti ti-building-warehouse" style="color:var(--mv2-cyan, #22d3ee);"></i> ${f.nome} — Monitor de Capacidade Operacional
-      <button class="monv2-btn" onclick="toggleUnidadeGaugeArmazem()">⇄ Ver em ${unidadeGaugeArmazem==='sacas'?'toneladas':'sacas'}</button>
+      <button class="monv2-btn pdf-hide" onclick="toggleUnidadeGaugeArmazem()">⇄ Ver em ${unidadeGaugeArmazem==='sacas'?'toneladas':'sacas'}</button>
     </h3>
 
     <div class="monv2-layout">
@@ -2405,7 +2408,7 @@ function monitorCapacidadeOperacional(f, opts){
           ${capacidadeKg ? gaugeAgulhaSVG(pct, f.id+'_arm', {iconClass:'ti ti-building-warehouse', rotulo:'CAPACIDADE DO ARMAZÉM', valorCentroSub: fmtUnidade(saldoKg), subLabel:'DEPOSITADAS'}) : '<p class="monv2-sub" style="text-align:center;padding:30px 0;">Defina a capacidade do armazém no cadastro desta fazenda pra ver o medidor.</p>'}
         </div>
         <div class="monv2-card monv2-gauge-card" style="flex:1;min-width:260px;">
-          ${secador ? `<div style="text-align:center;margin-bottom:8px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap;">
+          ${secador ? `<div class="pdf-hide" style="text-align:center;margin-bottom:8px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap;">
             <button class="monv2-btn" onclick="abrirCalibradorSecador('${f.id}')">🎯 Calibrar</button>
             ${secador.suspenso
               ? `<button class="monv2-btn solid" onclick="retomarSecador('${f.id}')">▶️ Retomar secador</button>`
@@ -2443,7 +2446,7 @@ function monitorCapacidadeOperacional(f, opts){
     </div>
 
 ${mostrarPush ? `
-    <div class="monitor-push-grid" style="margin-top:16px;">
+    <div class="monitor-push-grid pdf-hide" style="margin-top:16px;">
       <div class="monv2-panel-card">
         <div style="font-size:13px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:6px;">
           <span>🕒 Push programado</span>
@@ -6029,7 +6032,6 @@ async function exportarMonitoresEstoquePDF(){
   const originalLabel = btn.innerHTML;
   btn.classList.add('loading'); btn.innerHTML = '⏳ Gerando PDF...';
   const header = document.getElementById('pdfHeaderBlockEstoque');
-  const pushGrids = document.querySelectorAll('#monitoresEstoquePDF .monitor-push-grid');
   const fazenda = (state.config.fazenda||'').trim();
   const safra = (state.config.safra||'').trim();
   header.innerHTML = `
@@ -6039,9 +6041,9 @@ async function exportarMonitoresEstoquePDF(){
       <div style="font-size:12px;color:var(--ink-dim);margin-top:2px;">Gerado em ${new Date().toLocaleString('pt-BR')}</div>
     </div>`;
   header.style.display = 'block';
-  pushGrids.forEach(el=>{ el.dataset.prevDisplay = el.style.display; el.style.display = 'none'; });
+  const alvo = document.getElementById('estoquePdfCaptureArea');
+  const escondidos = ocultarElementosPdfHide(alvo);
   try{
-    const alvo = document.getElementById('estoquePdfCaptureArea');
     const bgCor = getComputedStyle(document.body).getPropertyValue('--bg').trim() || '#0B0E0C';
     const canvas = await html2canvas(alvo, {backgroundColor: bgCor, scale:2, useCORS:true});
     const { jsPDF } = window.jspdf;
@@ -6053,8 +6055,8 @@ async function exportarMonitoresEstoquePDF(){
     toast('Erro ao gerar o PDF: ' + err.message, true);
     console.error(err);
   }finally{
+    restaurarElementosPdfHide(escondidos);
     header.style.display = 'none';
-    pushGrids.forEach(el=>{ el.style.display = el.dataset.prevDisplay || ''; });
     btn.classList.remove('loading'); btn.innerHTML = originalLabel;
   }
 }
@@ -8361,7 +8363,7 @@ function renderDashboard(){
         <div id="alertaDescontoDiario"></div>
         <section style="margin-top:10px;">
           <h2>Romaneios <span id="tituloEscopoRomaneiosDia">de hoje</span>
-            <div class="actions-row">
+            <div class="actions-row pdf-hide">
               <button class="btn ghost sm" onclick="openCadastroModal('limitesDesconto')">🎯 Limite percentual de desconto</button>
               <button class="btn ghost sm leitura-ok" id="btnUnidadeDiario" onclick="toggleUnidadeDiario()">⇄ Ver em sacas</button>
               <button class="btn ghost sm leitura-ok" id="btnAcumuladoDiario" onclick="toggleAcumuladoDiario()">📚 Mostrar acumulado</button>
@@ -8444,7 +8446,7 @@ function renderDashboard(){
                 <h3>Informe os hectares colhidos</h3>
                 <p>Digite a área já colhida e veja na hora a média de sacas por hectare, com base no total líquido recebido até o momento.</p>
               </div>
-              <div class="hect-input-group">
+              <div class="hect-input-group pdf-hide">
                 <input type="number" id="hectInput" placeholder="Ex: 320" min="0" step="0.1" oninput="calcMediaHectare()">
                 <button onclick="calcMediaHectare()">Calcular</button>
               </div>
@@ -8528,7 +8530,7 @@ function renderGaugesDashboard(){
   const html = !fazendas.length ? '' : `
     <section style="margin-top:22px;margin-bottom:4px;position:relative;">
       <h2>Monitor de Capacidade Operacional
-        <button class="btn ghost sm" style="position:absolute;right:0;top:0;" title="Tela cheia" onclick="telaCheiaMonitor(this)">⛶ Tela cheia</button>
+        <button class="btn ghost sm pdf-hide" style="position:absolute;right:0;top:0;" title="Tela cheia" onclick="telaCheiaMonitor(this)">⛶ Tela cheia</button>
       </h2>
       <div style="display:flex;flex-direction:column;gap:18px;">
         ${fazendas.map(f=>monitorCapacidadeOperacional(f, {mostrarPush:false})).join('')}
@@ -8968,22 +8970,26 @@ function paintDashboard(){
   if(chartDesc) chartDesc.destroy();
   if(chartDescComp) chartDescComp.destroy();
 
+  const cor = (nome, fallback) => (getComputedStyle(document.body).getPropertyValue(nome).trim() || fallback);
+  const corGold = cor('--gold','#FFDD00'), corCyan = cor('--cyan','#3DFFE8'), corRed = cor('--red','#FF3D5A'), corLime = cor('--lime','#C6FF3D');
+  const corLinha = cor('--line','#2A322A'), corInkDim = cor('--ink-dim','#98A092'), corInk = cor('--ink','#EDEFE9'), corPanel = cor('--panel','#161C16');
+
   chartEvo = new Chart(document.getElementById('chartEvolucao'), {
     data:{
       labels: data.evolution.map(e=>e.data.slice(5).split('-').reverse().join('/')),
       datasets:[
-        {type:'bar', label:'Sacas do dia', data: data.evolution.map(e=>e.scs), backgroundColor:'#FFDD00', borderRadius:5, order:2, barPercentage:.55},
-        {type:'line', label:'Acumulado', data: data.evolution.map(e=>e.acumulado), borderColor:'#C6FF3D', backgroundColor:'#C6FF3D', tension:.35, yAxisID:'y1', order:1, pointRadius:3}
+        {type:'bar', label:'Sacas do dia', data: data.evolution.map(e=>e.scs), backgroundColor:corGold, borderRadius:5, order:2, barPercentage:.55},
+        {type:'line', label:'Acumulado', data: data.evolution.map(e=>e.acumulado), borderColor:corLime, backgroundColor:corLime, tension:.35, yAxisID:'y1', order:1, pointRadius:3}
       ]
     },
     options:{
       responsive:true, interaction:{mode:'index', intersect:false},
       scales:{
-        y:{ grid:{color:'#2A322A'}, title:{display:true,text:'Sacas / dia', color:'#98A092'} },
-        y1:{ position:'right', grid:{drawOnChartArea:false}, title:{display:true,text:'Acumulado', color:'#98A092'} },
-        x:{ grid:{color:'#1C231B'} }
+        y:{ grid:{color:corLinha}, title:{display:true,text:'Sacas / dia', color:corInkDim}, ticks:{color:corInkDim} },
+        y1:{ position:'right', grid:{drawOnChartArea:false}, title:{display:true,text:'Acumulado', color:corInkDim}, ticks:{color:corInkDim} },
+        x:{ grid:{color:corLinha}, ticks:{color:corInkDim} }
       },
-      plugins:{legend:{position:'bottom', labels:{color:'#EDEFE9'}}}
+      plugins:{legend:{position:'bottom', labels:{color:corInk}}}
     }
   });
 
@@ -8991,11 +8997,11 @@ function paintDashboard(){
     type:'bar',
     data:{
       labels: data.drivers.map(d=>d.nome.split(' - ')[0]),
-      datasets:[{label:'Sacas líquidas', data: data.drivers.map(d=>d.scsLiquido), backgroundColor:'#C6FF3D', borderRadius:6}]
+      datasets:[{label:'Sacas líquidas', data: data.drivers.map(d=>d.scsLiquido), backgroundColor:corLime, borderRadius:6}]
     },
     options:{
       indexAxis:'y', responsive:true, plugins:{legend:{display:false}},
-      scales:{x:{grid:{color:'#2A322A'}, title:{display:true,text:'Sacas líquidas', color:'#98A092'}}, y:{grid:{display:false}}}
+      scales:{x:{grid:{color:corLinha}, title:{display:true,text:'Sacas líquidas', color:corInkDim}, ticks:{color:corInkDim}}, y:{grid:{display:false}, ticks:{color:corInkDim}}}
     }
   });
 
@@ -9003,11 +9009,11 @@ function paintDashboard(){
     type:'line',
     data:{
       labels: data.romaneioDiscount.map(r=>r.romaneio),
-      datasets:[{label:'Desconto (sacas)', data: data.romaneioDiscount.map(r=>r.desconto), borderColor:'#FF3D5A', backgroundColor:'rgba(255,61,90,.16)', fill:true, tension:.3, pointRadius:2}]
+      datasets:[{label:'Desconto (sacas)', data: data.romaneioDiscount.map(r=>r.desconto), borderColor:corRed, backgroundColor:corRed+'2A', fill:true, tension:.3, pointRadius:2}]
     },
     options:{
       responsive:true, plugins:{legend:{display:false}},
-      scales:{ x:{grid:{color:'#1C231B'}, title:{display:true,text:'Nº Romaneio', color:'#98A092'}, ticks:{maxRotation:90,minRotation:60}}, y:{grid:{color:'#2A322A'}, title:{display:true,text:'Sacas descontadas', color:'#98A092'}} }
+      scales:{ x:{grid:{color:corLinha}, title:{display:true,text:'Nº Romaneio', color:corInkDim}, ticks:{color:corInkDim, maxRotation:90,minRotation:60}}, y:{grid:{color:corLinha}, title:{display:true,text:'Sacas descontadas', color:corInkDim}, ticks:{color:corInkDim}} }
     }
   });
 
@@ -9024,7 +9030,7 @@ function paintDashboard(){
     const compLabels = ['Umidade','Impureza','Ardido/Avariado'];
     const compPct = [k.umidadePct, k.impurezaPct, k.ardidoPct];
     const compScs = [k.umidadeScs, k.impurezaScs, k.ardidoScs];
-    const compColors = ['#FFDD00','#3DFFE8','#FF3D5A'];
+    const compColors = [corGold, corCyan, corRed];
 
     document.getElementById('descCompLegend').innerHTML = compLabels.map((l,i)=>`
       <div class="comp-item">
@@ -9036,7 +9042,7 @@ function paintDashboard(){
 
     chartDescComp = new Chart(document.getElementById('chartDescComposicao'), {
       type:'doughnut',
-      data:{ labels: compLabels, datasets:[{ data: compPct, backgroundColor: compColors, borderColor:'#161C16', borderWidth:3 }] },
+      data:{ labels: compLabels, datasets:[{ data: compPct, backgroundColor: compColors, borderColor:corPanel, borderWidth:3 }] },
       options:{
         responsive:true, cutout:'62%',
         plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:(ctx)=> `${ctx.label}: ${ctx.raw.toFixed(1)}% do total colhido` } } }
@@ -9074,6 +9080,13 @@ function addFittedPage(pdf, canvas, isFirst){
   pdf.addImage(imgData, 'PNG', x, y, renderWidth, renderHeight);
 }
 
+function ocultarElementosPdfHide(escopoEl){
+  const itens = (escopoEl||document).querySelectorAll('.pdf-hide');
+  return Array.from(itens).map(el=>{ const prev = el.style.display; el.style.display = 'none'; return {el, prev}; });
+}
+function restaurarElementosPdfHide(lista){
+  lista.forEach(({el, prev})=>{ el.style.display = prev; });
+}
 async function exportPDFDiario(){
   const btn = document.getElementById('pdfBtnDiario');
   const originalLabel = btn.innerHTML;
@@ -9102,7 +9115,10 @@ async function exportPDFDiario(){
   pdfHeader2.classList.add('show');
   const page1 = document.getElementById('pdfPage1Diario');
   const page2 = document.getElementById('pdfPage2Diario');
+  const monitor = document.getElementById('estoqueGaugesDiario');
+  const temMonitor = monitor && monitor.querySelector('.monv2');
   const bgCor = getComputedStyle(document.body).getPropertyValue('--bg').trim() || '#0B0E0C';
+  const escondidos = ocultarElementosPdfHide(document.getElementById('subDashDiario'));
   try{
     const canvas1 = await html2canvas(page1, {backgroundColor: bgCor, scale:2, useCORS:true});
     const canvas2 = await html2canvas(page2, {backgroundColor: bgCor, scale:2, useCORS:true});
@@ -9110,12 +9126,19 @@ async function exportPDFDiario(){
     const pdf = new jsPDF('p','mm','a4');
     addFittedPage(pdf, canvas1, true);
     addFittedPage(pdf, canvas2, false);
+    if(temMonitor){
+      // O monitor (armazém+secador, os dois medidores) ganha página própria — tentar espremer
+      // junto com os gráficos deixaria os números ilegíveis de tão reduzido.
+      const canvas3 = await html2canvas(monitor, {backgroundColor: bgCor, scale:2, useCORS:true});
+      addFittedPage(pdf, canvas3, false);
+    }
     const fazendaSlug = fazenda.replace(/\s+/g,'_') || 'fazenda';
     pdf.save(`relatorio_diario_${fazendaSlug}_${todayISO()}.pdf`);
   }catch(err){
     toast('Erro ao gerar o PDF: ' + err.message, true);
     console.error(err);
   }finally{
+    restaurarElementosPdfHide(escondidos);
     pdfHeader.classList.remove('show');
     pdfHeader2.classList.remove('show');
     btn.classList.remove('loading'); btn.innerHTML = originalLabel;
@@ -9129,15 +9152,23 @@ async function exportPDF(){
   const pdfHeader2 = document.getElementById('pdfHeaderBlock2');
   const page1 = document.getElementById('pdfPage1');
   const page2 = document.getElementById('pdfPage2');
+  const monitor = document.getElementById('estoqueGaugesGeral');
+  const temMonitor = monitor && monitor.querySelector('.monv2');
+  const bgCor = getComputedStyle(document.body).getPropertyValue('--bg').trim() || '#0B0E0C';
   pdfHeader.classList.add('show');
   pdfHeader2.classList.add('show');
+  const escondidos = ocultarElementosPdfHide(document.getElementById('subDashGeral'));
   try{
-    const canvas1 = await html2canvas(page1, {backgroundColor:'#0B0E0C', scale:2, useCORS:true});
-    const canvas2 = await html2canvas(page2, {backgroundColor:'#0B0E0C', scale:2, useCORS:true});
+    const canvas1 = await html2canvas(page1, {backgroundColor: bgCor, scale:2, useCORS:true});
+    const canvas2 = await html2canvas(page2, {backgroundColor: bgCor, scale:2, useCORS:true});
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF('p','mm','a4');
     addFittedPage(pdf, canvas1, true);
     addFittedPage(pdf, canvas2, false);
+    if(temMonitor){
+      const canvas3 = await html2canvas(monitor, {backgroundColor: bgCor, scale:2, useCORS:true});
+      addFittedPage(pdf, canvas3, false);
+    }
     const fazenda = (state.config.fazenda||'fazenda').trim().replace(/\s+/g,'_') || 'fazenda';
     const safra = (state.config.safra||'safra').trim() || 'safra';
     const cultura = (state.config.cultura||'colheita').trim().replace(/\s+/g,'_') || 'colheita';
@@ -9148,6 +9179,7 @@ async function exportPDF(){
     toast('Erro ao gerar o PDF: ' + err.message, true);
     console.error(err);
   }finally{
+    restaurarElementosPdfHide(escondidos);
     pdfHeader.classList.remove('show');
     pdfHeader2.classList.remove('show');
     btn.classList.remove('loading'); btn.innerHTML = originalLabel;
