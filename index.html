@@ -2531,6 +2531,11 @@ ${mostrarPush ? `
 ` : ''}
   </div>`;
 }
+let estoqueSubTab = 'fluxo'; // 'fluxo' | 'monitor'
+let estoqueFluxoTab = 'entrada'; // 'entrada' | 'saida' | 'extrato'
+function setEstoqueSubTab(t){ estoqueSubTab = t; renderEstoque(); }
+function setEstoqueFluxoTab(t){ estoqueFluxoTab = t; renderEstoque(); }
+
 function renderEstoque(){
   const el = document.getElementById('tab-estoque');
   if(!el) return;
@@ -2540,20 +2545,47 @@ function renderEstoque(){
   }
   const fazendas = armazensCadastradosNoContexto();
   if(!fazendas.length){ el.innerHTML = ''; return; }
-  const movsOrdenados = [...state.movimentosEstoque].sort((a,b)=>(b.data||'').localeCompare(a.data||'') || (b.createdAt||'').localeCompare(a.createdAt||''));
-  const nAguardando = state.romaneiosArmazem.filter(r=>r.status==='aguardando_aprovacao').length;
+
   el.innerHTML = `
-    <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-      <span>Estoque de Armazém</span>
-      <button class="btn pdf sm" id="pdfBtnEstoque" onclick="exportarMonitoresEstoquePDF()">⬇ Exportar PDF</button>
+    <div class="section-title"><span>Estoque de Armazém</span></div>
+    <div class="actions-row" style="margin-bottom:18px;">
+      <button class="btn ${estoqueSubTab==='fluxo'?'':'ghost'} sm" onclick="setEstoqueSubTab('fluxo')">📦 Fluxo de Armazém</button>
+      <button class="btn ${estoqueSubTab==='monitor'?'':'ghost'} sm" onclick="setEstoqueSubTab('monitor')">📊 Monitor de Capacidade Operacional</button>
     </div>
+    <div id="estoqueSubConteudo"></div>
+  `;
+  if(estoqueSubTab==='monitor') renderMonitorEstoque(fazendas);
+  else renderFluxoArmazem();
+}
+
+function renderFluxoArmazem(){
+  const el = document.getElementById('estoqueSubConteudo');
+  const nEntradas = state.romaneiosArmazem.filter(r=>r.tipoOperacao!=='saida').length;
+  const nSaidas = state.romaneiosArmazem.filter(r=>r.tipoOperacao==='saida').length;
+  el.innerHTML = `
+    <div class="actions-row" style="margin-bottom:14px;">
+      <button class="btn ${estoqueFluxoTab==='entrada'?'':'ghost'} sm" onclick="setEstoqueFluxoTab('entrada')">⬇️ Entrada <span class="small-note">(${nEntradas})</span></button>
+      <button class="btn ${estoqueFluxoTab==='saida'?'':'ghost'} sm" onclick="setEstoqueFluxoTab('saida')">⬆️ Saída <span class="small-note">(${nSaidas})</span></button>
+      <button class="btn ${estoqueFluxoTab==='extrato'?'':'ghost'} sm" onclick="setEstoqueFluxoTab('extrato')">📑 Extrato de Movimentações</button>
+    </div>
+    <div id="fluxoArmazemConteudo"></div>
+  `;
+  if(estoqueFluxoTab==='extrato') renderExtratoMovimentacoes();
+  else renderRomaneiosArmazemTabela();
+}
+
+function renderRomaneiosArmazemTabela(){
+  const el = document.getElementById('fluxoArmazemConteudo');
+  const nAguardando = state.romaneiosArmazem.filter(r=>r.status==='aguardando_aprovacao' && (estoqueFluxoTab==='saida' ? r.tipoOperacao==='saida' : r.tipoOperacao!=='saida')).length;
+  const tituloFluxo = estoqueFluxoTab==='saida' ? 'Saídas de Armazém' : 'Entradas de Armazém';
+  el.innerHTML = `
     <div class="card" id="cardEstoquePlanilha" style="margin-bottom:24px;">
-      <h2>Romaneios de Armazém <small>${state.romaneiosArmazem.length} romaneio(s)${nAguardando>0?' — '+nAguardando+' aguardando aprovação':''}</small>
+      <h2>${tituloFluxo} <small>${nAguardando>0?nAguardando+' aguardando aprovação':''}</small>
         <button class="btn ghost sm" id="btnVerSacas-romaneiosArmazem" data-header-tabela="romaneiosArmazem" data-header-item-id="verSacas" onclick="toggleVerEmSacas('romaneiosArmazem')">⇄ Ver em sacas</button>
         <div class="interacoes-fixed" id="cardInteracoesEstoque" data-header-tabela="romaneiosArmazem" data-header-item-id="interacoes" style="display:inline-block;">
           <button class="interacoes-trigger" id="btnInteracoesEstoqueToggle">☰ Interações</button>
           <div class="interacoes-panel" id="interacoesEstoquePanel">
-            <button class="interacoes-item" data-item-id="novaEntrada" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); openCadastroModal('romaneioArmazem');">➕ Nova entrada</button>
+            <button class="interacoes-item" data-item-id="novaEntrada" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); openCadastroModal('romaneioArmazem');">➕ Nova ${estoqueFluxoTab==='saida'?'saída':'entrada'}</button>
             <span class="choice-wrap" data-item-id="importar" style="width:100%;">
               <button class="interacoes-item" onclick="toggleChoicePopover('popoverImportarArmazem')">📥 Importar</button>
               <span class="choice-popover" id="popoverImportarArmazem">
@@ -2592,16 +2624,33 @@ function renderEstoque(){
         <tbody id="tbody-romaneiosArmazem"></tbody>
       </table></div>
     </div>
+  `;
+  updateTbodyRomaneiosArmazem();
+  document.getElementById('importArmazemInput').addEventListener('change', (e)=>{ if(e.target.files[0]) abrirImportacaoArmazemXlsxComColheita(e.target.files[0]); e.target.value=''; });
+  document.getElementById('importArmazemInputPDF').addEventListener('change', (e)=>{ if(e.target.files[0]) abrirImportacaoArmazemPdfComColheita(e.target.files[0]); e.target.value=''; });
+  document.getElementById('importArmazemInputXmlNFe').addEventListener('change', (e)=>{ if(e.target.files.length) abrirImportacaoXmlComColheita([...e.target.files], 'armazem'); e.target.value=''; });
+  (function(){
+    const btn = document.getElementById('btnInteracoesEstoqueToggle');
+    const panel = document.getElementById('interacoesEstoquePanel');
+    if(btn && panel && !btn.dataset.bound){
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', (e)=>{ e.stopPropagation(); panel.classList.toggle('aberto'); });
+      document.addEventListener('click', (e)=>{
+        if(panel.classList.contains('aberto') && !panel.contains(e.target) && e.target!==btn) panel.classList.remove('aberto');
+      });
+    }
+  })();
+  restaurarOrdemInteracoes('interacoesEstoquePanel');
+  inicializarDragReorderInteracoes('interacoesEstoquePanel');
+  restaurarOrdemHeader('romaneiosArmazem');
+  inicializarDragReorderHeader('romaneiosArmazem');
+  montarScrollDuploTabelas();
+}
 
-    <div class="section-title">Monitor de Capacidade Operacional</div>
-    <div id="estoquePdfCaptureArea">
-      <div id="pdfHeaderBlockEstoque" style="display:none;"></div>
-      <div id="monitoresEstoquePDF" style="display:flex;flex-direction:column;gap:18px;margin-bottom:24px;background:var(--bg);padding:2px;">
-        ${fazendas.map(f=>monitorCapacidadeOperacional(f)).join('')}
-      </div>
-    </div>
-
-    <div class="section-title">Extrato de Movimentações</div>
+function renderExtratoMovimentacoes(){
+  const el = document.getElementById('fluxoArmazemConteudo');
+  const movsOrdenados = [...state.movimentosEstoque].sort((a,b)=>(b.data||'').localeCompare(a.data||'') || (b.createdAt||'').localeCompare(a.createdAt||''));
+  el.innerHTML = `
     <div class="card">
       <div class="actions-row" style="margin-bottom:14px;">
         <button class="btn ghost sm" onclick="openCadastroModal('ajusteEstoque')">⚖️ Ajuste manual</button>
@@ -2638,30 +2687,29 @@ function renderEstoque(){
       </table></div>
     </div>
   `;
-  updateTbodyRomaneiosArmazem();
-  document.getElementById('importArmazemInput').addEventListener('change', (e)=>{ if(e.target.files[0]) abrirImportacaoArmazemXlsxComColheita(e.target.files[0]); e.target.value=''; });
-  document.getElementById('importArmazemInputPDF').addEventListener('change', (e)=>{ if(e.target.files[0]) abrirImportacaoArmazemPdfComColheita(e.target.files[0]); e.target.value=''; });
-  document.getElementById('importArmazemInputXmlNFe').addEventListener('change', (e)=>{ if(e.target.files.length) abrirImportacaoXmlComColheita([...e.target.files], 'armazem'); e.target.value=''; });
-  (function(){
-    const btn = document.getElementById('btnInteracoesEstoqueToggle');
-    const panel = document.getElementById('interacoesEstoquePanel');
-    if(btn && panel && !btn.dataset.bound){
-      btn.dataset.bound = '1';
-      btn.addEventListener('click', (e)=>{ e.stopPropagation(); panel.classList.toggle('aberto'); });
-      document.addEventListener('click', (e)=>{
-        if(panel.classList.contains('aberto') && !panel.contains(e.target) && e.target!==btn) panel.classList.remove('aberto');
-      });
-    }
-  })();
-  restaurarOrdemInteracoes('interacoesEstoquePanel');
-  inicializarDragReorderInteracoes('interacoesEstoquePanel');
-  restaurarOrdemHeader('romaneiosArmazem');
-  inicializarDragReorderHeader('romaneiosArmazem');
   montarScrollDuploTabelas();
 }
+
+function renderMonitorEstoque(fazendas){
+  const el = document.getElementById('estoqueSubConteudo');
+  el.innerHTML = `
+    <div class="actions-row" style="margin-bottom:14px;justify-content:flex-end;">
+      <button class="btn pdf sm" id="pdfBtnEstoque" onclick="exportarMonitoresEstoquePDF()">⬇ Exportar PDF</button>
+    </div>
+    <div id="estoquePdfCaptureArea">
+      <div id="pdfHeaderBlockEstoque" style="display:none;"></div>
+      <div id="monitoresEstoquePDF" style="display:flex;flex-direction:column;gap:18px;background:var(--bg);padding:2px;">
+        ${fazendas.map(f=>monitorCapacidadeOperacional(f)).join('')}
+      </div>
+    </div>
+  `;
+}
 function updateTbodyRomaneiosArmazem(){
+  if(!document.getElementById('tbody-romaneiosArmazem')) return; // não está na sub-aba de fluxo agora
   const filters = getFilterValues('romaneiosArmazem');
-  const lista = [...state.romaneiosArmazem].sort((a,b)=>(b.dataEntrada||'').localeCompare(a.dataEntrada||'') || (b.createdAt||'').localeCompare(a.createdAt||''));
+  const lista = [...state.romaneiosArmazem]
+    .filter(r => estoqueFluxoTab==='saida' ? r.tipoOperacao==='saida' : r.tipoOperacao!=='saida')
+    .sort((a,b)=>(b.dataEntrada||'').localeCompare(a.dataEntrada||'') || (b.createdAt||'').localeCompare(a.createdAt||''));
   const rows = lista.map(r=>{
     const extract = {
       armazem: state.fazendas.find(f=>f.id===r.fazendaId)?.nome||'', produtor: r.terceiroId ? `🤝 ${terceiroNome(r.terceiroId)}` : produtorNome(r.produtorId), cultura: culturaNome(r.culturaId),
@@ -2691,7 +2739,7 @@ function updateTbodyRomaneiosArmazem(){
     </tr>`;
     return {extract, html};
   }).filter(r=>rowMatches(r.extract, filters));
-  document.getElementById('tbody-romaneiosArmazem').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(23,'Nenhum romaneio de armazém registrado ainda.');
+  document.getElementById('tbody-romaneiosArmazem').innerHTML = rows.length ? rows.map(r=>r.html).join('') : emptyRow(23, estoqueFluxoTab==='saida' ? 'Nenhuma saída de armazém registrada ainda.' : 'Nenhuma entrada de armazém registrada ainda.');
   montarScrollDuploTabelas();
   atualizarBarraSelecao('romaneiosArmazem');
 }
@@ -7320,13 +7368,14 @@ function pasteHandler(e){
 async function handleRomaneioFile(file){
   if(document.getElementById('motoristaEnviarWrap')){ return handleRomaneioFileMotorista(file); }
   const statusWrap = document.getElementById('ocrStatusWrap');
+  statusWrap.innerHTML = `<div id="ocrImgPreview"></div><div id="ocrStatusLinha"></div>`;
   const reader = new FileReader();
   reader.onload = () => {
-    statusWrap.innerHTML = `<img class="thumb-preview" src="${reader.result}">` + statusWrap.innerHTML;
+    document.getElementById('ocrImgPreview').innerHTML = `<img class="thumb-preview" src="${reader.result}">`;
   };
   reader.readAsDataURL(file);
 
-  statusWrap.innerHTML = `<div class="ocr-status"><div class="spinner"></div> Lendo romaneio com IA...</div>`;
+  document.getElementById('ocrStatusLinha').innerHTML = `<div class="ocr-status"><div class="spinner"></div> Lendo romaneio com IA...</div>`;
   const [parsedResult, fotoResult] = await Promise.allSettled([
     ocrRomaneio(file),
     comprimirImagemArquivo(file, 1400, 0.72)
@@ -7335,9 +7384,9 @@ async function handleRomaneioFile(file){
 
   if(parsedResult.status === 'fulfilled'){
     applyOcrToForm(parsedResult.value);
-    statusWrap.innerHTML = `<div class="ocr-status" style="color:var(--lime)">✓ Romaneio lido — confira os campos antes de salvar</div>` + statusWrap.innerHTML;
+    document.getElementById('ocrStatusLinha').innerHTML = `<div class="ocr-status" style="color:var(--lime)">✓ Romaneio lido — confira os campos antes de salvar</div>`;
   }else{
-    statusWrap.innerHTML = `<div class="ocr-status" style="color:var(--red)">⚠ ${parsedResult.reason?.message||'Falha ao consultar a IA'}. A foto foi mantida — preencha os campos manualmente e salve normalmente.</div>` + statusWrap.innerHTML;
+    document.getElementById('ocrStatusLinha').innerHTML = `<div class="ocr-status" style="color:var(--red)">⚠ ${parsedResult.reason?.message||'Falha ao consultar a IA'}. A foto foi mantida — preencha os campos manualmente e salve normalmente.</div>`;
   }
   const camposWrap = document.getElementById('motoristaCamposWrap');
   if(camposWrap){
@@ -7359,14 +7408,15 @@ async function handleRomaneioFileMotorista(file){
   enviarWrap.style.display = 'none';
   decisaoWrap.style.display = 'none'; decisaoWrap.innerHTML = '';
   resumoWrap.innerHTML = '';
+  statusWrap.innerHTML = `<div id="ocrImgPreview"></div><div id="ocrStatusLinha"></div>`;
 
   const reader = new FileReader();
   reader.onload = () => {
-    statusWrap.innerHTML = `<img class="thumb-preview" src="${reader.result}">` + statusWrap.innerHTML;
+    document.getElementById('ocrImgPreview').innerHTML = `<img class="thumb-preview" src="${reader.result}">`;
   };
   reader.readAsDataURL(file);
 
-  statusWrap.innerHTML = `<div class="ocr-status"><div class="spinner"></div> Lendo romaneio com IA...</div>`;
+  document.getElementById('ocrStatusLinha').innerHTML = `<div class="ocr-status"><div class="spinner"></div> Lendo romaneio com IA...</div>`;
 
   const [parsedResult, fotoResult] = await Promise.allSettled([
     ocrRomaneio(file),
@@ -7382,12 +7432,12 @@ async function handleRomaneioFileMotorista(file){
 
   if(completo){
     motoristaOcrData = parsed;
-    statusWrap.innerHTML = `<div class="ocr-status" style="color:var(--lime)">✓ Romaneio lido com sucesso.</div>` + statusWrap.innerHTML;
+    document.getElementById('ocrStatusLinha').innerHTML = `<div class="ocr-status" style="color:var(--lime)">✓ Romaneio lido com sucesso.</div>`;
     resumoWrap.innerHTML = resumoOcrHtml(parsed);
     enviarWrap.style.display = '';
   }else{
     motoristaOcrData = parsed || {};
-    statusWrap.innerHTML = `<div class="ocr-status" style="color:var(--gold)">⚠ ${erro || 'Não consegui confirmar todos os dados do romaneio nessa foto.'}</div>` + statusWrap.innerHTML;
+    document.getElementById('ocrStatusLinha').innerHTML = `<div class="ocr-status" style="color:var(--gold)">⚠ ${erro || 'Não consegui confirmar todos os dados do romaneio nessa foto.'}</div>`;
     mostrarDecisaoOcrMotorista();
   }
 }
@@ -7678,6 +7728,16 @@ function tornarPainelArrastavel(painel, alca){
   document.addEventListener('touchend', soltar);
 }
 
+// Cancela o envio depois que a IA já leu a foto — o motorista pode desistir e tirar outra foto,
+// sem que nada seja enviado. Re-renderiza a tela do zero, do mesmo jeito que ela carrega ao entrar,
+// garantindo que nenhum resquício da leitura anterior fique preso na tela.
+function cancelarEnvioMotorista(){
+  motoristaOcrData = null;
+  motoristaFotoAtual = null;
+  const s = getSessao();
+  const m = state.motoristas.find(x=>x.id===s.motoristaId);
+  renderModoMotorista(m?.placa||'');
+}
 function renderModoMotorista(placaConhecida){
   document.body.innerHTML = `
     <div style="max-width:480px;margin:0 auto;padding:32px 18px 60px 18px;">
@@ -7813,6 +7873,7 @@ function renderModoBalanca(){
             <button class="btn ghost" style="flex:1;" onclick="notificarAdminBalanca()">🔔 Avisar admin</button>
             <button class="btn" style="flex:2;padding:12px;font-size:15px;" onclick="salvarRomaneioArmazemBalanca()">Salvar</button>
           </div>
+          <button class="btn danger" id="btnCancelarBalanca" style="width:100%;margin-top:8px;display:none;" onclick="cancelarLeituraBalanca()">✕ Cancelar</button>
         </div>
 
         <div id="balancaSuccessWrap"></div>
@@ -7951,11 +8012,12 @@ function pasteHandlerRomArmazemModal(e){
 }
 async function handleRomArmazemModalFile(file){
   const statusWrap = document.getElementById('ocrStatusWrapRomArmazemModal');
+  statusWrap.innerHTML = `<div id="ocrImgPreview"></div><div id="ocrStatusLinha"></div>`;
   const reader = new FileReader();
-  reader.onload = () => { statusWrap.innerHTML = `<img class="thumb-preview" src="${reader.result}">` + statusWrap.innerHTML; };
+  reader.onload = () => { document.getElementById('ocrImgPreview').innerHTML = `<img class="thumb-preview" src="${reader.result}">`; };
   reader.readAsDataURL(file);
 
-  statusWrap.innerHTML = `<div class="ocr-status"><div class="spinner"></div> Lendo romaneio com IA...</div>`;
+  document.getElementById('ocrStatusLinha').innerHTML = `<div class="ocr-status"><div class="spinner"></div> Lendo romaneio com IA...</div>`;
   const [parsedResult, fotoResult] = await Promise.allSettled([
     ocrRomaneio(file),
     comprimirImagemArquivo(file, 1400, 0.72)
@@ -7964,9 +8026,9 @@ async function handleRomArmazemModalFile(file){
 
   if(parsedResult.status === 'fulfilled'){
     aplicarOcrFormBalanca(parsedResult.value); // mesmos IDs de campo do formulário da balança — mapeador reaproveitado
-    statusWrap.innerHTML = `<div class="ocr-status" style="color:var(--lime)">✓ Romaneio lido — confira os campos antes de salvar</div>` + statusWrap.innerHTML;
+    document.getElementById('ocrStatusLinha').innerHTML = `<div class="ocr-status" style="color:var(--lime)">✓ Romaneio lido — confira os campos antes de salvar</div>`;
   }else{
-    statusWrap.innerHTML = `<div class="ocr-status" style="color:var(--red)">⚠ ${parsedResult.reason?.message||'Falha ao consultar a IA'}. A foto foi mantida — preencha os campos manualmente.</div>` + statusWrap.innerHTML;
+    document.getElementById('ocrStatusLinha').innerHTML = `<div class="ocr-status" style="color:var(--red)">⚠ ${parsedResult.reason?.message||'Falha ao consultar a IA'}. A foto foi mantida — preencha os campos manualmente.</div>`;
   }
 }
 async function visualizarFotoRomaneioArmazem(id){
@@ -7998,11 +8060,12 @@ function pasteHandlerBalanca(e){
 }
 async function handleRomaneioFileBalanca(file){
   const statusWrap = document.getElementById('ocrStatusWrapBalanca');
+  statusWrap.innerHTML = `<div id="ocrImgPreview"></div><div id="ocrStatusLinha"></div>`;
   const reader = new FileReader();
-  reader.onload = () => { statusWrap.innerHTML = `<img class="thumb-preview" src="${reader.result}">` + statusWrap.innerHTML; };
+  reader.onload = () => { document.getElementById('ocrImgPreview').innerHTML = `<img class="thumb-preview" src="${reader.result}">`; };
   reader.readAsDataURL(file);
 
-  statusWrap.innerHTML = `<div class="ocr-status"><div class="spinner"></div> Lendo romaneio com IA...</div>`;
+  document.getElementById('ocrStatusLinha').innerHTML = `<div class="ocr-status"><div class="spinner"></div> Lendo romaneio com IA...</div>`;
   const [parsedResult, fotoResult] = await Promise.allSettled([
     ocrRomaneio(file),
     comprimirImagemArquivo(file, 1400, 0.72)
@@ -8011,10 +8074,11 @@ async function handleRomaneioFileBalanca(file){
 
   if(parsedResult.status === 'fulfilled'){
     aplicarOcrFormBalanca(parsedResult.value);
-    statusWrap.innerHTML = `<div class="ocr-status" style="color:var(--lime)">✓ Romaneio lido — confira os campos antes de salvar</div>` + statusWrap.innerHTML;
+    document.getElementById('ocrStatusLinha').innerHTML = `<div class="ocr-status" style="color:var(--lime)">✓ Romaneio lido — confira os campos e clique em Salvar, ou cancele abaixo.</div>`;
   }else{
-    statusWrap.innerHTML = `<div class="ocr-status" style="color:var(--red)">⚠ ${parsedResult.reason?.message||'Falha ao consultar a IA'}. A foto foi mantida — preencha os campos manualmente e salve normalmente.</div>` + statusWrap.innerHTML;
+    document.getElementById('ocrStatusLinha').innerHTML = `<div class="ocr-status" style="color:var(--red)">⚠ ${parsedResult.reason?.message||'Falha ao consultar a IA'}. A foto foi mantida — preencha os campos manualmente e salve normalmente.</div>`;
   }
+  document.getElementById('btnCancelarBalanca')?.style.removeProperty('display');
 }
 // Busca dados já confirmados de uma NF que já tenha sido importada por XML antes (produtor, fazenda,
 // motorista, placa) — usado pra corrigir automaticamente qualquer nome incompleto/errado que a IA
@@ -8165,9 +8229,23 @@ async function salvarRomaneioArmazemBalanca(){
     .forEach(id=>{ const el = document.getElementById(id); if(el) el.value = ''; });
   document.getElementById('fRomArmazemData').value = todayISO();
   document.getElementById('fRomArmazemDataEmissao').value = '';
+  document.getElementById('btnCancelarBalanca').style.display = 'none';
   atualizarPesoLiquidoRomaneioArmazem();
 }
 
+// Cancela depois que a IA já leu a foto — some com a leitura, a foto e os campos que vieram dela,
+// sem salvar nada. O operador da balança pode tirar outra foto e tentar de novo.
+function cancelarLeituraBalanca(){
+  balancaFotoAtual = null;
+  document.getElementById('ocrStatusWrapBalanca').innerHTML = '';
+  ['fRomArmazemMotorista','fRomArmazemPlaca','fRomArmazemNr','fRomArmazemNF','fRomArmazemPesoBruto','fRomArmazemTara','fRomArmazemUmidade','fRomArmazemImpureza','fRomArmazemArdido','fRomArmazemObs']
+    .forEach(id=>{ const el = document.getElementById(id); if(el) el.value = ''; });
+  document.getElementById('fRomArmazemData').value = todayISO();
+  document.getElementById('fRomArmazemDataEmissao').value = '';
+  document.getElementById('btnCancelarBalanca').style.display = 'none';
+  atualizarPesoLiquidoRomaneioArmazem();
+  toast('Leitura cancelada — nada foi salvo.');
+}
 function renderAvisosRejeicaoMotorista(){
   const wrap = document.getElementById('motoristaAvisoRejeicao');
   if(!wrap) return;
@@ -8270,6 +8348,7 @@ function renderMotoristaForm(){
     <div id="motoristaDecisaoWrap" style="display:none;"></div>
     <div id="motoristaEnviarWrap" style="display:none;margin-top:14px;">
       <button class="btn" style="width:100%;padding:14px;font-size:15px;" onclick="submitMotorista(false)">📦 Enviar romaneio de produto</button>
+      <button class="btn ghost" style="width:100%;margin-top:8px;" onclick="cancelarEnvioMotorista()">✕ Cancelar</button>
     </div>
   `;
   bindDropzone();
@@ -8519,7 +8598,8 @@ function renderDashboard(){
           </select>
         </div>
         <p class="small-note" style="flex-basis:100%;margin:2px 0 0 0;">Fazenda, safra e cultura são preenchidos em "Dados de Colheita e Comercialização" → Dados da Safra.</p>
-        <div style="align-self:flex-end;">
+        <div style="align-self:flex-end;display:flex;gap:8px;">
+          <button class="btn ghost sm leitura-ok pdf-hide" id="btnUnidadeGeral" onclick="toggleUnidadeGeral()">⇄ Ver em kg</button>
           <button class="btn pdf leitura-ok" id="pdfBtn" onclick="exportPDF()">⬇ Exportar PDF</button>
         </div>
       </div>
@@ -8875,6 +8955,14 @@ function toggleUnidadeDiario(){
   dashboardDiarioUnidade = dashboardDiarioUnidade==='kg' ? 'scs' : 'kg';
   paintDashboardDiario();
 }
+let dashboardGeralUnidade = 'scs'; // o Geral já nasce mostrando em sacas — aqui o padrão é o oposto do Diário
+function toggleUnidadeGeral(){
+  dashboardGeralUnidade = dashboardGeralUnidade==='scs' ? 'kg' : 'scs';
+  paintDashboard();
+}
+function fmtValorGeralScs(scs){
+  return dashboardGeralUnidade==='kg' ? fmt(scs*60,0)+' kg' : fmt(scs)+' SACAS';
+}
 function fmtValorDiario(kg){
   return dashboardDiarioUnidade==='scs' ? fmt(kg/60,2)+' scs' : fmt(kg,0)+' kg';
 }
@@ -9030,11 +9118,13 @@ function paintDashboard(){
 
   document.getElementById('kpis').innerHTML = `
     <div class="kpi"><div class="label">Cargas (romaneios)</div><div class="value">${k.cargas}</div><div class="sub">recebidas até o momento</div></div>
-    <div class="kpi"><div class="label">Sacas brutas</div><div class="value">${fmt(k.scsBruto)} <span class="unit-scs">SACAS</span></div><div class="sub">antes dos descontos</div></div>
-    <div class="kpi"><div class="label">Sacas líquidas (s/ tara)</div><div class="value ok">${fmt(k.scsLiquido)} <span class="unit-scs">SACAS</span></div><div class="sub">peso bruto já descontada a tara — ainda sem os descontos de qualidade</div></div>
-    <div class="kpi"><div class="label">Saldo líquido final</div><div class="value ok">${fmt(k.scsLiquidoFinal)} <span class="unit-scs">SACAS</span></div><div class="sub">valor final já com todos os descontos aplicados</div></div>
-    <div class="kpi"><div class="label">Desconto médio</div><div class="value warn">${fmtPct(k.descontoPct)}</div><div class="sacas-box">${fmt(k.desconto)} SACAS</div><div class="sub">umid.+imp.+avari. sobre o total colhido</div></div>
+    <div class="kpi"><div class="label">Sacas brutas</div><div class="value">${fmtValorGeralScs(k.scsBruto)}</div><div class="sub">antes dos descontos</div></div>
+    <div class="kpi"><div class="label">Sacas líquidas (s/ tara)</div><div class="value ok">${fmtValorGeralScs(k.scsLiquido)}</div><div class="sub">peso bruto já descontada a tara — ainda sem os descontos de qualidade</div></div>
+    <div class="kpi"><div class="label">Saldo líquido final</div><div class="value ok">${fmtValorGeralScs(k.scsLiquidoFinal)}</div><div class="sub">valor final já com todos os descontos aplicados</div></div>
+    <div class="kpi"><div class="label">Desconto médio</div><div class="value warn">${fmtPct(k.descontoPct)}</div><div class="sacas-box">${fmtValorGeralScs(k.desconto)}</div><div class="sub">umid.+imp.+avari. sobre o total colhido</div></div>
   `;
+  const btnUnidadeGeralEl = document.getElementById('btnUnidadeGeral');
+  if(btnUnidadeGeralEl) btnUnidadeGeralEl.innerHTML = dashboardGeralUnidade==='kg' ? '⇄ Ver em sacas' : '⇄ Ver em kg';
 
   window.__k = k;
   const emptyState = k.cargas === 0;
