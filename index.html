@@ -2527,11 +2527,13 @@ function renderEstoque(){
       <span>Estoque de Armazém</span>
       <button class="btn pdf sm" id="pdfBtnEstoque" onclick="exportarMonitoresEstoquePDF()">⬇ Exportar PDF</button>
     </div>
-    <div class="card" style="margin-bottom:24px;">
+    <div class="card" id="cardEstoquePlanilha" style="margin-bottom:24px;">
       <h2>Romaneios de Armazém <small>${state.romaneiosArmazem.length} romaneio(s)${nAguardando>0?' — '+nAguardando+' aguardando aprovação':''}</small>
+        <button class="btn ghost sm" id="btnVerSacas-romaneiosArmazem" data-header-tabela="romaneiosArmazem" data-header-item-id="verSacas" onclick="toggleVerEmSacas('romaneiosArmazem')">⇄ Ver em sacas</button>
         <div class="interacoes-fixed" id="cardInteracoesEstoque" data-header-tabela="romaneiosArmazem" data-header-item-id="interacoes" style="display:inline-block;">
           <button class="interacoes-trigger" id="btnInteracoesEstoqueToggle">☰ Interações</button>
           <div class="interacoes-panel" id="interacoesEstoquePanel">
+            <button class="interacoes-item" data-item-id="novaEntrada" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); openCadastroModal('romaneioArmazem');">➕ Nova entrada</button>
             <span class="choice-wrap" data-item-id="importar" style="width:100%;">
               <button class="interacoes-item" onclick="toggleChoicePopover('popoverImportarArmazem')">📥 Importar</button>
               <span class="choice-popover" id="popoverImportarArmazem">
@@ -2546,12 +2548,11 @@ function renderEstoque(){
             <button class="interacoes-item" data-item-id="culturasSafras" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); abrirCulturasArmazemAtivas();">🌱 Culturas/safras aceitas</button>
             <button class="interacoes-item" data-item-id="terceiros" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); abrirTerceiros();">🤝 Terceiros</button>
             <button class="interacoes-item" data-item-id="colunas" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); abrirGerenciarColunas('table-romaneiosArmazem');">⚙ Colunas</button>
+            <button class="interacoes-item" data-item-id="telaCheia" onclick="document.getElementById('interacoesEstoquePanel').classList.remove('aberto'); telaCheiaTabela('cardEstoquePlanilha');">⛶ Tela cheia</button>
             <div class="interacoes-divider"></div>
             <button class="interacoes-item" data-item-id="excluirSelecoes" style="color:var(--red);" onclick="excluirSelecionadas('romaneiosArmazem')">🗑️ Excluir seleções</button>
           </div>
         </div>
-        <button class="btn sm" onclick="openCadastroModal('romaneioArmazem')">➕ Nova entrada</button>
-        <button class="btn ghost sm" id="btnVerSacas-romaneiosArmazem" data-header-tabela="romaneiosArmazem" data-header-item-id="verSacas" onclick="toggleVerEmSacas('romaneiosArmazem')">⇄ Ver em sacas</button>
         <input type="file" id="importArmazemInput" accept=".xlsx,.xls" style="display:none">
         <input type="file" id="importArmazemInputPDF" accept=".pdf" style="display:none">
         <input type="file" id="importArmazemInputXmlNFe" accept=".xml" multiple style="display:none">
@@ -3744,11 +3745,13 @@ function renderCargas(){
 function renderCargasAtivas(){
   const el = document.getElementById('cargasConteudo');
   el.innerHTML = `
-    <div class="card">
+    <div class="card" id="cardCargasPlanilha">
       <h2>Cargas &amp; Romaneios <small>${state.entregas.filter(e=>e.status!=='rejeitado').length} carga(s) — ${state.entregas.filter(e=>e.status==='completo').length} com pesagem completa</small>
+        <button class="btn ghost sm" id="btnVerSacas-cargas" data-header-tabela="cargas" data-header-item-id="verSacas" onclick="toggleVerEmSacas('cargas')">⇄ Ver em sacas</button>
         <div class="interacoes-fixed" id="cardInteracoesCargas" data-header-tabela="cargas" data-header-item-id="interacoes" style="display:inline-block;">
           <button class="interacoes-trigger" id="btnInteracoesCargasToggle">☰ Interações</button>
           <div class="interacoes-panel" id="interacoesCargasPanel">
+            <button class="interacoes-item" data-item-id="novaEntrega" id="btnNovaCarga">➕ Nova entrega</button>
             <span class="choice-wrap" data-item-id="importar" style="width:100%;">
               <button class="interacoes-item" onclick="toggleChoicePopover('popoverImportar')">📥 Importar</button>
               <span class="choice-popover" id="popoverImportar">
@@ -3760,12 +3763,11 @@ function renderCargasAtivas(){
             </span>
             <button class="interacoes-item" data-item-id="gerarRelatorio" onclick="document.getElementById('interacoesCargasPanel').classList.remove('aberto'); openCadastroModal('filtroRelatorioCargas');">📤 Gerar relatório</button>
             <button class="interacoes-item" data-item-id="colunas" onclick="document.getElementById('interacoesCargasPanel').classList.remove('aberto'); abrirGerenciarColunas('table-cargas');">⚙ Colunas</button>
+            <button class="interacoes-item" data-item-id="telaCheia" onclick="document.getElementById('interacoesCargasPanel').classList.remove('aberto'); telaCheiaTabela('cardCargasPlanilha');">⛶ Tela cheia</button>
             <div class="interacoes-divider"></div>
             <button class="interacoes-item" data-item-id="excluirSelecoes" style="color:var(--red);" onclick="excluirSelecionadas('cargas')">🗑️ Excluir seleções</button>
           </div>
         </div>
-        <button class="btn sm" id="btnNovaCarga">➕ Nova entrega</button>
-        <button class="btn ghost sm" id="btnVerSacas-cargas" data-header-tabela="cargas" data-header-item-id="verSacas" onclick="toggleVerEmSacas('cargas')">⇄ Ver em sacas</button>
       </h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:10px;">Dados da NF (importados) e dados do romaneio (foto/manual) na mesma linha, assim que cada carga é pesada.
         Quando um contrato tem NF de venda <b>e</b> NF de remessa/complemento, só a venda entra no confronto com o romaneio — a remessa vira só comprovante de entrega.
@@ -3792,7 +3794,7 @@ function renderCargasAtivas(){
   `;
   updateTbodyCargas();
   tornarColunasRedimensionaveis('table-cargas');
-  document.getElementById('btnNovaCarga').addEventListener('click', ()=>openEntregaModal());
+  document.getElementById('btnNovaCarga').addEventListener('click', ()=>{ document.getElementById('interacoesCargasPanel')?.classList.remove('aberto'); openEntregaModal(); });
   (function(){
     const btn = document.getElementById('btnInteracoesCargasToggle');
     const panel = document.getElementById('interacoesCargasPanel');
@@ -3966,18 +3968,19 @@ function renderConferencia(){
 function renderConferenciaMotoristas(){
   const el = document.getElementById('conferenciaConteudo');
   el.innerHTML = `
-    <div class="card">
+    <div class="card" id="cardConferenciaPlanilha">
       <h2>Enviados por motoristas <small>${state.entregas.filter(e=>e.status==='aguardando_conferencia').length} aguardando conferência</small>
+        <button class="btn ghost sm" id="btnVerSacas-conferencia" data-header-tabela="conferencia" data-header-item-id="verSacas" onclick="toggleVerEmSacas('conferencia')">⇄ Ver em sacas</button>
         <div class="interacoes-fixed" id="cardInteracoesConferencia" data-header-tabela="conferencia" data-header-item-id="interacoes" style="display:inline-block;">
           <button class="interacoes-trigger" id="btnInteracoesConferenciaToggle">☰ Interações</button>
           <div class="interacoes-panel" id="interacoesConferenciaPanel">
             <button class="interacoes-item" data-item-id="forcarSincronizacao" onclick="document.getElementById('interacoesConferenciaPanel').classList.remove('aberto'); forcarSincronizacao();">🔄 Forçar sincronização</button>
             <button class="interacoes-item" data-item-id="colunas" onclick="document.getElementById('interacoesConferenciaPanel').classList.remove('aberto'); abrirGerenciarColunas('table-conferencia');">⚙ Colunas</button>
+            <button class="interacoes-item" data-item-id="telaCheia" onclick="document.getElementById('interacoesConferenciaPanel').classList.remove('aberto'); telaCheiaTabela('cardConferenciaPlanilha');">⛶ Tela cheia</button>
             <div class="interacoes-divider"></div>
             <button class="interacoes-item" data-item-id="excluirSelecoes" style="color:var(--red);" onclick="excluirSelecionadas('conferencia')">🗑️ Excluir seleções</button>
           </div>
         </div>
-        <button class="btn ghost sm" id="btnVerSacas-conferencia" data-header-tabela="conferencia" data-header-item-id="verSacas" onclick="toggleVerEmSacas('conferencia')">⇄ Ver em sacas</button>
       </h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:16px;">
         Lançamentos feitos pelo link do motorista caem aqui primeiro. Confira os dados antes de lançar oficialmente no dashboard.
@@ -4404,10 +4407,11 @@ function renderContratos(){
       </div>
     </th>`).join('');
   el.innerHTML = `
-    <div class="card" style="margin-bottom:20px;">
+    <div class="card" id="cardSaldosPlanilha" style="margin-bottom:20px;">
       <h2>Controle de saldos de contrato <small>${state.contratos.length} contrato(s) · somente visualização</small>
+        <button class="btn ghost sm" id="btnVerSacas-saldos" data-header-tabela="saldos" data-header-item-id="verSacas" onclick="toggleSaldosUnidade()">⇄ Ver em ${saldosUnidade==='kg'?'sacas':'kg'}</button>
         <div class="interacoes-fixed" id="interacoesSaldos" data-header-tabela="saldos" data-header-item-id="interacoes" style="display:inline-block;">
-          <button class="interacoes-trigger" id="btnInteracoesSaldosToggle" style="padding:8px 14px;font-size:12.5px;">☰ Interações</button>
+          <button class="interacoes-trigger" id="btnInteracoesSaldosToggle">☰ Interações</button>
           <div class="interacoes-panel" id="interacoesSaldosPanel">
             <button class="interacoes-item" data-item-id="exportarPdf" onclick="document.getElementById('interacoesSaldosPanel').classList.remove('aberto'); exportarRelacaoContratosPDF();">🖨️ Exportar relação em PDF</button>
             <button class="interacoes-item" data-item-id="limparFiltros" onclick="limparFiltrosSaldos(); document.getElementById('interacoesSaldosPanel').classList.remove('aberto');">🧹 Limpar todos os filtros</button>
@@ -4415,9 +4419,9 @@ function renderContratos(){
             <button class="interacoes-item" data-item-id="ocultarLinhas" onclick="document.getElementById('interacoesSaldosPanel').classList.remove('aberto'); ocultarLinhasSelecionadas();">🙈 Ocultar linha(s) selecionada(s)</button>
             <button class="interacoes-item" data-item-id="ocultarColunas" onclick="document.getElementById('interacoesSaldosPanel').classList.remove('aberto'); abrirOcultarColunasSaldos();">📐 Ocultar coluna(s)</button>
             ${linhasOcultasSaldos.size ? `<button class="interacoes-item" data-item-id="mostrarOcultas" onclick="document.getElementById('interacoesSaldosPanel').classList.remove('aberto'); mostrarLinhasOcultasSaldos();">👁️ Mostrar linhas ocultas (${linhasOcultasSaldos.size})</button>` : ''}
+            <button class="interacoes-item" data-item-id="telaCheia" onclick="document.getElementById('interacoesSaldosPanel').classList.remove('aberto'); telaCheiaTabela('cardSaldosPlanilha');">⛶ Tela cheia</button>
           </div>
         </div>
-        <button class="btn ghost sm" id="btnVerSacas-saldos" data-header-tabela="saldos" data-header-item-id="verSacas" onclick="toggleSaldosUnidade()">⇄ Ver em ${saldosUnidade==='kg'?'sacas':'kg'}</button>
       </h2>
       <p class="small-note" style="margin-top:-6px;margin-bottom:10px;">Contratos são criados e editados em "Dados de Colheita e Comercialização" → Contratos. Aqui é só acompanhamento. Use a lupa 🔍 no cabeçalho pra filtrar cada coluna (estilo Excel), marque linhas com o checkbox à esquerda pra colorir ou ocultar em lote.</p>
       ${atrasados.length ? `<p class="small-note" style="color:var(--red,#e05555);margin-bottom:12px;">⚠ ${atrasados.length} contrato(s) com entrega e/ou pagamento atrasado — veja as colunas destacadas abaixo.</p>` : ''}
@@ -8544,6 +8548,17 @@ function renderGaugesDashboard(){
 // Tela cheia do Monitor — útil pra deixar um painel ligado no escritório mostrando só isso, ou
 // numa tela/tablet dedicado. Usa a Fullscreen API do navegador; o botão vira "Sair" quando já
 // estiver em tela cheia. Some sozinho ao apertar Esc (comportamento nativo do navegador).
+// Tela cheia genérica — qualquer planilha do sistema pode usar, passando o id do card que envolve
+// o cabeçalho + tabela. Facilita deixar um operacional acompanhando só aquela tela, ampliada.
+function telaCheiaTabela(cardId){
+  const el = document.getElementById(cardId);
+  if(!el) return;
+  if(!document.fullscreenElement){
+    el.requestFullscreen?.().catch(()=>toast('Seu navegador não permitiu abrir em tela cheia.', true));
+  } else {
+    document.exitFullscreen?.();
+  }
+}
 function telaCheiaMonitor(btn){
   const section = btn.closest('section');
   if(!document.fullscreenElement){
